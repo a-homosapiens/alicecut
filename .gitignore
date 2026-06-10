@@ -1,0 +1,13 @@
+# 依赖与构建产物
+node_modules/
+out/
+dist/
+
+# 内置字体（npm run fonts 下载，不进仓库）
+public/fonts/*.ttf
+public/fonts/*.otf
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.log

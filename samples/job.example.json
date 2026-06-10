@@ -1,0 +1,20 @@
+{
+  "lrc": "demo.lrc",
+  "audio": null,
+  "out": "../output/demo.mp4",
+  "fps": 30,
+  "style": {
+    "aspect": "9:16",
+    "effectId": "pop",
+    "fontFamily": "Smiley Sans",
+    "fontSize": 92,
+    "bgType": "gradient",
+    "bgFrom": "#0f0c29",
+    "bgTo": "#24243e"
+  },
+  "lineEffects": {
+    "0-3": "flip-bottom",
+    "4-7": "rise",
+    "9": "punch"
+  }
+}
