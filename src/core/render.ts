@@ -324,15 +324,19 @@ function drawLine(
  * 渲染某一时刻的完整画面。纯确定性：同样输入永远画出同一帧，
  * 预览与导出共用。tMs 为项目时间轴毫秒。
  * 每行可有独立特效（line.effectId）与位置偏移（line.dx/dy）。
+ * drawBackdrop：可选的背景视频绘制层（画在纯色/渐变之上、文字之下），
+ * 由调用方提供——预览取播放中的帧，导出取精确 seek 后的帧。
  */
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   lines: LrcLine[],
   meta: LrcMeta,
   style: RenderStyle,
-  tMs: number
+  tMs: number,
+  drawBackdrop?: (ctx: CanvasRenderingContext2D) => void
 ): void {
   drawBackground(ctx, style)
+  drawBackdrop?.(ctx)
   if (lines.length === 0) return
 
   drawMetaIntro(ctx, meta, style, tMs, lines[0].start)

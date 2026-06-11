@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useProject, getProjectDuration } from '../store/project'
 import { getEffect } from '../core/effects'
+import { clipEnd, type MediaClip } from '../core/media'
 import { seek } from '../playback'
 import type { LrcLine } from '../core/types'
 
@@ -14,6 +15,11 @@ const EFFECT_COLORS: Record<string, string> = {
   flip: '#d946ef',
   'flip-bottom': '#a855f7',
   rise: '#14b8a6'
+}
+
+const CLIP_COLORS: Record<MediaClip['kind'], string> = {
+  video: '#f97316',
+  audio: '#22c55e'
 }
 
 const TRIM_MODES = ['trim-l', 'trim-r'] as const
@@ -65,26 +71,146 @@ function Playhead({
   return <div className="tl-playhead" style={{ left: x }} />
 }
 
+/** 媒体线段（视频/音频轨）：拖动挪起点，点击选中 */
+function ClipSegment({
+  clip,
+  pxPerSec,
+  durationMs
+}: {
+  clip: MediaClip
+  pxPerSec: number
+  durationMs: number
+}): React.JSX.Element {
+  const selected = useProject((s) => s.selectedClipId === clip.id)
+  const color = CLIP_COLORS[clip.kind]
+  const endMs = clipEnd(clip, durationMs)
+  const left = (clip.start / 1000) * pxPerSec
+  const width = Math.max(((endMs - clip.start) / 1000) * pxPerSec, 14)
+  // 循环边界刻线：每个 sourceDuration 一道
+  const period = (clip.sourceDuration / 1000) * pxPerSec
+  const loopMarks =
+    (clip.loop === 'infinite' || clip.loop > 1) && period > 6
+      ? `repeating-linear-gradient(to right, transparent 0, transparent ${period - 1.5}px, ${color}aa ${period - 1.5}px, ${color}aa ${period}px)`
+      : undefined
+  const loopLabel = clip.loop === 'infinite' ? '∞' : clip.loop > 1 ? `×${clip.loop}` : ''
+
+  const onMouseDown = (e: React.MouseEvent): void => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    const st = useProject.getState()
+    st.setSelectedClip(clip.id)
+    const original = { ...clip }
+    const startClientX = e.clientX
+    let moved = false
+    const onMove = (ev: MouseEvent): void => {
+      const deltaPx = ev.clientX - startClientX
+      if (Math.abs(deltaPx) > 3) moved = true
+      if (!moved) return
+      useProject.getState().moveClipFrom(original, (deltaPx / pxPerSec) * 1000)
+    }
+    const onUp = (): void => {
+      if (!moved) seek(clip.start / 1000) // 纯点击：播放头跳到线段开头
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  return (
+    <div
+      className={`tl-clip${selected ? ' selected' : ''}`}
+      style={{
+        left,
+        width,
+        borderColor: color,
+        background: `${color}2e`,
+        backgroundImage: loopMarks
+      }}
+      title={`${clip.name}\n${clip.kind === 'video' ? '背景视频' : '音轨'} · ${
+        clip.loop === 'infinite' ? '无限循环' : `重复 ${clip.loop} 次`
+      }`}
+      onMouseDown={onMouseDown}
+    >
+      <span className="tl-clip-icon">{clip.kind === 'video' ? '🎬' : '🎵'}</span>
+      <span className="tl-seg-text">{clip.name}</span>
+      {loopLabel && (
+        <span className="tl-clip-loop" style={{ color }}>
+          {loopLabel}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** 选中媒体线段时的工具条控件：起点 / 循环次数 / 无限循环 / 删除 */
+function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const st = (): ReturnType<typeof useProject.getState> => useProject.getState()
+  return (
+    <span className="tl-times">
+      <label>
+        开始
+        <input
+          type="number"
+          step={0.1}
+          min={0}
+          value={(clip.start / 1000).toFixed(2)}
+          onChange={(e) => st().setClipStart(clip.id, Number(e.target.value) * 1000)}
+        />
+      </label>
+      <label>
+        循环
+        <input
+          type="number"
+          step={1}
+          min={1}
+          disabled={clip.loop === 'infinite'}
+          value={clip.loop === 'infinite' ? '' : clip.loop}
+          placeholder="∞"
+          onChange={(e) => st().setClipLoop(clip.id, Number(e.target.value))}
+        />
+        次
+      </label>
+      <label title="一直循环到项目结束">
+        <input
+          type="checkbox"
+          checked={clip.loop === 'infinite'}
+          onChange={(e) => st().setClipLoop(clip.id, e.target.checked ? 'infinite' : 1)}
+        />
+        无限循环
+      </label>
+      <button className="btn btn-sm" onClick={() => st().removeClip(clip.id)}>
+        删除
+      </button>
+    </span>
+  )
+}
+
 export function Timeline(): React.JSX.Element {
   const lines = useProject((s) => s.lines)
-  const audio = useProject((s) => s.audio)
+  const clips = useProject((s) => s.clips)
   const selectedIds = useProject((s) => s.selectedIds)
+  const selectedClipId = useProject((s) => s.selectedClipId)
   const globalEffectId = useProject((s) => s.style.effectId)
   const [pxPerSec, setPxPerSec] = useState(60)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
 
-  const duration = getProjectDuration({ lines, audio })
+  const duration = getProjectDuration({ lines, clips })
+  const durationMs = duration * 1000
   const innerWidth = Math.max(duration * pxPerSec + 160, 400)
   const step = tickStep(pxPerSec)
   const ticks: number[] = []
   for (let s = 0; s <= duration; s += step) ticks.push(s)
 
+  const videoClips = clips.filter((c) => c.kind === 'video')
+  const audioClips = clips.filter((c) => c.kind === 'audio')
+
   const zoom = (factor: number): void => {
     setPxPerSec((v) => Math.min(300, Math.max(12, v * factor)))
   }
 
-  /* ---- 线段拖拽：移动 / 边缘微调 ---- */
+  /* ---- 歌词线段拖拽：移动 / 边缘微调 ---- */
   const onSegmentMouseDown = (e: React.MouseEvent, line: LrcLine, mode: DragMode): void => {
     if (e.button !== 0) return
     e.stopPropagation()
@@ -154,9 +280,14 @@ export function Timeline(): React.JSX.Element {
   }
 
   const selectedLine = selectedIds.length === 1 ? lines.find((l) => l.id === selectedIds[0]) : undefined
+  const selectedClip = clips.find((c) => c.id === selectedClipId)
 
-  if (lines.length === 0) {
-    return <div className="timeline empty">导入歌词后，每句歌词会成为时间轴上的可编辑线段</div>
+  if (lines.length === 0 && clips.length === 0) {
+    return (
+      <div className="timeline empty">
+        导入歌词 / 视频 / 音频后，每个素材会成为时间轴上的可编辑线段
+      </div>
+    )
   }
 
   return (
@@ -167,15 +298,20 @@ export function Timeline(): React.JSX.Element {
         </button>
         <button
           className="btn btn-sm"
-          disabled={selectedIds.length === 0}
+          disabled={selectedIds.length === 0 && selectedClipId === null}
           onClick={() => useProject.getState().clearSelection()}
         >
           取消选择
         </button>
         <span className="hint">
-          {selectedIds.length > 0 ? `已选 ${selectedIds.length} 条 — 可在右侧选择特效，画面中拖动调整位置` : '点击线段选中 · Ctrl+点击多选 · 拖动挪时间 · 拖边缘微调'}
+          {selectedClip
+            ? `${selectedClip.kind === 'video' ? '背景视频' : '音轨'} · ${selectedClip.name}`
+            : selectedIds.length > 0
+              ? `已选 ${selectedIds.length} 条 — 可在右侧选择特效，画面中拖动调整位置`
+              : '点击线段选中 · Ctrl+点击多选 · 拖动挪时间 · 拖边缘微调'}
         </span>
-        {selectedLine && (
+        {selectedClip && <ClipControls clip={selectedClip} />}
+        {selectedLine && !selectedClip && (
           <span className="tl-times">
             <label>
               开始
@@ -225,6 +361,20 @@ export function Timeline(): React.JSX.Element {
               </span>
             ))}
           </div>
+          {videoClips.length > 0 && (
+            <div className="tl-mediatrack">
+              {videoClips.map((c) => (
+                <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
+              ))}
+            </div>
+          )}
+          {audioClips.length > 0 && (
+            <div className="tl-mediatrack">
+              {audioClips.map((c) => (
+                <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
+              ))}
+            </div>
+          )}
           <div className="tl-track">
             {lines.map((line) => {
               const effId = line.effectId ?? globalEffectId

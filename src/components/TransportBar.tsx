@@ -11,8 +11,8 @@ export function TransportBar(): React.JSX.Element {
   const playing = useProject((s) => s.playing)
   const currentTime = useProject((s) => s.currentTime)
   const lines = useProject((s) => s.lines)
-  const audio = useProject((s) => s.audio)
-  const duration = getProjectDuration({ lines, audio })
+  const clips = useProject((s) => s.clips)
+  const duration = getProjectDuration({ lines, clips })
   const disabled = duration <= 0
 
   return (

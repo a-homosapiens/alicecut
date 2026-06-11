@@ -3,11 +3,20 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { once } from 'events'
 import ffmpegPath from 'ffmpeg-static'
 
+/** 导出用音轨线段：路径 + 时间轴起点 + 循环（'infinite' = 循环到视频结束） */
+export interface ExportAudioClip {
+  path: string
+  startMs: number
+  loop: number | 'infinite'
+}
+
 export interface ExportOptions {
   width: number
   height: number
   fps: number
-  audioPath: string | null
+  audioClips: ExportAudioClip[]
+  /** 成片总时长（秒），音轨按此截断（无限循环靠它收尾） */
+  durationSec: number
   outPath: string
 }
 
@@ -23,9 +32,30 @@ function buildArgs(o: ExportOptions): string[] {
     '-r', String(o.fps),
     '-i', 'pipe:0'
   ]
-  if (o.audioPath) args.push('-i', o.audioPath)
+  // 每条音轨一个输入：-stream_loop 负责重复（-1 = 无限，靠输出端 -t 截断）
+  for (const clip of o.audioClips) {
+    const loops = clip.loop === 'infinite' ? -1 : Math.max(0, Math.round(clip.loop) - 1)
+    args.push('-stream_loop', String(loops), '-i', clip.path)
+  }
   args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p')
-  if (o.audioPath) args.push('-c:a', 'aac', '-b:a', '192k', '-shortest')
+  if (o.audioClips.length > 0) {
+    // adelay 把每条音轨平移到自己的起点，多条时 amix 混音
+    const delayed = o.audioClips.map((clip, i) => {
+      const d = Math.max(0, Math.round(clip.startMs))
+      return `[${i + 1}:a]adelay=${d}:all=1[a${i}]`
+    })
+    let filter = delayed.join(';')
+    let outLabel = '[a0]'
+    if (o.audioClips.length > 1) {
+      const inputs = o.audioClips.map((_c, i) => `[a${i}]`).join('')
+      filter += `;${inputs}amix=inputs=${o.audioClips.length}:duration=longest:normalize=0[aout]`
+      outLabel = '[aout]'
+    }
+    args.push('-filter_complex', filter, '-map', '0:v', '-map', outLabel)
+    args.push('-c:a', 'aac', '-b:a', '192k')
+  }
+  // 成片时长以画面为准：超出的音轨（含无限循环）在此截断
+  args.push('-t', o.durationSec.toFixed(3))
   args.push('-movflags', '+faststart', o.outPath)
   return args
 }

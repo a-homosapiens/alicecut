@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
-import { useProject, toRenderStyle, RESOLUTIONS } from '../store/project'
+import { useProject, toRenderStyle, RESOLUTIONS, getProjectDuration } from '../store/project'
 import { renderFrame, getLineBlockRect } from '../core/render'
+import { drawVideoBackdrop } from '../mediaPool'
 import { getTime, tick } from '../playback'
 
 /** 选中行编辑框（虚线框 + 角标），只画在预览上，不进导出 */
@@ -46,7 +47,10 @@ export function PreviewCanvas(): React.JSX.Element {
         if (canvas.width !== style.width) canvas.width = style.width
         if (canvas.height !== style.height) canvas.height = style.height
         const tMs = getTime() * 1000
-        renderFrame(ctx, st.lines, st.meta, style, tMs)
+        const endMs = getProjectDuration(st) * 1000
+        renderFrame(ctx, st.lines, st.meta, style, tMs, (c) =>
+          drawVideoBackdrop(c, st.clips, tMs, endMs, style.width, style.height)
+        )
         drawSelectionOverlay(ctx, tMs)
       }
       raf = requestAnimationFrame(loop)

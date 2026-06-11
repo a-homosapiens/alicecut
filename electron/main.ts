@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { readFile, writeFile } from 'fs/promises'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { access, readFile, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
+import { pathToFileURL } from 'url'
 import { registerExportHandlers } from './exporter'
 import { parseExportArg, prepareJob, registerHeadlessHandlers } from './headless'
 import { readLrcText } from './lrcFile'
@@ -8,6 +9,19 @@ import { readLrcText } from './lrcFile'
 const exportJobPath = parseExportArg(process.argv)
 // 无头导出走软件渲染，CI/无 GPU 环境也能跑
 if (exportJobPath) app.disableHardwareAcceleration()
+
+// media:// 自定义协议：渲染进程用它流式读取本地音视频（支持 seek），无需把大文件读进内存
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { stream: true, supportFetchAPI: true, bypassCSP: true } }
+])
+
+/** media:///D:/dir/a.mp4 → 按本地文件流式响应 */
+function registerMediaProtocol(): void {
+  protocol.handle('media', (req) => {
+    const pathname = decodeURIComponent(new URL(req.url).pathname).replace(/^\//, '')
+    return net.fetch(pathToFileURL(pathname).toString(), { headers: req.headers })
+  })
+}
 
 function createWindow(headless: boolean): void {
   const win = new BrowserWindow({
@@ -46,16 +60,25 @@ function registerFileHandlers(): void {
     return { path, name: basename(path), text: await readLrcText(path) }
   })
 
+  // 音/视频只返回路径，渲染进程经 media:// 协议流式读取
   ipcMain.handle('file:openAudio', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: '导入音频文件',
       filters: [{ name: '音频', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
-      properties: ['openFile']
+      properties: ['openFile', 'multiSelections']
     })
     if (canceled || filePaths.length === 0) return null
-    const path = filePaths[0]
-    const buf = await readFile(path)
-    return { path, name: basename(path), data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }
+    return filePaths.map((path) => ({ path, name: basename(path) }))
+  })
+
+  ipcMain.handle('file:openVideo', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '导入视频文件',
+      filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi'] }],
+      properties: ['openFile', 'multiSelections']
+    })
+    if (canceled || filePaths.length === 0) return null
+    return filePaths.map((path) => ({ path, name: basename(path) }))
   })
 
   ipcMain.handle('file:openFont', async () => {
@@ -95,13 +118,13 @@ function registerFileHandlers(): void {
     }
   })
 
-  // 工程载入时按保存的路径重读音频；文件被移走时返回 null
-  ipcMain.handle('file:readBinary', async (_e, path: string) => {
+  // 工程载入时检查媒体文件是否还在原路径
+  ipcMain.handle('file:exists', async (_e, path: string) => {
     try {
-      const buf = await readFile(path)
-      return { path, name: basename(path), data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }
+      await access(path)
+      return true
     } catch {
-      return null
+      return false
     }
   })
 
@@ -116,6 +139,7 @@ function registerFileHandlers(): void {
 }
 
 app.whenReady().then(async () => {
+  registerMediaProtocol()
   registerExportHandlers()
 
   if (exportJobPath) {

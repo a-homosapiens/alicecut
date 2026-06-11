@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useProject } from './store/project'
-import { setAudioSource, toggle } from './playback'
+import { clipEnd, type MediaClip } from './core/media'
+import { probeMediaDuration } from './mediaPool'
+import { toggle } from './playback'
 import { PreviewCanvas } from './components/PreviewCanvas'
 import { TransportBar } from './components/TransportBar'
 import { Timeline } from './components/Timeline'
@@ -10,8 +12,10 @@ import { ExportDialog } from './components/ExportDialog'
 
 export function App(): React.JSX.Element {
   const lrcName = useProject((s) => s.lrcName)
-  const audio = useProject((s) => s.audio)
+  const clips = useProject((s) => s.clips)
   const hasLines = useProject((s) => s.lines.length > 0)
+  const videoCount = clips.filter((c) => c.kind === 'video').length
+  const audioCount = clips.filter((c) => c.kind === 'audio').length
   const [showExport, setShowExport] = useState(false)
 
   // 快捷键：空格播放/暂停，Ctrl+A 全选线段，Esc 取消选择
@@ -41,30 +45,47 @@ export function App(): React.JSX.Element {
     }
   }
 
-  const attachAudio = async (file: { path: string; name: string; data: ArrayBuffer }): Promise<void> => {
-    const st = useProject.getState()
-    const old = st.audio
-    if (old) URL.revokeObjectURL(old.url)
-    const url = URL.createObjectURL(new Blob([file.data]))
-    const duration = await setAudioSource(url)
-    st.setAudio({ path: file.path, name: file.name, url, duration })
+  /** 把一批文件追加为媒体线段：同类线段依次首尾相接排在时间轴上 */
+  const addMediaClips = async (
+    kind: 'video' | 'audio',
+    files: { path: string; name: string }[]
+  ): Promise<void> => {
+    for (const file of files) {
+      let sourceDuration: number
+      try {
+        sourceDuration = await probeMediaDuration(file.path, kind)
+      } catch (err) {
+        alert(String(err instanceof Error ? err.message : err))
+        continue
+      }
+      const st = useProject.getState()
+      const sameKind = st.clips.filter((c) => c.kind === kind && c.loop !== 'infinite')
+      const start = sameKind.reduce((acc, c) => Math.max(acc, clipEnd(c, 0)), 0)
+      const clip = st.addClip({ kind, path: file.path, name: file.name, start, sourceDuration, loop: 1 })
+      st.setSelectedClip(clip.id)
+    }
+  }
+
+  const importVideo = async (): Promise<void> => {
+    const files = await window.desktop.openVideo()
+    if (files) await addMediaClips('video', files)
   }
 
   const importAudio = async (): Promise<void> => {
-    const file = await window.desktop.openAudio()
-    if (file) await attachAudio(file)
+    const files = await window.desktop.openAudio()
+    if (files) await addMediaClips('audio', files)
   }
 
   const saveProject = async (): Promise<void> => {
     const st = useProject.getState()
     const json = JSON.stringify(
       {
-        version: 1,
+        version: 2,
         meta: st.meta,
         lines: st.lines,
         style: st.style,
         lrcName: st.lrcName,
-        audioPath: st.audio?.path ?? null
+        clips: st.clips.map(({ id: _id, ...rest }) => rest)
       },
       null,
       2
@@ -80,10 +101,26 @@ export function App(): React.JSX.Element {
       const data = JSON.parse(file.text)
       if (!Array.isArray(data.lines)) throw new Error('bad project')
       useProject.getState().hydrate(data)
-      if (typeof data.audioPath === 'string') {
-        const audio = await window.desktop.readBinary(data.audioPath)
-        if (audio) await attachAudio(audio)
-        else alert(`找不到工程关联的音频文件：\n${data.audioPath}\n请重新导入音频`)
+
+      // v1 工程的 audioPath → 一条 0 起点的音轨线段
+      const saved: Omit<MediaClip, 'id'>[] = Array.isArray(data.clips)
+        ? data.clips
+        : typeof data.audioPath === 'string'
+          ? [{ kind: 'audio', path: data.audioPath, name: data.audioPath, start: 0, sourceDuration: 0, loop: 1 }]
+          : []
+
+      const missing: string[] = []
+      for (const c of saved) {
+        if (!(await window.desktop.fileExists(c.path))) {
+          missing.push(c.path)
+          continue
+        }
+        // 重新探测时长，文件被替换过也能保持一致
+        const sourceDuration = await probeMediaDuration(c.path, c.kind).catch(() => c.sourceDuration)
+        useProject.getState().addClip({ ...c, sourceDuration })
+      }
+      if (missing.length > 0) {
+        alert(`以下媒体文件不在原路径，已跳过：\n${missing.join('\n')}`)
       }
     } catch {
       alert('工程文件无法解析')
@@ -97,8 +134,11 @@ export function App(): React.JSX.Element {
         <button className="btn" onClick={() => void importLrc()}>
           导入歌词 {lrcName ? `· ${lrcName}` : ''}
         </button>
+        <button className="btn" onClick={() => void importVideo()}>
+          导入视频 {videoCount > 0 ? `· ${videoCount} 段` : ''}
+        </button>
         <button className="btn" onClick={() => void importAudio()}>
-          导入音频 {audio ? `· ${audio.name}` : ''}
+          导入音频 {audioCount > 0 ? `· ${audioCount} 条` : ''}
         </button>
         <div className="spacer" />
         <button className="btn" onClick={() => void openProject()}>

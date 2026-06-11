@@ -37,9 +37,9 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
         lines: state.lines,
         meta: state.meta,
         style,
+        clips: state.clips,
         fps,
         durationSec: duration,
-        audioPath: state.audio?.path ?? null,
         outPath,
         onProgress: setProgress,
         isCancelled: () => cancelRef.current
@@ -80,7 +80,8 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
             </label>
             <p className="hint">
               时长约 {Math.round(duration)} 秒 · H.264 MP4
-              {useProject.getState().audio ? ' · 含音轨' : ' · 无音频（未导入音频文件）'}
+              {st.clips.some((c) => c.kind === 'video') ? ' · 含背景视频' : ''}
+              {st.clips.some((c) => c.kind === 'audio') ? ' · 含音轨' : ' · 无音频（未导入音频文件）'}
             </p>
             <div className="modal-actions">
               <button className="btn" onClick={onClose}>

@@ -13,23 +13,29 @@ export interface OpenedBinaryFile {
   data: ArrayBuffer
 }
 
+export interface PickedMediaFile {
+  path: string
+  name: string
+}
+
 const api = {
   openLrc: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openLrc'),
-  openAudio: (): Promise<OpenedBinaryFile | null> => ipcRenderer.invoke('file:openAudio'),
+  openAudio: (): Promise<PickedMediaFile[] | null> => ipcRenderer.invoke('file:openAudio'),
+  openVideo: (): Promise<PickedMediaFile[] | null> => ipcRenderer.invoke('file:openVideo'),
   openFont: (): Promise<OpenedBinaryFile | null> => ipcRenderer.invoke('file:openFont'),
   saveVideoPath: (defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveVideoPath', defaultName),
   saveProject: (json: string, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveProject', json, defaultName),
   openProject: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openProject'),
-  readBinary: (path: string): Promise<OpenedBinaryFile | null> =>
-    ipcRenderer.invoke('file:readBinary', path),
+  fileExists: (path: string): Promise<boolean> => ipcRenderer.invoke('file:exists', path),
 
   exportStart: (opts: {
     width: number
     height: number
     fps: number
-    audioPath: string | null
+    audioClips: { path: string; startMs: number; loop: number | 'infinite' }[]
+    durationSec: number
     outPath: string
   }): Promise<void> => ipcRenderer.invoke('export:start', opts),
   exportFrame: (frame: Uint8Array): Promise<void> => ipcRenderer.invoke('export:frame', frame),

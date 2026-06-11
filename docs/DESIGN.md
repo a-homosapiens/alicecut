@@ -46,8 +46,10 @@
 | `src/core/effects/` | 特效预设（见 §4），`index.ts` 注册表 |
 | `src/core/render.ts` | 逐帧绘制入口 + 布局缓存 + 行块测量（`getLineBlockRect` 供选中框） |
 | `src/core/easing.ts` | 缓动函数与 `seededRand` |
-| `src/store/project.ts` | zustand 单 store：歌词/样式/选区/播放标志 + 全部编辑动作 |
-| `src/playback.ts` | 播放控制单例：`<audio>` 为时钟源，无音频时手动时钟 |
+| `src/core/media.ts` | 媒体线段（背景视频/音轨）纯数据模型：循环展开、源时间取模、时长计算 |
+| `src/store/project.ts` | zustand 单 store：歌词/媒体线段/样式/选区/播放标志 + 全部编辑动作 |
+| `src/playback.ts` | 播放控制单例：`performance.now` 为唯一时钟源，媒体元素每帧向时钟对齐 |
+| `src/mediaPool.ts` | 媒体元素池：每个线段一个 `<video>/<audio>`（media:// 流式读取），预览同步 + 导出精确 seek |
 | `src/exportRunner.ts` | 共享导出循环（GUI 与 headless 共用） |
 | `src/headlessExport.ts` | 无头模式执行器（复用 store 加载逻辑） |
 | `src/fonts.ts` | 内置字体加载（FontFace）与用户字体导入 |
@@ -59,9 +61,10 @@
 
 | 通道 | 方向 | 用途 |
 |---|---|---|
-| `file:openLrc` / `openAudio` / `openFont` / `openProject` | invoke | 文件对话框 + 读内容（渲染进程无 Node 权限，统一主进程读） |
+| `file:openLrc` / `openFont` / `openProject` | invoke | 文件对话框 + 读内容（渲染进程无 Node 权限，统一主进程读） |
+| `file:openAudio` / `openVideo` | invoke | 媒体文件对话框（多选），只返回路径——内容经 `media://` 协议流式读取 |
 | `file:saveProject` / `saveVideoPath` | invoke | 保存对话框 |
-| `file:readBinary` | invoke | 按路径读文件（工程载入时恢复音频） |
+| `file:exists` | invoke | 工程载入时检查媒体文件是否还在原路径 |
 | `export:start` / `frame` / `end` / `cancel` | invoke | 导出会话；`frame` 的 await 即背压 |
 | `headless:job` | invoke | 启动时取无头任务（GUI 模式返回 null，渲染进程据此分流） |
 | `headless:progress` / `log` | send | 进度与日志 → 主进程 stdout |
@@ -93,7 +96,20 @@ LrcChar   { text, start, end }
 - 标准 LRC：行时长内按字符权重插值出逐字时间（标点权重 0.2，进场窗口 ≤ 行时长 65% 且 ≤ 4s）。
 - 增强型 LRC（`<mm:ss.xx>`）：直接采用精确逐字时间，段内字符均分。
 - 行也是时间轴上的**线段**：`shiftLine`（整体平移，保持逐字相对时间）、`retimeLine`（重设起止，逐字按比例重映射）。
-- 工程文件 `.dlv.json` = `{ version, meta, lines, style, lrcName, audioPath }`，行级字段随行序列化；旧版文件载入时自动补默认值。
+- 媒体线段（`src/core/media.ts`）：
+
+```
+MediaClip { id, kind: 'video'|'audio', path, name,
+            start,                ← 时间轴起点 ms
+            sourceDuration,       ← 素材时长 ms
+            loop: n | 'infinite' }← 重复次数 / 循环到项目结束
+```
+
+  核心是 `clipSourceTime(clip, tMs, projectEndMs)`：tMs 在线段激活窗口内时返回
+  `(tMs - start) % sourceDuration`，预览同步、导出取帧、ffmpeg 参数都从它派生。
+  项目时长 = max(歌词结尾 + 2s, 有限线段最晚结束)；无限循环线段不参与时长计算。
+- 工程文件 `.dlv.json` = `{ version: 2, meta, lines, style, lrcName, clips }`（媒体只存路径不内嵌）；
+  v1 的 `audioPath` 载入时自动转为一条音轨线段，缺的字段自动补默认值。
 
 ## 4. 特效系统（src/core/effects/）
 
@@ -116,7 +132,9 @@ LrcChar   { text, start, end }
 
 ## 5. 渲染管线（src/core/render.ts）
 
-每帧流程：背景（纯色/渐变）→ 片头歌名淡入 → 找当前行（最后一个已开始的行）→
+每帧流程：背景（纯色/渐变）→ 背景视频层（可选 `drawBackdrop` 回调，调用方提供：
+预览取播放中的元素帧、导出取精确 seek 后的帧；cover 铺满裁切）→
+片头歌名淡入 → 找当前行（最后一个已开始的行）→
 当前行若是停靠式特效则由它统一绘制自己 + 历史行（`drawLineStack`）→
 其余行按各自特效走单元进场路径，默认退场为淡出上浮。
 每行的特效（`line.effectId ?? style.effectId`）与位置偏移（`line.dx/dy`）在此生效。
@@ -127,14 +145,22 @@ LrcChar   { text, start, end }
 ```
 runExport（渲染进程）                      exporter.ts（主进程）
 for n in 0..totalFrames:
-  renderFrame(ctx, …, n·1000/fps)
+  对每个可见视频线段精确 seek（seeked 事件）
+  renderFrame(ctx, …, n·1000/fps, 视频背景层)
   getImageData → Uint8Array  ──IPC──▶  ffmpeg.stdin.write(frame)
   （await = 背压：写满等 drain）            -f rawvideo -pix_fmt rgba
+                                          每条音轨: -stream_loop N -i path
+                                          filter: adelay=起点 (+amix 混音)
                                           -c:v libx264 -crf 18 yuv420p
-exportEnd ──────────────────────▶        混入音轨(aac) → mp4
+exportEnd ──────────────────────▶        -t 成片时长 → mp4
 ```
 
-时长 = 音频时长（有音频时）或 最后一行结束 + 2s。GUI 导出弹窗与无头模式共用 `runExport`。
+- **背景视频走画布**：渲染进程逐帧把 `<video>` 元素 seek 到 `clipSourceTime` 再 drawImage，
+  循环/偏移与预览同一套计算，画面所见即所得。
+- **音轨走 ffmpeg**：每条音轨一个输入，`-stream_loop`（n-1 次重复 / -1 无限）+
+  `adelay`（起点平移）+ 多条时 `amix` 混音，最后 `-t` 按成片时长截断（无限循环靠它收尾）。
+
+时长 = max(歌词结尾 + 2s, 有限媒体线段最晚结束)。GUI 导出弹窗与无头模式共用 `runExport`。
 
 ## 7. 无头 / Pipeline 模式
 
@@ -153,7 +179,9 @@ dynamic-caption.exe --export job.json
 |---|---|---|
 | `lrc` | ✔ | 歌词文件路径（相对路径相对 job 文件所在目录） |
 | `out` | ✔ | 输出 mp4 路径（目录自动创建） |
-| `audio` | | 音频路径；省略则输出无声视频、时长按歌词推算 |
+| `audio` | | 音轨：路径字符串 / `{path, start, loop}` / 数组；多条自动混音 |
+| `video` | | 背景视频：写法同 `audio`，cover 铺满画布，文字画在其上 |
+| `duration` | | 成片时长（秒）；缺省按歌词与有限媒体线段推算 |
 | `fps` | | 10–60，默认 30 |
 | `style` | | 覆盖默认样式：`aspect`（"9:16"/"16:9"/"1:1"）、`effectId`（全局默认特效）、`fontFamily`、`fontSize`、`textColor`、`bgType`/`bgFrom`/`bgTo`/`bgAngle`、`intensity`、`showMeta` 等 |
 | `lineEffects` | | 行级特效：`{"0-7": "rise", "9": "punch"}`，键为行序号或区间，值为特效 id |
@@ -164,7 +192,8 @@ dynamic-caption.exe --export job.json
 
 - stdout 逐行进度：`[export] 37%`，完成时 `[export] done: <路径>`，告警/信息也走 `[export] ` 前缀
 - 退出码：`0` 成功，`1` 失败（错误详情在 stderr）
-- 实现：主进程解析 job → 读 lrc/audio → 隐藏 BrowserWindow；渲染进程启动时
+- 实现：主进程解析 job → 读 lrc、校验媒体文件存在 → 隐藏 BrowserWindow；渲染进程启动时
+  经 `media://` 协议探测媒体时长、把线段装入 store，
   `getHeadlessJob()` 非空则跳过 UI，复用 store 加载逻辑 + `runExport`，
   经 `headlessDone` 上报退出码。
 

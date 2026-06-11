@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { LrcLine, LrcMeta } from '../core/types'
 import { parseLrc } from '../core/lrc'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
+import { clipsDuration, normalizeLoop, shiftClip, type LoopSpec, type MediaClip } from '../core/media'
 import { invalidateLayoutCache, type RenderStyle } from '../core/render'
 
 export type AspectId = '9:16' | '16:9' | '1:1'
@@ -28,18 +29,12 @@ export interface StyleState {
   showMeta: boolean
 }
 
-export interface AudioInfo {
-  path: string
-  name: string
-  url: string
-  duration: number
-}
-
 interface ProjectState {
   meta: LrcMeta
   lines: LrcLine[]
   lrcName: string | null
-  audio: AudioInfo | null
+  /** 媒体线段：背景视频 + 音轨 */
+  clips: MediaClip[]
   style: StyleState
   /** 秒，UI 时间轴 */
   currentTime: number
@@ -47,10 +42,18 @@ interface ProjectState {
   exporting: boolean
   /** 时间轴上选中的歌词线段 id */
   selectedIds: number[]
+  /** 时间轴上选中的媒体线段 id */
+  selectedClipId: number | null
 
   loadLrc(text: string, name: string): void
   hydrate(data: { meta: LrcMeta; lines: LrcLine[]; style: StyleState; lrcName: string | null }): void
-  setAudio(audio: AudioInfo | null): void
+  addClip(clip: Omit<MediaClip, 'id'>): MediaClip
+  removeClip(id: number): void
+  /** 媒体线段左右挪动：从拖拽起始快照平移 deltaMs */
+  moveClipFrom(original: MediaClip, deltaMs: number): void
+  setClipStart(id: number, startMs: number): void
+  setClipLoop(id: number, loop: LoopSpec): void
+  setSelectedClip(id: number | null): void
   updateLineText(id: number, text: string): void
   patchStyle(patch: Partial<StyleState>): void
   setCurrentTime(t: number): void
@@ -76,6 +79,12 @@ function sortLines(lines: LrcLine[]): LrcLine[] {
   return [...lines].sort((a, b) => a.start - b.start)
 }
 
+function sortClips(clips: MediaClip[]): MediaClip[] {
+  return [...clips].sort((a, b) => a.start - b.start)
+}
+
+let nextClipId = 1
+
 /** 合并替换若干行（按 id），并保持排序 */
 function mergeLines(lines: LrcLine[], replaced: LrcLine[]): LrcLine[] {
   const byId = new Map(replaced.map((l) => [l.id, l]))
@@ -86,7 +95,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   meta: { offset: 0 },
   lines: [],
   lrcName: null,
-  audio: null,
+  clips: [],
   style: {
     aspect: '9:16',
     fontFamily: 'Microsoft YaHei',
@@ -106,6 +115,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   playing: false,
   exporting: false,
   selectedIds: [],
+  selectedClipId: null,
 
   loadLrc(text, name) {
     const parsed = parseLrc(text)
@@ -124,14 +134,44 @@ export const useProject = create<ProjectState>((set, get) => ({
       lines,
       style: { ...get().style, ...data.style },
       lrcName: data.lrcName,
+      clips: [],
       currentTime: 0,
       playing: false,
-      selectedIds: []
+      selectedIds: [],
+      selectedClipId: null
     })
   },
 
-  setAudio(audio) {
-    set({ audio })
+  addClip(clip) {
+    const full: MediaClip = { ...clip, loop: normalizeLoop(clip.loop), id: nextClipId++ }
+    set({ clips: sortClips([...get().clips, full]) })
+    return full
+  },
+
+  removeClip(id) {
+    set({
+      clips: get().clips.filter((c) => c.id !== id),
+      selectedClipId: get().selectedClipId === id ? null : get().selectedClipId
+    })
+  },
+
+  moveClipFrom(original, deltaMs) {
+    const moved = shiftClip(original, deltaMs)
+    set({ clips: sortClips(get().clips.map((c) => (c.id === original.id ? moved : c))) })
+  },
+
+  setClipStart(id, startMs) {
+    const start = Math.max(0, Math.round(startMs))
+    set({ clips: sortClips(get().clips.map((c) => (c.id === id ? { ...c, start } : c))) })
+  },
+
+  setClipLoop(id, loop) {
+    const norm = normalizeLoop(loop)
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, loop: norm } : c)) })
+  },
+
+  setSelectedClip(id) {
+    set({ selectedClipId: id, ...(id !== null ? { selectedIds: [] } : {}) })
   },
 
   updateLineText(id, text) {
@@ -155,17 +195,20 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setSelection(ids) {
-    set({ selectedIds: ids })
+    set({ selectedIds: ids, selectedClipId: null })
   },
   toggleSelected(id) {
     const cur = get().selectedIds
-    set({ selectedIds: cur.includes(id) ? cur.filter((i) => i !== id) : [...cur, id] })
+    set({
+      selectedIds: cur.includes(id) ? cur.filter((i) => i !== id) : [...cur, id],
+      selectedClipId: null
+    })
   },
   selectAll() {
-    set({ selectedIds: get().lines.map((l) => l.id) })
+    set({ selectedIds: get().lines.map((l) => l.id), selectedClipId: null })
   },
   clearSelection() {
-    set({ selectedIds: [] })
+    set({ selectedIds: [], selectedClipId: null })
   },
 
   setLineEffect(ids, effectId) {
@@ -195,10 +238,9 @@ export const useProject = create<ProjectState>((set, get) => ({
   }
 }))
 
-/** 项目总时长（秒）：有音频取音频时长，否则按歌词推算 */
-export function getProjectDuration(s: { lines: LrcLine[]; audio: AudioInfo | null }): number {
-  if (s.audio && s.audio.duration > 0) return s.audio.duration
-  return lyricsDuration(s.lines) / 1000
+/** 项目总时长（秒）：歌词结尾与有限媒体线段结尾取较大者（无限循环线段不计入） */
+export function getProjectDuration(s: { lines: LrcLine[]; clips: MediaClip[] }): number {
+  return Math.max(lyricsDuration(s.lines), clipsDuration(s.clips)) / 1000
 }
 
 /** 把 store 样式转成渲染器需要的完整样式 */

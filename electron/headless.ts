@@ -1,32 +1,55 @@
 import { app, ipcMain } from 'electron'
-import { readFile, mkdir } from 'fs/promises'
+import { access, readFile, mkdir } from 'fs/promises'
 import { basename, dirname, isAbsolute, resolve } from 'path'
 import { readLrcText } from './lrcFile'
+
+/** job.json 里的媒体线段：字符串简写 = { path, start: 0, loop: 1 } */
+export interface JobClipSpec {
+  path: string
+  /** 时间轴起点，秒 */
+  start?: number
+  /** 重复次数（≥1）或 'infinite'（循环到成片结束） */
+  loop?: number | 'infinite'
+}
 
 /**
  * 无头导出模式（pipeline 用）：
  *   dynamic-caption --export job.json
- * job.json 里 lrc/audio/out 的相对路径相对于 job 文件所在目录解析。
+ * job.json 里 lrc/audio/video/out 的相对路径相对于 job 文件所在目录解析。
  */
 export interface ExportJobFile {
   lrc: string
-  audio?: string | null
+  /** 音轨：单个路径、单个对象或数组，均可带 start/loop */
+  audio?: string | JobClipSpec | (string | JobClipSpec)[] | null
+  /** 背景视频：同 audio 的写法 */
+  video?: string | JobClipSpec | (string | JobClipSpec)[] | null
   out: string
   fps?: number
+  /** 成片总时长（秒）；缺省 = max(歌词结尾, 有限媒体线段结尾) */
+  duration?: number
   /** 覆盖默认样式（StyleState 的子集，如 aspect/effectId/fontFamily/fontSize…） */
   style?: Record<string, unknown>
   /** 行级特效："3" 或 "0-7"（按歌词行序号）→ 特效 id */
   lineEffects?: Record<string, string>
 }
 
+/** 解析归一后的媒体线段（路径已绝对化、文件已确认存在） */
+export interface HeadlessClip {
+  kind: 'video' | 'audio'
+  path: string
+  name: string
+  startMs: number
+  loop: number | 'infinite'
+}
+
 /** 准备好、可直接发给渲染进程的任务载荷 */
 export interface HeadlessJobPayload {
   lrcText: string
   lrcName: string
-  audioPath: string | null
-  audioData: ArrayBuffer | null
+  clips: HeadlessClip[]
   outPath: string
   fps: number
+  durationSec: number | null
   style: Record<string, unknown>
   lineEffects: Record<string, string>
 }
@@ -50,29 +73,56 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
   const lrcPath = rel(job.lrc)
   const lrcText = await readLrcText(lrcPath)
 
-  let audioPath: string | null = null
-  let audioData: ArrayBuffer | null = null
-  if (job.audio) {
-    audioPath = rel(job.audio)
-    const buf = await readFile(audioPath) // 文件缺失直接抛错退出
-    audioData = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
-  }
+  const clips: HeadlessClip[] = [
+    ...(await normalizeClips('video', job.video, rel)),
+    ...(await normalizeClips('audio', job.audio, rel))
+  ]
 
   const outPath = rel(job.out)
   await mkdir(dirname(outPath), { recursive: true })
 
   const fps = Math.min(60, Math.max(10, Math.round(job.fps ?? 30)))
+  const durationSec = typeof job.duration === 'number' && job.duration > 0 ? job.duration : null
 
   return {
     lrcText,
     lrcName: basename(lrcPath),
-    audioPath,
-    audioData,
+    clips,
     outPath,
     fps,
+    durationSec,
     style: job.style ?? {},
     lineEffects: job.lineEffects ?? {}
   }
+}
+
+/** 把 job 里的 audio/video 字段（字符串/对象/数组）归一成 HeadlessClip 列表 */
+async function normalizeClips(
+  kind: 'video' | 'audio',
+  spec: ExportJobFile['audio'],
+  rel: (p: string) => string
+): Promise<HeadlessClip[]> {
+  if (!spec) return []
+  const items = Array.isArray(spec) ? spec : [spec]
+  const clips: HeadlessClip[] = []
+  for (const item of items) {
+    const obj: JobClipSpec = typeof item === 'string' ? { path: item } : item
+    if (!obj.path) throw new Error(`job.${kind} 中的线段缺少 path 字段`)
+    const path = rel(obj.path)
+    await access(path).catch(() => {
+      throw new Error(`job.${kind} 文件不存在: ${path}`)
+    })
+    const loop =
+      obj.loop === 'infinite' ? ('infinite' as const) : Math.max(1, Math.round(Number(obj.loop ?? 1)) || 1)
+    clips.push({
+      kind,
+      path,
+      name: basename(path),
+      startMs: Math.max(0, Math.round((obj.start ?? 0) * 1000)),
+      loop
+    })
+  }
+  return clips
 }
 
 /**

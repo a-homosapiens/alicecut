@@ -350,7 +350,8 @@ body,
 
 .tl-inner {
   position: relative;
-  height: 92px;
+  min-height: 92px;
+  padding-bottom: 4px;
 }
 
 .tl-ruler {
@@ -373,6 +374,54 @@ body,
   position: relative;
   height: 64px;
   margin-top: 4px;
+}
+
+/* ---- 媒体轨（背景视频 / 音轨） ---- */
+.tl-mediatrack {
+  position: relative;
+  height: 30px;
+  margin-top: 4px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.tl-clip {
+  position: absolute;
+  top: 2px;
+  height: 24px;
+  border: 1.5px solid;
+  border-radius: 5px;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  overflow: hidden;
+  box-sizing: border-box;
+  font-size: 11px;
+}
+
+.tl-clip:active {
+  cursor: grabbing;
+}
+
+.tl-clip.selected {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+.tl-clip-icon {
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.tl-clip-loop {
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.tl-times .btn-sm {
+  margin: 0;
 }
 
 .tl-seg {

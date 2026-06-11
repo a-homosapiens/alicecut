@@ -1,6 +1,7 @@
 {
   "lrc": "demo.lrc",
   "audio": null,
+  "video": null,
   "out": "../output/demo.mp4",
   "fps": 30,
   "style": {
