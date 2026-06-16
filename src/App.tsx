@@ -30,6 +30,10 @@ export function App(): React.JSX.Element {
         useProject.getState().selectAll()
       } else if (e.code === 'Escape') {
         useProject.getState().clearSelection()
+      } else if (e.code === 'Delete' || e.code === 'Backspace') {
+        const st = useProject.getState()
+        if (st.selectedClipId !== null) st.removeClip(st.selectedClipId)
+        else if (st.selectedIds.length > 0) st.removeLines(st.selectedIds)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -102,11 +106,12 @@ export function App(): React.JSX.Element {
       if (!Array.isArray(data.lines)) throw new Error('bad project')
       useProject.getState().hydrate(data)
 
-      // v1 工程的 audioPath → 一条 0 起点的音轨线段
-      const saved: Omit<MediaClip, 'id'>[] = Array.isArray(data.clips)
+      // v1 工程的 audioPath → 一条 0 起点的音轨线段；旧版缺的字段由 addClip 补默认值
+      type SavedClip = Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>
+      const saved: SavedClip[] = Array.isArray(data.clips)
         ? data.clips
         : typeof data.audioPath === 'string'
-          ? [{ kind: 'audio', path: data.audioPath, name: data.audioPath, start: 0, sourceDuration: 0, loop: 1 }]
+          ? [{ kind: 'audio' as const, path: data.audioPath, name: data.audioPath, start: 0, sourceDuration: 0 }]
           : []
 
       const missing: string[] = []

@@ -21,6 +21,19 @@ export interface RenderStyle {
   intensity: number
   /** 片头显示歌名/歌手 */
   showMeta: boolean
+  /** 文字不透明度 0–1 */
+  textAlpha: number
+  italic: boolean
+  /** 文字底色块；不透明度 0 = 无底色 */
+  textBgColor: string
+  textBgAlpha: number
+  /** 常驻光晕强度 px（0 = 关），颜色用 glowColor */
+  halo: number
+  /** 阴影：不透明度 0 = 关 */
+  shadowColor: string
+  shadowAlpha: number
+  shadowBlur: number
+  shadowOffset: number
 }
 
 /** 上一行退场的淡出时长 ms（默认退场；停靠式转场有自己的节奏） */
@@ -40,12 +53,12 @@ function getLayout(
   style: RenderStyle,
   variant: 'center' | 'staggered'
 ): PlacedChar[] {
-  const key = `${line.id}|${line.text}|${variant}|${style.width}x${style.height}|${style.fontSize}|${style.fontWeight} ${style.fontFamily}`
+  const key = `${line.id}|${line.text}|${variant}|${style.width}x${style.height}|${style.fontSize}|${style.italic ? 'i' : ''}${style.fontWeight} ${style.fontFamily}`
   const hit = layoutCache.get(key)
   if (hit) return hit
   if (layoutCache.size > 300) layoutCache.clear()
   const measure = (text: string, fontSize: number): number => {
-    ctx.font = `${style.fontWeight} ${fontSize}px ${quoteFamily(style.fontFamily)}`
+    ctx.font = fontStr(style, fontSize)
     return ctx.measureText(text).width
   }
   const placed = layoutLine(line, {
@@ -65,6 +78,58 @@ export function invalidateLayoutCache(): void {
 
 function quoteFamily(family: string): string {
   return /[\s一-鿿]/.test(family) ? `"${family}"` : family
+}
+
+/** 组装 ctx.font 字符串（含斜体/字重） */
+function fontStr(style: RenderStyle, fontSize: number): string {
+  return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${fontSize}px ${quoteFamily(style.fontFamily)}`
+}
+
+/** #rrggbb + alpha → rgba() 字符串（阴影颜色用） */
+function hexToRgba(hex: string, alpha: number): string {
+  const m = hex.match(/^#?([0-9a-f]{6})$/i)
+  if (!m) return hex
+  const n = parseInt(m[1], 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${clamp01(alpha).toFixed(3)})`
+}
+
+/** 文字底色块：在整行文字后面垫一个圆角色块（透明度可调） */
+function drawTextBg(
+  ctx: CanvasRenderingContext2D,
+  placed: PlacedChar[],
+  style: RenderStyle,
+  alpha: number,
+  dx: number,
+  dy: number
+): void {
+  if (style.textBgAlpha <= 0.004 || placed.length === 0) return
+  const b = measureBlock(placed, style.fontSize)
+  const pad = style.fontSize * 0.28
+  ctx.save()
+  ctx.globalAlpha = clamp01(style.textBgAlpha * alpha)
+  ctx.fillStyle = style.textBgColor
+  ctx.beginPath()
+  ctx.roundRect(b.x + dx - pad, b.y + dy - pad, b.w + pad * 2, b.h + pad * 2, style.fontSize * 0.14)
+  ctx.fill()
+  ctx.restore()
+}
+
+/** 设置投影通道（offset 沿 45° 方向）；返回是否启用 */
+function applyShadow(ctx: CanvasRenderingContext2D, style: RenderStyle, alpha: number): boolean {
+  if (style.shadowAlpha <= 0.004) return false
+  ctx.shadowColor = hexToRgba(style.shadowColor, style.shadowAlpha * alpha)
+  ctx.shadowBlur = style.shadowBlur
+  ctx.shadowOffsetX = style.shadowOffset
+  ctx.shadowOffsetY = style.shadowOffset
+  return true
+}
+
+/** 设置光晕通道（无偏移的彩色辉光） */
+function applyGlow(ctx: CanvasRenderingContext2D, style: RenderStyle, glow: number): void {
+  ctx.shadowColor = style.glowColor
+  ctx.shadowBlur = glow
+  ctx.shadowOffsetX = 0
+  ctx.shadowOffsetY = 0
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, style: RenderStyle): void {
@@ -108,7 +173,7 @@ function drawMetaIntro(
   const cx = style.width / 2
   const cy = style.height / 2
   if (meta.title) {
-    ctx.font = `${style.fontWeight} ${style.fontSize * 1.1}px ${quoteFamily(style.fontFamily)}`
+    ctx.font = fontStr(style, style.fontSize * 1.1)
     ctx.fillText(meta.title, cx, cy - style.fontSize * 0.75)
   }
   if (meta.artist) {
@@ -184,15 +249,26 @@ function drawBlock(
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillStyle = style.textColor
   ctx.translate(cx + fx.dx + line.dx, cy + fx.dy + line.dy)
   if (fx.rotate !== 0) ctx.rotate(fx.rotate)
   if (fx.scale !== 1) ctx.scale(fx.scale, fx.scale)
-  ctx.globalAlpha = clamp01(fx.alpha)
   if (fx.blur > 0.3) ctx.filter = `blur(${Math.min(fx.blur, 24)}px)`
+  drawTextBg(ctx, placed, style, clamp01(fx.alpha), -cx, -cy)
+  ctx.fillStyle = style.textColor
+  ctx.globalAlpha = clamp01(fx.alpha * style.textAlpha)
+  // 阴影与光晕共用 canvas 的 shadow 通道：都开时先画带投影的一遍，再叠一遍光晕
+  const hasShadow = applyShadow(ctx, style, fx.alpha)
+  if (!hasShadow && style.halo > 0.5) applyGlow(ctx, style, style.halo)
   for (const p of placed) {
-    ctx.font = `${style.fontWeight} ${p.fontSize}px ${quoteFamily(style.fontFamily)}`
+    ctx.font = fontStr(style, p.fontSize)
     ctx.fillText(p.char.text, p.x - cx, p.y - cy)
+  }
+  if (hasShadow && style.halo > 0.5) {
+    applyGlow(ctx, style, style.halo)
+    for (const p of placed) {
+      ctx.font = fontStr(style, p.fontSize)
+      ctx.fillText(p.char.text, p.x - cx, p.y - cy)
+    }
   }
   ctx.restore()
 }
@@ -267,6 +343,8 @@ function drawLine(
   ctx.save()
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
+
+  drawTextBg(ctx, placed, style, lineAlpha, line.dx, line.dy + lineDy)
   ctx.fillStyle = style.textColor
 
   let lastVisible: PlacedChar | null = null
@@ -292,14 +370,18 @@ function drawLine(
     ctx.translate(p.x + fx.dx + line.dx, p.y + fx.dy + lineDy + line.dy)
     if (p.rotate !== 0 || fx.rotate !== 0) ctx.rotate(p.rotate + fx.rotate)
     if (fx.scale !== 1) ctx.scale(fx.scale, fx.scale)
-    ctx.globalAlpha = clamp01(alpha)
+    ctx.globalAlpha = clamp01(alpha * style.textAlpha)
     if (fx.blur > 0.3) ctx.filter = `blur(${Math.min(fx.blur, 24)}px)`
-    if (fx.glow > 0.5) {
-      ctx.shadowColor = style.glowColor
-      ctx.shadowBlur = fx.glow
-    }
-    ctx.font = `${style.fontWeight} ${p.fontSize}px ${quoteFamily(style.fontFamily)}`
+    ctx.font = fontStr(style, p.fontSize)
+    // 特效辉光与常驻光晕取较强者；阴影与光晕共用 shadow 通道，都开时画两遍
+    const glow = Math.max(fx.glow > 0.5 ? fx.glow : 0, style.halo)
+    const hasShadow = applyShadow(ctx, style, alpha)
+    if (!hasShadow && glow > 0.5) applyGlow(ctx, style, glow)
     ctx.fillText(p.char.text, 0, 0)
+    if (hasShadow && glow > 0.5) {
+      applyGlow(ctx, style, glow)
+      ctx.fillText(p.char.text, 0, 0)
+    }
     ctx.restore()
   }
 
@@ -308,7 +390,7 @@ function drawLine(
     const blink = (timeInLine / 530) % 2 < 1
     if (blink) {
       const fs = lastVisible.fontSize
-      ctx.globalAlpha = 0.85 * lineAlpha
+      ctx.globalAlpha = 0.85 * lineAlpha * style.textAlpha
       ctx.fillRect(
         lastVisible.x + line.dx + lastVisible.w / 2 + fs * 0.12,
         lastVisible.y + line.dy + lineDy - fs * 0.42,
@@ -320,10 +402,42 @@ function drawLine(
   ctx.restore()
 }
 
+/** 独立文字块：不参与歌词流，自己的起止区间内独立进退场 */
+function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, style: RenderStyle, tMs: number): void {
+  const effect = effectFor(line, style)
+  const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
+
+  if (!effect.lineTransition) {
+    drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+    return
+  }
+
+  // 停靠式特效没有"历史行"语义：作为整块用它的进场姿态演绎 enterFrom → 中心位
+  const placed = getLayout(ctx, line, style, effect.layoutVariant)
+  if (placed.length === 0) return
+  const b = measureBlock(placed, style.fontSize)
+  const args = {
+    lineId: line.id,
+    width: style.width,
+    height: style.height,
+    fontSize: style.fontSize,
+    intensity: style.intensity,
+    blocks: [{ w: b.w, h: b.h }]
+  }
+  const trans = effect.lineTransition
+  const eased = easeOutCubic(clamp01((tMs - line.start) / effect.enterDuration))
+  const fx = lerpLineFx(trans.enterFrom(args), trans.pose(0, args), eased)
+  fx.alpha *= 1 - exitP
+  fx.dy -= exitP * style.fontSize * 0.5
+  if (fx.alpha <= 0.003 || fx.scale <= 0.003) return
+  drawBlock(ctx, placed, line, style, fx)
+}
+
 /**
  * 渲染某一时刻的完整画面。纯确定性：同样输入永远画出同一帧，
  * 预览与导出共用。tMs 为项目时间轴毫秒。
  * 每行可有独立特效（line.effectId）与位置偏移（line.dx/dy）。
+ * kind='text' 的行是独立文字块，不参与当前行/停靠堆叠逻辑。
  * drawBackdrop：可选的背景视频绘制层（画在纯色/渐变之上、文字之下），
  * 由调用方提供——预览取播放中的帧，导出取精确 seek 后的帧。
  */
@@ -339,35 +453,46 @@ export function renderFrame(
   drawBackdrop?.(ctx)
   if (lines.length === 0) return
 
-  drawMetaIntro(ctx, meta, style, tMs, lines[0].start)
+  const lyric = lines.filter((l) => l.kind !== 'text')
 
-  // 当前行 = 最后一个已开始的行（lines 按 start 排序）
-  let current = -1
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].start <= tMs) current = i
-    else break
-  }
+  if (lyric.length > 0) {
+    drawMetaIntro(ctx, meta, style, tMs, lyric[0].start)
 
-  // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
-  const drawnByStack = new Set<number>()
-  if (current >= 0) {
-    const curEffect = effectFor(lines[current], style)
-    if (curEffect.lineTransition) {
-      drawLineStack(ctx, curEffect, lines, style, tMs, current, drawnByStack)
+    // 当前行 = 最后一个已开始的行（lines 按 start 排序）
+    let current = -1
+    for (let i = 0; i < lyric.length; i++) {
+      if (lyric[i].start <= tMs) current = i
+      else break
+    }
+
+    // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
+    const drawnByStack = new Set<number>()
+    if (current >= 0) {
+      const curEffect = effectFor(lyric[current], style)
+      if (curEffect.lineTransition) {
+        drawLineStack(ctx, curEffect, lyric, style, tMs, current, drawnByStack)
+      }
+    }
+
+    for (let i = 0; i < lyric.length; i++) {
+      if (drawnByStack.has(i)) continue
+      const line = lyric[i]
+      if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+      const effect = effectFor(line, style)
+      if (tMs < line.end) {
+        drawLine(ctx, effect, line, style, tMs, 1, 0)
+      } else {
+        // 默认退场：淡出 + 上浮（停靠式特效的行离开堆叠后也走这里收尾）
+        const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
+        drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+      }
     }
   }
 
-  for (let i = 0; i < lines.length; i++) {
-    if (drawnByStack.has(i)) continue
-    const line = lines[i]
+  // 独立文字块画在最上层
+  for (const line of lines) {
+    if (line.kind !== 'text') continue
     if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
-    const effect = effectFor(line, style)
-    if (tMs < line.end) {
-      drawLine(ctx, effect, line, style, tMs, 1, 0)
-    } else {
-      // 默认退场：淡出 + 上浮（停靠式特效的行离开堆叠后也走这里收尾）
-      const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
-      drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
-    }
+    drawTextBlock(ctx, line, style, tMs)
   }
 }

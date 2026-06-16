@@ -2,7 +2,16 @@ import { create } from 'zustand'
 import type { LrcLine, LrcMeta } from '../core/types'
 import { parseLrc } from '../core/lrc'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
-import { clipsDuration, normalizeLoop, shiftClip, type LoopSpec, type MediaClip } from '../core/media'
+import {
+  clampSpeed,
+  clipsDuration,
+  normalizeLoop,
+  shiftClip,
+  splitClipAt,
+  withClipDefaults,
+  type LoopSpec,
+  type MediaClip
+} from '../core/media'
 import { invalidateLayoutCache, type RenderStyle } from '../core/render'
 
 export type AspectId = '9:16' | '16:9' | '1:1'
@@ -27,6 +36,19 @@ export interface StyleState {
   effectId: string
   intensity: number
   showMeta: boolean
+  /** 文字不透明度 0–1 */
+  textAlpha: number
+  italic: boolean
+  /** 文字底色块颜色；不透明度 0 = 无底色 */
+  textBgColor: string
+  textBgAlpha: number
+  /** 常驻光晕强度 px（0 = 关），颜色用 glowColor */
+  halo: number
+  /** 阴影：不透明度 0 = 关 */
+  shadowColor: string
+  shadowAlpha: number
+  shadowBlur: number
+  shadowOffset: number
 }
 
 interface ProjectState {
@@ -47,13 +69,24 @@ interface ProjectState {
 
   loadLrc(text: string, name: string): void
   hydrate(data: { meta: LrcMeta; lines: LrcLine[]; style: StyleState; lrcName: string | null }): void
-  addClip(clip: Omit<MediaClip, 'id'>): MediaClip
+  /** 加入媒体线段；缺省字段（trim/speed/layer/变换等）自动补默认值 */
+  addClip(clip: Parameters<typeof withClipDefaults>[0]): MediaClip
   removeClip(id: number): void
   /** 媒体线段左右挪动：从拖拽起始快照平移 deltaMs */
   moveClipFrom(original: MediaClip, deltaMs: number): void
   setClipStart(id: number, startMs: number): void
   setClipLoop(id: number, loop: LoopSpec): void
+  setClipSpeed(id: number, speed: number): void
+  setClipLayer(id: number, layer: number): void
+  /** 视频画面变换：从拖拽起始快照平移 / 直接设缩放 */
+  setClipTransformFrom(original: { id: number; tx: number; ty: number }, dtx: number, dty: number): void
+  setClipScale(id: number, scale: number): void
+  /** 在 tMs 处切开线段；切点在线段外则不动。返回是否切了 */
+  splitClip(id: number, tMs: number): boolean
   setSelectedClip(id: number | null): void
+  /** 在 startMs 处加一行字幕 / 一块独立文字 */
+  addLineAt(startMs: number, kind: 'lyric' | 'text', text?: string): LrcLine
+  removeLines(ids: number[]): void
   updateLineText(id: number, text: string): void
   patchStyle(patch: Partial<StyleState>): void
   setCurrentTime(t: number): void
@@ -109,7 +142,16 @@ export const useProject = create<ProjectState>((set, get) => ({
     bgAngle: 160,
     effectId: 'pop',
     intensity: 1,
-    showMeta: true
+    showMeta: true,
+    textAlpha: 1,
+    italic: false,
+    textBgColor: '#000000',
+    textBgAlpha: 0,
+    halo: 0,
+    shadowColor: '#000000',
+    shadowAlpha: 0,
+    shadowBlur: 8,
+    shadowOffset: 4
   },
   currentTime: 0,
   playing: false,
@@ -143,7 +185,7 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   addClip(clip) {
-    const full: MediaClip = { ...clip, loop: normalizeLoop(clip.loop), id: nextClipId++ }
+    const full: MediaClip = { ...withClipDefaults(clip), id: nextClipId++ }
     set({ clips: sortClips([...get().clips, full]) })
     return full
   },
@@ -170,8 +212,80 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, loop: norm } : c)) })
   },
 
+  setClipSpeed(id, speed) {
+    const s = clampSpeed(speed)
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, speed: s } : c)) })
+  },
+
+  setClipLayer(id, layer) {
+    const l = Math.max(0, Math.round(layer))
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, layer: l } : c)) })
+  },
+
+  setClipTransformFrom(original, dtx, dty) {
+    set({
+      clips: get().clips.map((c) =>
+        c.id === original.id
+          ? { ...c, tx: Math.round(original.tx + dtx), ty: Math.round(original.ty + dty) }
+          : c
+      )
+    })
+  },
+
+  setClipScale(id, scale) {
+    const s = Math.min(10, Math.max(0.1, scale))
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, scale: s } : c)) })
+  },
+
+  splitClip(id, tMs) {
+    const st = get()
+    const clip = st.clips.find((c) => c.id === id)
+    if (!clip) return false
+    const projectEndMs = Math.max(lyricsDuration(st.lines), clipsDuration(st.clips))
+    const pieces = splitClipAt(clip, tMs, projectEndMs)
+    if (!pieces) return false
+    const withIds = pieces.map((p) => ({ ...p, id: nextClipId++ }))
+    set({
+      clips: sortClips([...st.clips.filter((c) => c.id !== id), ...withIds]),
+      // 选中切点右侧那段，方便继续操作
+      selectedClipId: withIds.find((p) => p.start === Math.round(tMs))?.id ?? withIds[0].id
+    })
+    return true
+  },
+
   setSelectedClip(id) {
     set({ selectedClipId: id, ...(id !== null ? { selectedIds: [] } : {}) })
+  },
+
+  addLineAt(startMs, kind, text) {
+    const st = get()
+    const start = Math.max(0, Math.round(startMs))
+    const end = start + (kind === 'text' ? 3000 : 2000)
+    const content = text ?? (kind === 'text' ? '文字' : '新字幕')
+    const bare: LrcLine = {
+      id: st.lines.reduce((m, l) => Math.max(m, l.id), -1) + 1,
+      start,
+      end,
+      text: '',
+      words: [],
+      effectId: null,
+      dx: 0,
+      dy: 0,
+      ...(kind === 'text' ? { kind: 'text' as const } : {})
+    }
+    const line = rebuildLineText(bare, content)
+    invalidateLayoutCache()
+    set({ lines: sortLines([...st.lines, line]), selectedIds: [line.id], selectedClipId: null })
+    return line
+  },
+
+  removeLines(ids) {
+    const idSet = new Set(ids)
+    invalidateLayoutCache()
+    set({
+      lines: get().lines.filter((l) => !idSet.has(l.id)),
+      selectedIds: get().selectedIds.filter((i) => !idSet.has(i))
+    })
   },
 
   updateLineText(id, text) {
@@ -260,6 +374,15 @@ export function toRenderStyle(style: StyleState): RenderStyle {
     bgAngle: style.bgAngle,
     effectId: style.effectId,
     intensity: style.intensity,
-    showMeta: style.showMeta
+    showMeta: style.showMeta,
+    textAlpha: style.textAlpha,
+    italic: style.italic,
+    textBgColor: style.textBgColor,
+    textBgAlpha: style.textBgAlpha,
+    halo: style.halo,
+    shadowColor: style.shadowColor,
+    shadowAlpha: style.shadowAlpha,
+    shadowBlur: style.shadowBlur,
+    shadowOffset: style.shadowOffset
   }
 }

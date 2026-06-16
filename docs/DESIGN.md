@@ -100,14 +100,23 @@ LrcChar   { text, start, end }
 
 ```
 MediaClip { id, kind: 'video'|'audio', path, name,
-            start,                ← 时间轴起点 ms
-            sourceDuration,       ← 素材时长 ms
-            loop: n | 'infinite' }← 重复次数 / 循环到项目结束
+            start,                 ← 时间轴起点 ms
+            sourceDuration,        ← 素材总时长 ms
+            sourceIn, sourceOut,   ← 源修剪区间 ms（切割产生）
+            speed,                 ← 0.25–4 倍速
+            loop: n | 'infinite',  ← 重复次数 / 循环到项目结束
+            layer,                 ← 视频层序（高层盖低层，画中画）
+            tx, ty, scale }        ← 视频画面平移/缩放（cover 适配为基准）
 ```
 
   核心是 `clipSourceTime(clip, tMs, projectEndMs)`：tMs 在线段激活窗口内时返回
-  `(tMs - start) % sourceDuration`，预览同步、导出取帧、ffmpeg 参数都从它派生。
+  `sourceIn + ((tMs - start) % segLen) × speed`（segLen = 修剪区间 ÷ speed），
+  预览同步、导出取帧、ffmpeg 参数都从它派生。
+  切割（`splitClipAt`）：循环线段先按圈展开成 loop=1 的段，再在切点把源区间一分为二。
   项目时长 = max(歌词结尾 + 2s, 有限线段最晚结束)；无限循环线段不参与时长计算。
+- 独立文字块 = `LrcLine` 加 `kind: 'text'`：复用行的全部编辑（拖动/特效/位置偏移/选区），
+  渲染时不参与歌词流（当前行扫描与停靠堆叠历史），在自己的起止区间内独立进退场；
+  停靠式特效对文字块演绎为整块 enterFrom → pose(0) 进场。
 - 工程文件 `.dlv.json` = `{ version: 2, meta, lines, style, lrcName, clips }`（媒体只存路径不内嵌）；
   v1 的 `audioPath` 载入时自动转为一条音轨线段，缺的字段自动补默认值。
 
@@ -155,10 +164,13 @@ for n in 0..totalFrames:
 exportEnd ──────────────────────▶        -t 成片时长 → mp4
 ```
 
-- **背景视频走画布**：渲染进程逐帧把 `<video>` 元素 seek 到 `clipSourceTime` 再 drawImage，
-  循环/偏移与预览同一套计算，画面所见即所得。
-- **音轨走 ffmpeg**：每条音轨一个输入，`-stream_loop`（n-1 次重复 / -1 无限）+
-  `adelay`（起点平移）+ 多条时 `amix` 混音，最后 `-t` 按成片时长截断（无限循环靠它收尾）。
+- **背景视频走画布**：渲染进程逐帧把 `<video>` 元素 seek 到 `clipSourceTime` 再按
+  层序 + 平移/缩放 drawImage，循环/修剪/变速/层叠与预览同一套计算，画面所见即所得。
+- **音轨走 ffmpeg**：每条音轨一个输入，滤镜链
+  `atrim`（修剪区间）→ `atempo` 链（变速不变调，0.25–4 分解为 ≤2 级）→
+  `aresample=48k` + `aloop`（n-1 次 / -1 无限）→ `adelay`（起点平移），
+  多条时 `amix` 混音，最后 `-t` 按成片时长截断（无限循环靠它收尾）。
+  视频文件也可直接作为音轨输入（`[i:a]` 流），即「提取音频」。
 
 时长 = max(歌词结尾 + 2s, 有限媒体线段最晚结束)。GUI 导出弹窗与无头模式共用 `runExport`。
 
@@ -183,7 +195,7 @@ dynamic-caption.exe --export job.json
 | `video` | | 背景视频：写法同 `audio`，cover 铺满画布，文字画在其上 |
 | `duration` | | 成片时长（秒）；缺省按歌词与有限媒体线段推算 |
 | `fps` | | 10–60，默认 30 |
-| `style` | | 覆盖默认样式：`aspect`（"9:16"/"16:9"/"1:1"）、`effectId`（全局默认特效）、`fontFamily`、`fontSize`、`textColor`、`bgType`/`bgFrom`/`bgTo`/`bgAngle`、`intensity`、`showMeta` 等 |
+| `style` | | 覆盖默认样式：`aspect`（"9:16"/"16:9"/"1:1"）、`effectId`（全局默认特效）、`fontFamily`、`fontSize`、`fontWeight`、`italic`、`textColor`、`textAlpha`、`textBgColor`/`textBgAlpha`（字幕底色）、`halo`/`glowColor`（光晕）、`shadowColor`/`shadowAlpha`/`shadowBlur`/`shadowOffset`（阴影）、`bgType`/`bgFrom`/`bgTo`/`bgAngle`、`intensity`、`showMeta` 等 |
 | `lineEffects` | | 行级特效：`{"0-7": "rise", "9": "punch"}`，键为行序号或区间，值为特效 id |
 
 特效 id：`pop` `punch` `slide` `typewriter` `glow` `flip` `flip-bottom` `rise`。

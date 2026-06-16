@@ -3,10 +3,13 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { once } from 'events'
 import ffmpegPath from 'ffmpeg-static'
 
-/** 导出用音轨线段：路径 + 时间轴起点 + 循环（'infinite' = 循环到视频结束） */
+/** 导出用音轨线段（含修剪/变速/循环），与渲染进程的 MediaClip 字段对应 */
 export interface ExportAudioClip {
   path: string
   startMs: number
+  sourceInMs: number
+  sourceOutMs: number
+  speed: number
   loop: number | 'infinite'
 }
 
@@ -23,6 +26,46 @@ export interface ExportOptions {
 let proc: ChildProcessWithoutNullStreams | null = null
 let stderrTail = ''
 
+/** 变速 → atempo 链：atempo 单级限 [0.5, 2]，超出的分解成多级（0.25–4 至多两级） */
+function atempoChain(speed: number): string[] {
+  const chain: string[] = []
+  let f = speed
+  while (f > 2) {
+    chain.push('atempo=2')
+    f /= 2
+  }
+  while (f < 0.5) {
+    chain.push('atempo=0.5')
+    f /= 0.5
+  }
+  if (Math.abs(f - 1) > 1e-6) chain.push(`atempo=${f.toFixed(6)}`)
+  return chain
+}
+
+const AUDIO_RATE = 48000
+
+/**
+ * 单条音轨的滤镜链：
+ * atrim 取修剪区间 → atempo 变速 → aloop 循环（统一重采样到 48k 定采样数）
+ * → adelay 平移到时间轴起点。
+ */
+function audioClipFilter(clip: ExportAudioClip, inputIdx: number, label: string): string {
+  const steps: string[] = [
+    `atrim=start=${(clip.sourceInMs / 1000).toFixed(3)}:end=${(clip.sourceOutMs / 1000).toFixed(3)}`,
+    'asetpts=PTS-STARTPTS',
+    ...atempoChain(clip.speed),
+    `aresample=${AUDIO_RATE}`
+  ]
+  if (clip.loop === 'infinite' || clip.loop > 1) {
+    const segSec = (clip.sourceOutMs - clip.sourceInMs) / 1000 / clip.speed
+    const size = Math.ceil(segSec * AUDIO_RATE)
+    const loops = clip.loop === 'infinite' ? -1 : clip.loop - 1
+    steps.push(`aloop=loop=${loops}:size=${size}`)
+  }
+  steps.push(`adelay=${Math.max(0, Math.round(clip.startMs))}:all=1`)
+  return `[${inputIdx}:a]${steps.join(',')}${label}`
+}
+
 function buildArgs(o: ExportOptions): string[] {
   const args = [
     '-y',
@@ -32,19 +75,13 @@ function buildArgs(o: ExportOptions): string[] {
     '-r', String(o.fps),
     '-i', 'pipe:0'
   ]
-  // 每条音轨一个输入：-stream_loop 负责重复（-1 = 无限，靠输出端 -t 截断）
   for (const clip of o.audioClips) {
-    const loops = clip.loop === 'infinite' ? -1 : Math.max(0, Math.round(clip.loop) - 1)
-    args.push('-stream_loop', String(loops), '-i', clip.path)
+    args.push('-i', clip.path)
   }
   args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p')
   if (o.audioClips.length > 0) {
-    // adelay 把每条音轨平移到自己的起点，多条时 amix 混音
-    const delayed = o.audioClips.map((clip, i) => {
-      const d = Math.max(0, Math.round(clip.startMs))
-      return `[${i + 1}:a]adelay=${d}:all=1[a${i}]`
-    })
-    let filter = delayed.join(';')
+    const parts = o.audioClips.map((clip, i) => audioClipFilter(clip, i + 1, `[a${i}]`))
+    let filter = parts.join(';')
     let outLabel = '[a0]'
     if (o.audioClips.length > 1) {
       const inputs = o.audioClips.map((_c, i) => `[a${i}]`).join('')
@@ -60,7 +97,26 @@ function buildArgs(o: ExportOptions): string[] {
   return args
 }
 
+/** 用 ffmpeg -i 探测文件是否含音频流（视频提取音频前校验） */
+function probeHasAudio(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (!ffmpegPath) {
+      resolve(false)
+      return
+    }
+    const p = spawn(ffmpegPath as string, ['-hide_banner', '-i', path], { windowsHide: true })
+    let err = ''
+    p.stderr.on('data', (d: Buffer) => {
+      err += d.toString()
+    })
+    p.on('close', () => resolve(/Stream #\d+:\d+.*Audio/.test(err)))
+    p.on('error', () => resolve(false))
+  })
+}
+
 export function registerExportHandlers(): void {
+  ipcMain.handle('media:hasAudio', (_e, path: string) => probeHasAudio(path))
+
   ipcMain.handle('export:start', (_e, opts: ExportOptions) => {
     if (proc) throw new Error('已有导出任务在进行中')
     if (!ffmpegPath) throw new Error('未找到 ffmpeg 可执行文件')

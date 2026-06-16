@@ -122,12 +122,34 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label className="row">
+          粗体
+          <input
+            type="checkbox"
+            checked={style.fontWeight >= 600}
+            onChange={(e) => patchStyle({ fontWeight: e.target.checked ? 700 : 400 })}
+          />
+        </label>
+        <label className="row">
+          斜体
+          <input
+            type="checkbox"
+            checked={style.italic}
+            onChange={(e) => patchStyle({ italic: e.target.checked })}
+          />
+        </label>
+        <label className="row">
           文字颜色
           <input type="color" value={style.textColor} onChange={(e) => patchStyle({ textColor: e.target.value })} />
         </label>
-        <label className="row">
-          辉光颜色
-          <input type="color" value={style.glowColor} onChange={(e) => patchStyle({ glowColor: e.target.value })} />
+        <label>
+          文字不透明度 {Math.round(style.textAlpha * 100)}%
+          <input
+            type="range"
+            min={10}
+            max={100}
+            value={Math.round(style.textAlpha * 100)}
+            onChange={(e) => patchStyle({ textAlpha: Number(e.target.value) / 100 })}
+          />
         </label>
         <label className="row">
           片头显示歌名
@@ -137,6 +159,86 @@ export function StylePanel(): React.JSX.Element {
             onChange={(e) => patchStyle({ showMeta: e.target.checked })}
           />
         </label>
+      </section>
+
+      <section>
+        <h3>字幕底色与描影</h3>
+        <label>
+          底色不透明度 {Math.round(style.textBgAlpha * 100)}%{style.textBgAlpha === 0 ? '（无底色）' : ''}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(style.textBgAlpha * 100)}
+            onChange={(e) => patchStyle({ textBgAlpha: Number(e.target.value) / 100 })}
+          />
+        </label>
+        {style.textBgAlpha > 0 && (
+          <label className="row">
+            底色颜色
+            <input
+              type="color"
+              value={style.textBgColor}
+              onChange={(e) => patchStyle({ textBgColor: e.target.value })}
+            />
+          </label>
+        )}
+        <label>
+          光晕强度 {style.halo}px{style.halo === 0 ? '（关）' : ''}
+          <input
+            type="range"
+            min={0}
+            max={40}
+            value={style.halo}
+            onChange={(e) => patchStyle({ halo: Number(e.target.value) })}
+          />
+        </label>
+        <label className="row">
+          光晕/辉光颜色
+          <input type="color" value={style.glowColor} onChange={(e) => patchStyle({ glowColor: e.target.value })} />
+        </label>
+        <label>
+          阴影不透明度 {Math.round(style.shadowAlpha * 100)}%{style.shadowAlpha === 0 ? '（关）' : ''}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(style.shadowAlpha * 100)}
+            onChange={(e) => patchStyle({ shadowAlpha: Number(e.target.value) / 100 })}
+          />
+        </label>
+        {style.shadowAlpha > 0 && (
+          <>
+            <label className="row">
+              阴影颜色
+              <input
+                type="color"
+                value={style.shadowColor}
+                onChange={(e) => patchStyle({ shadowColor: e.target.value })}
+              />
+            </label>
+            <label>
+              阴影偏移 {style.shadowOffset}px
+              <input
+                type="range"
+                min={0}
+                max={20}
+                value={style.shadowOffset}
+                onChange={(e) => patchStyle({ shadowOffset: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              阴影模糊 {style.shadowBlur}px
+              <input
+                type="range"
+                min={0}
+                max={30}
+                value={style.shadowBlur}
+                onChange={(e) => patchStyle({ shadowBlur: Number(e.target.value) })}
+              />
+            </label>
+          </>
+        )}
       </section>
 
       <section>

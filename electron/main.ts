@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
-import { access, readFile, writeFile } from 'fs/promises'
-import { basename, join } from 'path'
-import { pathToFileURL } from 'url'
+import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
+import { createReadStream } from 'fs'
+import { access, readFile, stat, writeFile } from 'fs/promises'
+import { basename, extname, join } from 'path'
+import { Readable } from 'stream'
 import { registerExportHandlers } from './exporter'
 import { parseExportArg, prepareJob, registerHeadlessHandlers } from './headless'
 import { readLrcText } from './lrcFile'
@@ -15,11 +16,50 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'media', privileges: { stream: true, supportFetchAPI: true, bypassCSP: true } }
 ])
 
-/** media:///D:/dir/a.mp4 → 按本地文件流式响应 */
+const MEDIA_MIME: Record<string, string> = {
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
+  '.avi': 'video/x-msvideo',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg'
+}
+
+/**
+ * media:///D:/dir/a.mp4 → 按本地文件流式响应。
+ * 必须自己实现 Range（206）：<video> seek 到任意位置全靠它，
+ * 不支持的话播放头一离开文件开头解码器就卡死在 seeking。
+ */
 function registerMediaProtocol(): void {
-  protocol.handle('media', (req) => {
-    const pathname = decodeURIComponent(new URL(req.url).pathname).replace(/^\//, '')
-    return net.fetch(pathToFileURL(pathname).toString(), { headers: req.headers })
+  protocol.handle('media', async (req) => {
+    try {
+      const path = decodeURIComponent(new URL(req.url).pathname).replace(/^\//, '')
+      const { size } = await stat(path)
+      const mime = MEDIA_MIME[extname(path).toLowerCase()] ?? 'application/octet-stream'
+      const range = req.headers.get('range')?.match(/bytes=(\d+)-(\d*)/)
+      const start = range ? Number(range[1]) : 0
+      const end = range?.[2] ? Math.min(Number(range[2]), size - 1) : size - 1
+      if (start >= size) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+      }
+      const stream = Readable.toWeb(createReadStream(path, { start, end })) as ReadableStream
+      return new Response(stream, {
+        status: range ? 206 : 200,
+        headers: {
+          'Content-Type': mime,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': String(end - start + 1),
+          ...(range ? { 'Content-Range': `bytes ${start}-${end}/${size}` } : {})
+        }
+      })
+    } catch {
+      return new Response(null, { status: 404 })
+    }
   })
 }
 

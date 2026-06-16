@@ -37,7 +37,14 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
   const videoClips = o.clips.filter((c) => c.kind === 'video')
   const audioClips = o.clips
     .filter((c) => c.kind === 'audio')
-    .map((c) => ({ path: c.path, startMs: c.start, loop: c.loop }))
+    .map((c) => ({
+      path: c.path,
+      startMs: c.start,
+      sourceInMs: c.sourceIn,
+      sourceOutMs: c.sourceOut,
+      speed: c.speed,
+      loop: c.loop
+    }))
 
   // 导出期间预览不在播放，确保元素都停住，只按帧 seek
   pauseAllMedia()

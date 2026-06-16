@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useProject, getProjectDuration } from '../store/project'
 import { getEffect } from '../core/effects'
-import { clipEnd, type MediaClip } from '../core/media'
+import { clipEnd, clipSegmentMs, MAX_SPEED, MIN_SPEED, type MediaClip } from '../core/media'
 import { seek } from '../playback'
 import type { LrcLine } from '../core/types'
 
@@ -21,6 +21,11 @@ const CLIP_COLORS: Record<MediaClip['kind'], string> = {
   video: '#f97316',
   audio: '#22c55e'
 }
+const TEXT_COLOR = '#eab308'
+
+/** 媒体轨一行的高度（含 4px 间距），竖向拖动换层按它换算 */
+const MEDIA_ROW_H = 34
+const MAX_LAYER = 4
 
 const TRIM_MODES = ['trim-l', 'trim-r'] as const
 type DragMode = 'move' | (typeof TRIM_MODES)[number]
@@ -71,7 +76,7 @@ function Playhead({
   return <div className="tl-playhead" style={{ left: x }} />
 }
 
-/** 媒体线段（视频/音频轨）：拖动挪起点，点击选中 */
+/** 媒体线段（视频/音频轨）：横向拖动挪起点，视频可竖向拖动换层 */
 function ClipSegment({
   clip,
   pxPerSec,
@@ -86,13 +91,16 @@ function ClipSegment({
   const endMs = clipEnd(clip, durationMs)
   const left = (clip.start / 1000) * pxPerSec
   const width = Math.max(((endMs - clip.start) / 1000) * pxPerSec, 14)
-  // 循环边界刻线：每个 sourceDuration 一道
-  const period = (clip.sourceDuration / 1000) * pxPerSec
+  // 循环边界刻线：每圈一道
+  const period = (clipSegmentMs(clip) / 1000) * pxPerSec
   const loopMarks =
     (clip.loop === 'infinite' || clip.loop > 1) && period > 6
       ? `repeating-linear-gradient(to right, transparent 0, transparent ${period - 1.5}px, ${color}aa ${period - 1.5}px, ${color}aa ${period}px)`
       : undefined
-  const loopLabel = clip.loop === 'infinite' ? '∞' : clip.loop > 1 ? `×${clip.loop}` : ''
+  const badges: string[] = []
+  if (clip.loop === 'infinite') badges.push('∞')
+  else if (clip.loop > 1) badges.push(`×${clip.loop}`)
+  if (clip.speed !== 1) badges.push(`${clip.speed}x`)
 
   const onMouseDown = (e: React.MouseEvent): void => {
     if (e.button !== 0) return
@@ -101,15 +109,29 @@ function ClipSegment({
     st.setSelectedClip(clip.id)
     const original = { ...clip }
     const startClientX = e.clientX
+    const startClientY = e.clientY
+    // 点击点对应的时间（线段左缘 = clip.start），纯点击时把播放头移到这里
+    const segRect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const clickTime = clip.start / 1000 + (e.clientX - segRect.left) / pxPerSec
     let moved = false
     const onMove = (ev: MouseEvent): void => {
       const deltaPx = ev.clientX - startClientX
-      if (Math.abs(deltaPx) > 3) moved = true
+      const deltaPy = ev.clientY - startClientY
+      if (Math.abs(deltaPx) > 3 || Math.abs(deltaPy) > 3) moved = true
       if (!moved) return
       useProject.getState().moveClipFrom(original, (deltaPx / pxPerSec) * 1000)
+      // 视频竖向拖换层：界面上层在上方，往上拖 = 层序加大
+      if (clip.kind === 'video') {
+        const layerDelta = -Math.round(deltaPy / MEDIA_ROW_H)
+        const layer = Math.min(MAX_LAYER, Math.max(0, original.layer + layerDelta))
+        if (layer !== useProject.getState().clips.find((c) => c.id === clip.id)?.layer) {
+          useProject.getState().setClipLayer(clip.id, layer)
+        }
+      }
     }
     const onUp = (): void => {
-      if (!moved) seek(clip.start / 1000) // 纯点击：播放头跳到线段开头
+      // 纯点击：把播放头移到点击处并刷新画面（拖动过则不跳）
+      if (!moved) seek(clickTime)
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
@@ -127,27 +149,60 @@ function ClipSegment({
         background: `${color}2e`,
         backgroundImage: loopMarks
       }}
-      title={`${clip.name}\n${clip.kind === 'video' ? '背景视频' : '音轨'} · ${
+      title={`${clip.name}\n${clip.kind === 'video' ? `背景视频 · 第 ${clip.layer + 1} 层` : '音轨'} · ${
         clip.loop === 'infinite' ? '无限循环' : `重复 ${clip.loop} 次`
-      }`}
+      }${clip.speed !== 1 ? ` · ${clip.speed} 倍速` : ''}${clip.kind === 'video' ? '\n竖向拖动换层' : ''}`}
       onMouseDown={onMouseDown}
     >
       <span className="tl-clip-icon">{clip.kind === 'video' ? '🎬' : '🎵'}</span>
       <span className="tl-seg-text">{clip.name}</span>
-      {loopLabel && (
+      {badges.length > 0 && (
         <span className="tl-clip-loop" style={{ color }}>
-          {loopLabel}
+          {badges.join(' ')}
         </span>
       )}
     </div>
   )
 }
 
-/** 选中媒体线段时的工具条控件：起点 / 循环次数 / 无限循环 / 删除 */
+/** 选中媒体线段时的工具条控件：切割/起点/循环/速度/提取音频/缩放/删除 */
 function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
-  const st = (): ReturnType<typeof useProject.getState> => useProject.getState()
+  const st = useProject.getState
+
+  const splitAtPlayhead = (): void => {
+    const ok = st().splitClip(clip.id, st().currentTime * 1000)
+    if (!ok) alert('播放头不在该线段内部，无法切割')
+  }
+
+  const extractAudio = async (): Promise<void> => {
+    const has = await window.desktop.mediaHasAudio(clip.path)
+    if (!has) {
+      alert('该视频不包含音频流')
+      return
+    }
+    const audio = st().addClip({
+      kind: 'audio',
+      path: clip.path,
+      name: `${clip.name.replace(/\.[^.]+$/, '')}·音频`,
+      start: clip.start,
+      sourceDuration: clip.sourceDuration,
+      sourceIn: clip.sourceIn,
+      sourceOut: clip.sourceOut,
+      speed: clip.speed,
+      loop: clip.loop,
+      layer: 0,
+      tx: 0,
+      ty: 0,
+      scale: 1
+    })
+    st().setSelectedClip(audio.id)
+  }
+
   return (
     <span className="tl-times">
+      <button className="btn btn-sm" onClick={splitAtPlayhead} title="在红色播放头位置把线段切成两段">
+        ✂ 切割
+      </button>
       <label>
         开始
         <input
@@ -177,8 +232,56 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
           checked={clip.loop === 'infinite'}
           onChange={(e) => st().setClipLoop(clip.id, e.target.checked ? 'infinite' : 1)}
         />
-        无限循环
+        ∞
       </label>
+      <label title="播放速度（音轨导出时变速不变调）">
+        速度 {clip.speed}x
+        <input
+          type="range"
+          min={MIN_SPEED}
+          max={MAX_SPEED}
+          step={0.25}
+          value={clip.speed}
+          onChange={(e) => st().setClipSpeed(clip.id, Number(e.target.value))}
+        />
+      </label>
+      {clip.kind === 'video' && (
+        <>
+          <label className="tl-layer-ctl" title="图层：高层画面盖在低层上（画中画）。也可在时间轴上竖向拖动线段换层">
+            图层 {clip.layer + 1}
+            <button
+              className="btn btn-sm"
+              disabled={clip.layer >= MAX_LAYER}
+              onClick={() => st().setClipLayer(clip.id, clip.layer + 1)}
+              title="上移一层"
+            >
+              ▲
+            </button>
+            <button
+              className="btn btn-sm"
+              disabled={clip.layer <= 0}
+              onClick={() => st().setClipLayer(clip.id, clip.layer - 1)}
+              title="下移一层"
+            >
+              ▼
+            </button>
+          </label>
+          <label title="画面缩放（以铺满画布为 1.0），画布上拖动可平移画面">
+            缩放 {clip.scale.toFixed(2)}
+            <input
+              type="range"
+              min={0.2}
+              max={3}
+              step={0.05}
+              value={clip.scale}
+              onChange={(e) => st().setClipScale(clip.id, Number(e.target.value))}
+            />
+          </label>
+          <button className="btn btn-sm" onClick={() => void extractAudio()} title="把视频的音频抽取成一条音轨线段">
+            提取音频
+          </button>
+        </>
+      )}
       <button className="btn btn-sm" onClick={() => st().removeClip(clip.id)}>
         删除
       </button>
@@ -195,6 +298,44 @@ export function Timeline(): React.JSX.Element {
   const [pxPerSec, setPxPerSec] = useState(60)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
+  const pxPerSecRef = useRef(pxPerSec)
+  // 缩放后保持光标下时间点不动：记录锚点，待 DOM 用新刻度重排后再校正 scrollLeft
+  const zoomAnchorRef = useRef<{ timeAtCursor: number; offsetX: number } | null>(null)
+
+  useEffect(() => {
+    pxPerSecRef.current = pxPerSec
+  }, [pxPerSec])
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const a = zoomAnchorRef.current
+    if (el && a) {
+      el.scrollLeft = a.timeAtCursor * pxPerSec - a.offsetX
+      zoomAnchorRef.current = null
+    }
+  }, [pxPerSec])
+
+  // 时间轴内滚轮缩放 + 触控板双指捏合缩放（捏合 = ctrlKey 的 wheel）；横向滑动仍可滚动
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent): void => {
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // 横向滑动：交给原生滚动
+      e.preventDefault()
+      const rect = el.getBoundingClientRect()
+      const offsetX = e.clientX - rect.left
+      const old = pxPerSecRef.current
+      const k = e.ctrlKey ? 0.012 : 0.0018 // 捏合更灵敏
+      const next = Math.min(300, Math.max(12, old * Math.exp(-e.deltaY * k)))
+      if (next === old) return
+      zoomAnchorRef.current = { timeAtCursor: (offsetX + el.scrollLeft) / old, offsetX }
+      pxPerSecRef.current = next
+      setPxPerSec(next)
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+    // 内容从无到有时时间轴才挂载 scrollRef，需在此时重挂滚轮监听
+  }, [lines.length === 0 && clips.length === 0])
 
   const duration = getProjectDuration({ lines, clips })
   const durationMs = duration * 1000
@@ -203,14 +344,30 @@ export function Timeline(): React.JSX.Element {
   const ticks: number[] = []
   for (let s = 0; s <= duration; s += step) ticks.push(s)
 
+  // 视频按层分行（高层在上），最上方再留一条空图层轨作为「叠加新层」的拖放目标
   const videoClips = clips.filter((c) => c.kind === 'video')
   const audioClips = clips.filter((c) => c.kind === 'audio')
+  const maxVideoLayer = videoClips.reduce((m, c) => Math.max(m, c.layer), 0)
+  const videoRows: { layer: number; clips: MediaClip[] }[] = []
+  if (videoClips.length > 0) {
+    const top = Math.min(MAX_LAYER, maxVideoLayer + 1) // 顶部空轨
+    for (let l = top; l >= 0; l--) {
+      videoRows.push({ layer: l, clips: videoClips.filter((c) => c.layer === l) })
+    }
+  }
+  const lyricLines = lines.filter((l) => l.kind !== 'text')
+  const textBlocks = lines.filter((l) => l.kind === 'text')
 
   const zoom = (factor: number): void => {
     setPxPerSec((v) => Math.min(300, Math.max(12, v * factor)))
   }
 
-  /* ---- 歌词线段拖拽：移动 / 边缘微调 ---- */
+  const addAtPlayhead = (kind: 'lyric' | 'text'): void => {
+    const st = useProject.getState()
+    st.addLineAt(st.currentTime * 1000, kind)
+  }
+
+  /* ---- 歌词/文字线段拖拽：移动 / 边缘微调 ---- */
   const onSegmentMouseDown = (e: React.MouseEvent, line: LrcLine, mode: DragMode): void => {
     if (e.button !== 0) return
     e.stopPropagation()
@@ -259,12 +416,12 @@ export function Timeline(): React.JSX.Element {
     window.addEventListener('mouseup', onUp)
   }
 
-  /* ---- 空白处按下：定位播放头（拖动连续刷），并清除选区 ---- */
-  const onTrackMouseDown = (e: React.MouseEvent): void => {
+  /** 按下后拖动连续移动播放头；clearSel 决定是否同时清除选区 */
+  const startScrub = (e: React.MouseEvent, clearSel: boolean): void => {
     if (e.button !== 0) return
     const el = scrollRef.current
     if (!el) return
-    useProject.getState().clearSelection()
+    if (clearSel) useProject.getState().clearSelection()
     const toTime = (clientX: number): number => {
       const rect = el.getBoundingClientRect()
       return Math.max(0, (clientX - rect.left + el.scrollLeft) / pxPerSec)
@@ -277,6 +434,44 @@ export function Timeline(): React.JSX.Element {
     }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
+  }
+
+  /* 空白轨道：定位播放头并清除选区（点空白 = 取消选择） */
+  const onTrackMouseDown = (e: React.MouseEvent): void => startScrub(e, true)
+  /* 顶部刻度尺：定位播放头但保留选区（选中线段后仍可在此挪红轴，便于切割等） */
+  const onRulerMouseDown = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    startScrub(e, false)
+  }
+
+  const renderLineSegment = (line: LrcLine): React.JSX.Element => {
+    const isText = line.kind === 'text'
+    const effId = line.effectId ?? globalEffectId
+    const color = isText ? TEXT_COLOR : (EFFECT_COLORS[effId] ?? '#6366f1')
+    const sel = selectedIds.includes(line.id)
+    return (
+      <div
+        key={line.id}
+        className={`tl-seg${sel ? ' selected' : ''}`}
+        style={{
+          left: (line.start / 1000) * pxPerSec,
+          width: Math.max(((line.end - line.start) / 1000) * pxPerSec, 14),
+          borderColor: color,
+          background: `${color}2e`
+        }}
+        title={`${line.text}\n${getEffect(effId).name}${line.effectId ? '' : '（全局默认）'}`}
+        onMouseDown={(e) => onSegmentMouseDown(e, line, 'move')}
+      >
+        <div className="tl-handle l" onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-l')} />
+        <span className="tl-seg-text">
+          {isText ? `📝 ${line.text}` : line.text || '（间奏）'}
+        </span>
+        <span className="tl-seg-fx" style={{ color }}>
+          {getEffect(effId).name}
+        </span>
+        <div className="tl-handle r" onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-r')} />
+      </div>
+    )
   }
 
   const selectedLine = selectedIds.length === 1 ? lines.find((l) => l.id === selectedIds[0]) : undefined
@@ -293,16 +488,21 @@ export function Timeline(): React.JSX.Element {
   return (
     <div className="timeline">
       <div className="tl-toolbar">
-        <button className="btn btn-sm" onClick={() => useProject.getState().selectAll()}>
-          全选
+        <button className="btn btn-sm" onClick={() => addAtPlayhead('lyric')} title="在播放头处加一句字幕（2 秒，双击左侧列表改文字）">
+          + 字幕
         </button>
-        <button
-          className="btn btn-sm"
-          disabled={selectedIds.length === 0 && selectedClipId === null}
-          onClick={() => useProject.getState().clearSelection()}
-        >
-          取消选择
+        <button className="btn btn-sm" onClick={() => addAtPlayhead('text')} title="在播放头处加一块独立文字（3 秒，可选特效，不参与歌词流）">
+          + 文字
         </button>
+        {selectedIds.length > 0 && (
+          <button
+            className="btn btn-sm"
+            onClick={() => useProject.getState().removeLines(useProject.getState().selectedIds)}
+            title="删除选中的字幕/文字（Delete 键同效）"
+          >
+            删除选中
+          </button>
+        )}
         <span className="hint">
           {selectedClip
             ? `${selectedClip.kind === 'video' ? '背景视频' : '音轨'} · ${selectedClip.name}`
@@ -354,20 +554,26 @@ export function Timeline(): React.JSX.Element {
 
       <div className="tl-scroll" ref={scrollRef}>
         <div className="tl-inner" style={{ width: innerWidth }} onMouseDown={onTrackMouseDown}>
-          <div className="tl-ruler">
+          <div className="tl-ruler" onMouseDown={onRulerMouseDown}>
             {ticks.map((s) => (
               <span key={s} className="tl-tick" style={{ left: s * pxPerSec }}>
                 {fmt(s)}
               </span>
             ))}
           </div>
-          {videoClips.length > 0 && (
-            <div className="tl-mediatrack">
-              {videoClips.map((c) => (
+          {videoRows.map((row) => (
+            <div
+              className={`tl-mediatrack tl-videolayer${row.clips.length === 0 ? ' empty' : ''}`}
+              key={`v${row.layer}`}
+            >
+              <span className="tl-layer-label">
+                {row.clips.length === 0 ? `图层 ${row.layer + 1}（拖视频到此叠加）` : `图层 ${row.layer + 1}`}
+              </span>
+              {row.clips.map((c) => (
                 <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
               ))}
             </div>
-          )}
+          ))}
           {audioClips.length > 0 && (
             <div className="tl-mediatrack">
               {audioClips.map((c) => (
@@ -375,40 +581,10 @@ export function Timeline(): React.JSX.Element {
               ))}
             </div>
           )}
-          <div className="tl-track">
-            {lines.map((line) => {
-              const effId = line.effectId ?? globalEffectId
-              const color = EFFECT_COLORS[effId] ?? '#6366f1'
-              const sel = selectedIds.includes(line.id)
-              return (
-                <div
-                  key={line.id}
-                  className={`tl-seg${sel ? ' selected' : ''}`}
-                  style={{
-                    left: (line.start / 1000) * pxPerSec,
-                    width: Math.max(((line.end - line.start) / 1000) * pxPerSec, 14),
-                    borderColor: color,
-                    background: `${color}2e`
-                  }}
-                  title={`${line.text}\n${getEffect(effId).name}${line.effectId ? '' : '（全局默认）'}`}
-                  onMouseDown={(e) => onSegmentMouseDown(e, line, 'move')}
-                >
-                  <div
-                    className="tl-handle l"
-                    onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-l')}
-                  />
-                  <span className="tl-seg-text">{line.text || '（间奏）'}</span>
-                  <span className="tl-seg-fx" style={{ color }}>
-                    {getEffect(effId).name}
-                  </span>
-                  <div
-                    className="tl-handle r"
-                    onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-r')}
-                  />
-                </div>
-              )
-            })}
-          </div>
+          {textBlocks.length > 0 && (
+            <div className="tl-texttrack">{textBlocks.map(renderLineSegment)}</div>
+          )}
+          <div className="tl-track">{lyricLines.map(renderLineSegment)}</div>
           <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} />
         </div>
       </div>

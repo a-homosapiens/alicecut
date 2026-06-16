@@ -9,6 +9,9 @@ const path = require('path')
 
 const FONTS_DIR = path.join(__dirname, '..', 'public', 'fonts')
 
+/** wordshub/free-font 仓库（免费商用字体合集）里的文件 → raw 下载地址 */
+const FREE_FONT_RAW = 'https://raw.githubusercontent.com/wordshub/free-font/master/assets/font/'
+
 const FONTS = [
   {
     name: '霞鹜文楷 LXGW WenKai（SIL OFL）',
@@ -20,6 +23,64 @@ const FONTS = [
     file: 'SmileySans-Oblique.ttf',
     url: 'https://github.com/atelier-anchor/smiley-sans/releases/download/v2.0.1/smiley-sans-v2.0.1.zip',
     zipEntry: 'SmileySans-Oblique.ttf'
+  },
+  // ---- 庞门正道系列（免费商用） ----
+  {
+    name: '庞门正道标题体',
+    file: 'PangmenZhengdaoBiaoti.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/庞门正道字体系列/庞门正道标题体.ttf')
+  },
+  {
+    name: '庞门正道粗书体',
+    file: 'PangmenZhengdaoCushu.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/庞门正道字体系列/庞门正道粗书体.ttf')
+  },
+  {
+    name: '庞门正道轻松体',
+    file: 'PangmenZhengdaoQingsong.otf',
+    url: FREE_FONT_RAW + encodeURI('中文/庞门正道字体系列/庞门正道轻松体.otf')
+  },
+  // ---- 站酷系列（免费商用） ----
+  {
+    name: '站酷高端黑',
+    file: 'ZcoolGaoduanhei.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/站酷字体系列/ 站酷高端黑.ttf') // 仓库里文件名带前导空格
+  },
+  {
+    name: '站酷酷黑体',
+    file: 'ZcoolKuhei.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/站酷字体系列/站酷酷黑体.ttf')
+  },
+  {
+    name: '站酷快乐体',
+    file: 'ZcoolKuaile.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/站酷字体系列/站酷快乐体.ttf')
+  },
+  {
+    name: '站酷文艺体',
+    file: 'ZcoolWenyi.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/站酷字体系列/站酷文艺体.ttf')
+  },
+  {
+    name: '站酷小薇LOGO体',
+    file: 'ZcoolXiaoweiLogo.otf',
+    url: FREE_FONT_RAW + encodeURI('中文/站酷字体系列/站酷小薇LOGO体.otf')
+  },
+  {
+    name: '站酷庆科黄油体',
+    file: 'ZcoolQingkeHuangyou.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/站酷字体系列/站酷庆科黄油体.ttf')
+  },
+  // ---- 其他免费商用 ----
+  {
+    name: '江西拙楷',
+    file: 'JiangxiZhuokai.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/其他字体/江西拙楷.ttf')
+  },
+  {
+    name: '锐字真言体',
+    file: 'RuiziZhenyan.ttf',
+    url: FREE_FONT_RAW + encodeURI('中文/其他字体/锐字真言体.ttf')
   }
 ]
 

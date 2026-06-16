@@ -29,12 +29,20 @@ const api = {
     ipcRenderer.invoke('file:saveProject', json, defaultName),
   openProject: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openProject'),
   fileExists: (path: string): Promise<boolean> => ipcRenderer.invoke('file:exists', path),
+  mediaHasAudio: (path: string): Promise<boolean> => ipcRenderer.invoke('media:hasAudio', path),
 
   exportStart: (opts: {
     width: number
     height: number
     fps: number
-    audioClips: { path: string; startMs: number; loop: number | 'infinite' }[]
+    audioClips: {
+      path: string
+      startMs: number
+      sourceInMs: number
+      sourceOutMs: number
+      speed: number
+      loop: number | 'infinite'
+    }[]
     durationSec: number
     outPath: string
   }): Promise<void> => ipcRenderer.invoke('export:start', opts),

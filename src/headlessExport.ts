@@ -51,8 +51,28 @@ export async function runHeadlessJob(job: HeadlessJobPayload): Promise<void> {
         name: c.name,
         start: c.startMs,
         sourceDuration,
-        loop: c.loop
+        sourceIn: c.sourceInMs,
+        sourceOut: Math.min(c.sourceOutMs ?? sourceDuration, sourceDuration),
+        speed: c.speed,
+        loop: c.loop,
+        layer: c.layer,
+        tx: c.tx,
+        ty: c.ty,
+        scale: c.scale
       })
+    }
+
+    // 独立文字块
+    for (const t of job.texts) {
+      const line = useProject.getState().addLineAt(t.start * 1000, 'text', t.text)
+      useProject.getState().retimeLineFrom(line, t.start * 1000, t.end * 1000)
+      if (t.effect) {
+        if (!knownIds.has(t.effect)) log(`警告：texts 特效 "${t.effect}" 未知，回退默认特效`)
+        useProject.getState().setLineEffect([line.id], t.effect)
+      }
+      if (t.x || t.y) {
+        useProject.getState().setLineOffsetsFrom([{ id: line.id, dx: 0, dy: 0 }], t.x ?? 0, t.y ?? 0)
+      }
     }
 
     const state = useProject.getState()
