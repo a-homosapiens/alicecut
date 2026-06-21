@@ -95,6 +95,43 @@ Notes:
 - These fields are static — they add no executable surface, so they pass the
   isolation gate untouched.
 
+### 3.2 Whole-line docking transitions (`lineTransitions`)
+
+For transitions where the **whole line** moves as a block and older lines stay
+on screen as docked history (stacked above / stood at the side), use a
+`LineEffectDef` in the manifest's `lineTransitions` array instead of a per-char
+`apply`. Two pure functions return a `PartialLineFx` (`dx, dy, scale, rotate,
+alpha, blur` — transform about the canvas center):
+
+- `enterFrom(args, m)` — the entering line's start pose (it eases to `pose(0)`).
+- `pose(depth, args, m)` — pose of the depth-th line; **`depth: 0` is the
+  current center line** (return `{}` for identity), deeper = older docked lines.
+
+`args` is `LineFxArgs`: `{ lineId, width, height, fontSize, intensity, blocks }`.
+`blocks[d]` is the **un-scaled bounding box** `{w, h}` of the d-th line — use it
+to dock lines flush against each other regardless of size. `maxDepth` sets how
+many docked lines to keep (host clamps 0..6; deeper lines should fade out).
+
+```js
+// manifest: { api:1, name:'…', lineTransitions: [ … ] }
+{
+  id: 'you.stackUp', name: 'Stack Up', enterDurationMs: 460, maxDepth: 3,
+  enterFrom: ({ height, intensity }) => ({ dy: height*0.2*intensity, scale: 0.6, alpha: 0 }),
+  pose(depth, { fontSize, intensity, blocks }, m) {
+    if (depth === 0) return {}                     // current line: center
+    const s = 0.45 + 0.3*intensity
+    const h = (d) => blocks[Math.min(d, blocks.length-1)].h
+    let dy = -(h(0)/2 + fontSize*0.4)              // dock above the center line
+    for (let k=1;k<depth;k++) dy -= h(k)*s + fontSize*0.4
+    dy -= h(depth)*s/2
+    return { dy, scale: s, alpha: depth>3 ? 0 : m.clamp01(1 - depth*0.3) }
+  }
+}
+```
+
+Same determinism rule applies (no `Math.random`/`Date`; the validator runs
+`enterFrom`/`pose` twice). See `examples/plugin-lines.mjs`.
+
 ## 4. Input fields — `TextFxArgs` (timing & position)
 
 All times are **milliseconds**; `timeInLine`, `unitStart`, `unitEnd` are

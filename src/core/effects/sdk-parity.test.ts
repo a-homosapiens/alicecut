@@ -5,7 +5,10 @@ import type {
   TextFxArgs as PubTextFxArgs,
   PluginHelpers as PubHelpers,
   TextEffectDef as PubTextEffectDef,
-  PluginManifest as PubManifest
+  PluginManifest as PubManifest,
+  LineFxArgs as PubLineFxArgs,
+  PartialLineFx as PubPartialLineFx,
+  LineEffectDef as PubLineEffectDef
 } from '../../../plugin-sdk/effect-plugin'
 // Host implementation (source of truth):
 import {
@@ -17,7 +20,10 @@ import {
   type TextFxArgs,
   type PluginHelpers,
   type TextEffectDef,
-  type PluginManifest
+  type PluginManifest,
+  type LineFxArgs,
+  type PartialLineFx,
+  type LineEffectDef
 } from './sdk'
 
 /**
@@ -36,6 +42,10 @@ assignableBothWays<PubTextFxArgs, TextFxArgs>(true)
 assignableBothWays<PubHelpers, PluginHelpers>(true)
 // Effect def matches exactly too.
 assignableBothWays<PubTextEffectDef, TextEffectDef>(true)
+// Line-transition types match exactly.
+assignableBothWays<PubLineFxArgs, LineFxArgs>(true)
+assignableBothWays<PubPartialLineFx, PartialLineFx>(true)
+assignableBothWays<PubLineEffectDef, LineEffectDef>(true)
 // Manifest: published `api: 1` is intentionally narrower than host `api: number`,
 // so we only require a published manifest to be a valid host manifest.
 const _manifestAssignable: PluginManifest = {} as PubManifest

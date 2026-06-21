@@ -1,4 +1,4 @@
-import { validateManifest, textEffectToPreset, type PluginManifest } from './core/effects/sdk'
+import { validateManifest, textEffectToPreset, lineEffectToPreset, type PluginManifest } from './core/effects/sdk'
 import { registerTextEffect } from './core/effects'
 import { probePluginInWorker, SandboxUnavailableError } from './pluginSandbox'
 
@@ -49,4 +49,19 @@ export function installTextEffects(manifest: PluginManifest): { id: string; name
     added.push({ id: def.id, name: def.name })
   }
   return added
+}
+
+/** 安装插件的整行停靠式转场到注册表，返回登记的 {id,name} */
+export function installLineEffects(manifest: PluginManifest): { id: string; name: string }[] {
+  const added: { id: string; name: string }[] = []
+  for (const def of manifest.lineTransitions ?? []) {
+    registerTextEffect(lineEffectToPreset(def))
+    added.push({ id: def.id, name: def.name })
+  }
+  return added
+}
+
+/** 安装插件全部特效（文字 + 整行转场），返回合并后的 {id,name} */
+export function installPlugin(manifest: PluginManifest): { id: string; name: string }[] {
+  return [...installTextEffects(manifest), ...installLineEffects(manifest)]
 }

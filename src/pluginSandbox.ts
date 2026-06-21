@@ -115,26 +115,41 @@ self.onmessage = async (ev) => {
     self.postMessage({ type:'fatal', message:'插件无法作为模块加载：' + (e && e.message || e) }); return
   }
   const manifest = mod && mod.default
+  const pick = (r) => { if (!r || typeof r !== 'object') return null; const o = {}; for (const k in r) if (typeof r[k] === 'number') o[k] = r[k]; return o }
+  const perEffect = []
+
+  // 文字特效：apply 在样本网格上两跑
   const effects = manifest && Array.isArray(manifest.textEffects) ? manifest.textEffects : []
   const samples = grid()
-  const perEffect = []
   for (const def of effects) {
     const id = def && def.id || '?'
     if (!def || typeof def.apply !== 'function') { perEffect.push({ id, error:'缺少 apply 函数' }); continue }
-    const runOnce = () => samples.map((s) => {
-      const args = Object.assign({ rand: seededRand(12345) }, s)
-      const r = def.apply(args, HELPERS)
-      if (!r || typeof r !== 'object') return null
-      const o = {}; for (const k in r) if (typeof r[k] === 'number') o[k] = r[k]
-      return o
-    })
-    try {
-      const runA = runOnce(); const runB = runOnce()
-      perEffect.push({ id, runA, runB })
-    } catch (e) {
-      perEffect.push({ id, error: (e && e.message) || String(e) })
-    }
+    const runOnce = () => samples.map((s) => pick(def.apply(Object.assign({ rand: seededRand(12345) }, s), HELPERS)))
+    try { perEffect.push({ id, runA: runOnce(), runB: runOnce() }) }
+    catch (e) { perEffect.push({ id, error: (e && e.message) || String(e) }) }
   }
+
+  // 整行转场：enterFrom + pose(0..maxDepth) 在样本网格上两跑
+  const lineDefs = manifest && Array.isArray(manifest.lineTransitions) ? manifest.lineTransitions : []
+  const lblocks = [{w:600,h:120},{w:500,h:120},{w:700,h:240},{w:400,h:120},{w:400,h:120}]
+  const lsamples = []
+  for (const lineId of [0,1,2]) for (const intensity of [0.5,1,1.8]) lsamples.push({ lineId, width:1080, height:1920, fontSize:88, intensity, blocks:lblocks })
+  for (const def of lineDefs) {
+    const id = def && def.id || '?'
+    if (!def || typeof def.enterFrom !== 'function' || typeof def.pose !== 'function') { perEffect.push({ id, error:'缺少 enterFrom/pose' }); continue }
+    const maxDepth = Math.min(6, Math.max(0, Math.round(typeof def.maxDepth === 'number' ? def.maxDepth : 1)))
+    const runOnce = () => {
+      const arr = []
+      for (const s of lsamples) {
+        arr.push(pick(def.enterFrom(s, HELPERS)))
+        for (let depth = 0; depth <= maxDepth; depth++) arr.push(pick(def.pose(depth, s, HELPERS)))
+      }
+      return arr
+    }
+    try { perEffect.push({ id, runA: runOnce(), runB: runOnce() }) }
+    catch (e) { perEffect.push({ id, error: (e && e.message) || String(e) }) }
+  }
+
   self.postMessage({ type:'result', perEffect })
 }
 `

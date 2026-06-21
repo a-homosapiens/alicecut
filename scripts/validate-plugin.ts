@@ -16,7 +16,7 @@ const source = await readFile(abs, 'utf-8')
 const mod = await import(pathToFileURL(abs).href)
 const report = validatePlugin(mod.default, source)
 
-console.log(`\n插件: ${report.pluginName} · ${report.effectCount} 个文字特效`)
+console.log(`\n插件: ${report.pluginName} · ${report.effectCount} 个特效`)
 if (report.sample.length) {
   console.log('样例输出:')
   for (const s of report.sample) console.log('  ' + s)

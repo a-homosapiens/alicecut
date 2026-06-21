@@ -131,6 +131,52 @@ export interface TextEffectDef {
   apply(args: TextFxArgs, m: PluginHelpers): PartialCharFx
 }
 
+/** Arguments passed to a line transition's `enterFrom`/`pose`. */
+export interface LineFxArgs {
+  /** Line index; direction is often taken from its parity for continuity. */
+  lineId: number
+  width: number
+  height: number
+  fontSize: number
+  intensity: number
+  /**
+   * Un-scaled bounding boxes (canvas px) per depth: `blocks[0]` is the current
+   * center line, `blocks[d]` is the d-th docked older line. Use these to dock
+   * lines flush against each other regardless of their actual size.
+   */
+  blocks: { w: number; h: number }[]
+}
+
+/** Whole-line transform (about the canvas center). Return only what you change. */
+export type PartialLineFx = Partial<{
+  dx: number
+  dy: number
+  scale: number
+  rotate: number
+  alpha: number
+  blur: number
+}>
+
+/**
+ * A whole-line docking transition (`unit: 'line'`). The new line enters center
+ * stage; older lines don't vanish — they scale/rotate and dock (stacked above /
+ * stood at the side) as history. When a new line enters, every line eases from
+ * `pose(depth-1)` to `pose(depth)`, and the new line from `enterFrom` to
+ * `pose(0)`. `enterFrom`/`pose` are pure functions of LineFxArgs.
+ */
+export interface LineEffectDef {
+  id: string
+  name: string
+  /** Enter animation duration, ms. */
+  enterDurationMs: number
+  /** How many docked older lines to keep (deeper ones fade out). Host clamps 0..6. */
+  maxDepth: number
+  /** The entering line's start pose. */
+  enterFrom(args: LineFxArgs, m: PluginHelpers): PartialLineFx
+  /** Pose of the depth-th line; depth 0 is the current center line. */
+  pose(depth: number, args: LineFxArgs, m: PluginHelpers): PartialLineFx
+}
+
 /** A plugin's default export. */
 export interface PluginManifest {
   /** Contract version. Must be 1. */
@@ -143,6 +189,8 @@ export interface PluginManifest {
   author?: string
   /** Text effects contributed by this plugin. */
   textEffects?: TextEffectDef[]
+  /** Whole-line docking transitions contributed by this plugin. */
+  lineTransitions?: LineEffectDef[]
 }
 
 /** Convenience type for `export default definePlugin({...})`-style authoring. */

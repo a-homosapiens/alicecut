@@ -28,9 +28,27 @@
       "type": "array",
       "description": "Text effects contributed by this plugin.",
       "items": { "$ref": "#/definitions/textEffect" }
+    },
+    "lineTransitions": {
+      "type": "array",
+      "description": "Whole-line docking transitions (unit: 'line') contributed by this plugin.",
+      "items": { "$ref": "#/definitions/lineTransition" }
     }
   },
   "definitions": {
+    "lineTransition": {
+      "type": "object",
+      "required": ["id", "name", "enterFrom", "pose"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_.-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "enterDurationMs": { "type": "number", "exclusiveMinimum": 0, "default": 480 },
+        "maxDepth": { "type": "integer", "minimum": 0, "maximum": 6, "default": 1, "description": "Docked older lines to keep (host clamps 0..6)." },
+        "enterFrom": { "description": "REQUIRED function (args, m) => PartialLineFx. Validated at runtime." },
+        "pose": { "description": "REQUIRED function (depth, args, m) => PartialLineFx. Validated at runtime." }
+      }
+    },
     "textEffect": {
       "type": "object",
       "required": ["id", "name", "apply"],

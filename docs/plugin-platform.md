@@ -19,7 +19,7 @@
 - 测试：`src/core/effects/validator.test.ts`（含与 easing 工具对齐的守护）。
 
 **SDK 已公开（第 9 节）**：`plugin-sdk/` 目录——
-- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。契约含**声明式遮罩能力** `reveal`/`trail`/`wordBox`（见第 5 节）。
+- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`/`LineEffectDef`/`LineFxArgs`/`PartialLineFx`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。契约含**声明式遮罩能力** `reveal`/`trail`/`wordBox` 与**整行停靠式转场** `lineTransitions`（见第 5 节）。
 - `manifest.schema.json`：清单静态字段 JSON Schema。
 - `template.mjs`：带 JSDoc 类型引用的起步模板（零构建即得补全）。
 - `README.md`：贡献者指南（坐标系/单位/时序/确定性/校验/导入/安全模型）。
@@ -32,7 +32,7 @@
 
 **未做（下一步）**：QuickJS-WASM 逐帧隔离、视频转场插件（把 `clipTransition` 改为注册表驱动）、缩略图渲染（需 headless 画布）、工程/Job 的插件依赖记录、市场/签名。下文为完整设计。
 
-**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）、`examples/plugin-masks.mjs`（圆形展开/残影滑入/跳动高亮块，演示声明式 reveal/trail/wordBox）。
+**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）、`examples/plugin-masks.mjs`（圆形展开/残影滑入/跳动高亮块，演示声明式 reveal/trail/wordBox）、`examples/plugin-lines.mjs`（倾斜上叠，演示整行停靠式转场 lineTransitions）。
 
 ## 0. 为什么我们的架构天然适合做插件
 
@@ -151,9 +151,9 @@ type PartialVideoFx = Partial<{
 内部几类更复杂的能力不交给任意代码，而是以 **TextEffectDef 上的声明式字段**（数据而非函数）开放，宿主渲染、规范化、钳制——无新增可执行面，过隔离闸门不变：
 
 - ✅ **已开放**：`reveal`（`'wipe'|'iris'|'clockWipe'` 遮罩揭示）、`trail`（`{count, stepMs, decay?}` 运动残影，宿主钳 count≤12 / stepMs∈[1,200]）、`wordBox`（跳动高亮块布尔）。见 `sdk.ts` 的 `normReveal`/`normTrail` 与适配器透传；`validateManifest` 丢弃非法 `reveal`。示例 `examples/plugin-masks.mjs`。
-- ⏳ `lineTransition`（停靠式整行转场）——结构复杂、需多行包围盒，仍留作平台内置或后期高级 SDK。
+- ✅ **已开放**：`lineTransition`（停靠式整行转场，`unit='line'`）——经独立的 `manifest.lineTransitions[]` 提供：`{ id, name, enterDurationMs, maxDepth, enterFrom(args,m), pose(depth,args,m) }`，纯函数返回 `PartialLineFx`。`LineFxArgs.blocks` 给各深度行未缩放包围盒以便紧靠停靠。宿主 `lineEffectToPreset` 包裹校验/兜底/钳 maxDepth(0..6)；`validateManifest` 校验结构；校验器与 Worker 探针均覆盖 enterFrom/pose。示例 `examples/plugin-lines.mjs`。
 
-覆盖面：逐字 `apply` + 声明式 reveal/trail/wordBox，已能表达绝大多数文字特效（含遮罩揭示）；视频 in/out 见下。
+覆盖面：逐字 `apply` + 声明式 reveal/trail/wordBox + 整行 lineTransition，文字侧能力已对内置特效**完整对等**；视频 in/out 见下（待办）。
 
 ## 6. 安全与沙箱
 

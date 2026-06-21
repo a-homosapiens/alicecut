@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useProject } from './store/project'
 import { serializeSrt } from './core/subtitles'
-import { loadPluginSource, installTextEffects } from './plugins'
+import { loadPluginSource, installPlugin } from './plugins'
 import { validatePlugin } from './core/effects/validator'
 import { clipEnd, type MediaClip } from './core/media'
 import { probeMediaDuration } from './mediaPool'
@@ -128,15 +128,15 @@ export function App(): React.JSX.Element {
         alert(`插件「${report.pluginName}」未通过校验，已拒绝导入：\n${errs}`)
         return
       }
-      const added = installTextEffects(manifest)
+      const added = installPlugin(manifest)
       if (added.length === 0) {
-        alert('插件未包含可用的文字特效')
+        alert('插件未包含可用的特效')
         return
       }
       useProject.getState().addPluginEffects(added)
       const warns = report.issues.filter((i) => i.level === 'warn').length
       const sb = sandboxed ? '' : '\n（注意：本环境无 Worker 隔离，已降级软校验）'
-      alert(`已导入插件「${manifest.name}」：${added.length} 个文字特效` + (warns ? `\n（${warns} 条警告）` : '') + sb)
+      alert(`已导入插件「${manifest.name}」：${added.length} 个特效` + (warns ? `\n（${warns} 条警告）` : '') + sb)
     } catch (err) {
       alert('插件导入失败：' + (err instanceof Error ? err.message : String(err)))
     }

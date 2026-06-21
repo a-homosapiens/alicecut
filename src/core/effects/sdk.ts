@@ -6,7 +6,29 @@
  * 注：本原型为「软」装载（仅输出校验 + try/catch），尚未做全局遮蔽/硬沙箱。
  */
 import { clamp01, easeOutCubic, easeOutBack, springEase, valueNoise } from '../easing'
-import { IDENTITY_FX, type CharFx, type EffectPreset } from './types'
+import { IDENTITY_FX, IDENTITY_LINE_FX, type CharFx, type EffectPreset, type LineFx } from './types'
+
+/** 整行转场参数（公开契约，与内部 LineFxArgs 对齐） */
+export interface LineFxArgs {
+  /** 行序号；转场方向常按行序奇偶取，保证连续转场方向一致 */
+  lineId: number
+  width: number
+  height: number
+  fontSize: number
+  intensity: number
+  /** 各深度行未缩放包围盒（画布像素）：blocks[0] 当前中心行，blocks[d] 第 d 条旧行 */
+  blocks: { w: number; h: number }[]
+}
+
+/** 整行变换增量（绕画面中心；只写要改的，其余取恒等） */
+export type PartialLineFx = Partial<{
+  dx: number
+  dy: number
+  scale: number
+  rotate: number
+  alpha: number
+  blur: number
+}>
 
 /** 平台提供给插件的纯工具，免去访问全局 */
 export interface PluginHelpers {
@@ -65,12 +87,32 @@ export interface TextEffectDef {
   apply(args: TextFxArgs, m: PluginHelpers): PartialCharFx
 }
 
+/**
+ * 整行停靠式转场（unit='line'）：整句进中心，旧行不消失而是缩放/旋转后停靠
+ * （堆叠上方 / 立侧边）形成历史。每当新行进场，所有行从 pose(depth-1) 联动到
+ * pose(depth)，新行从 enterFrom 过渡到 pose(0)。enterFrom/pose 为纯函数。
+ */
+export interface LineEffectDef {
+  id: string
+  name: string
+  /** 进场动画时长 ms */
+  enterDurationMs: number
+  /** 保留多少条停靠旧行（深度超过即淡出）；宿主钳到 0..6 */
+  maxDepth: number
+  /** 新行进场起始姿态 */
+  enterFrom(args: LineFxArgs, m: PluginHelpers): PartialLineFx
+  /** 第 depth 条行的停靠姿态；depth=0 为当前中心行 */
+  pose(depth: number, args: LineFxArgs, m: PluginHelpers): PartialLineFx
+}
+
 export interface PluginManifest {
   api: number
   name: string
   version?: string
   author?: string
   textEffects?: TextEffectDef[]
+  /** 整行停靠式转场（unit='line'） */
+  lineTransitions?: LineEffectDef[]
 }
 
 export const HELPERS: PluginHelpers = {
@@ -126,6 +168,49 @@ export function sanitizeCharFx(p: PartialCharFx | null | undefined): CharFx {
   }
 }
 
+/** 把插件返回的部分整行增量合并成完整 LineFx，并钳制到安全范围 */
+export function sanitizeLineFx(p: PartialLineFx | null | undefined): LineFx {
+  if (!p || typeof p !== 'object') return { ...IDENTITY_LINE_FX }
+  return {
+    dx: num(p.dx, 0),
+    dy: num(p.dy, 0),
+    scale: Math.max(0, num(p.scale, 1)),
+    rotate: num(p.rotate, 0),
+    alpha: clamp01(num(p.alpha, 1)),
+    blur: Math.max(0, num(p.blur, 0))
+  }
+}
+
+/** 适配器：LineEffectDef → 内部 EffectPreset（unit='line'，enterFrom/pose 包裹校验与兜底） */
+export function lineEffectToPreset(def: LineEffectDef): EffectPreset {
+  return {
+    id: def.id,
+    name: def.name,
+    enterDuration: Math.max(1, num(def.enterDurationMs, 480)),
+    layoutVariant: 'center',
+    unit: 'line',
+    lineTransition: {
+      maxDepth: Math.min(6, Math.max(0, Math.round(num(def.maxDepth, 1)))),
+      enterFrom(args) {
+        try {
+          return sanitizeLineFx(def.enterFrom(args, HELPERS))
+        } catch {
+          return { ...IDENTITY_LINE_FX }
+        }
+      },
+      pose(depth, args) {
+        try {
+          return sanitizeLineFx(def.pose(depth, args, HELPERS))
+        } catch {
+          return { ...IDENTITY_LINE_FX }
+        }
+      }
+    },
+    // lineTransition 定义后 apply 不被调用，仅为满足 EffectPreset 形状
+    apply: () => ({ ...IDENTITY_FX })
+  }
+}
+
 /** 适配器：TextEffectDef → 内部 EffectPreset（apply 包裹校验与兜底；声明式能力规范化后透传） */
 export function textEffectToPreset(def: TextEffectDef): EffectPreset {
   const preset: EffectPreset = {
@@ -176,11 +261,28 @@ export function validateManifest(raw: unknown): PluginManifest {
       apply: d.apply as TextEffectDef['apply']
     })
   }
+  const rawLines = Array.isArray(m.lineTransitions) ? m.lineTransitions : []
+  const lineTransitions: LineEffectDef[] = []
+  for (const t of rawLines) {
+    const d = t as Record<string, unknown>
+    if (typeof d.id !== 'string' || typeof d.name !== 'string' || typeof d.enterFrom !== 'function' || typeof d.pose !== 'function') {
+      throw new Error('lineTransitions 条目需含 id、name、enterFrom 与 pose')
+    }
+    lineTransitions.push({
+      id: d.id,
+      name: d.name,
+      enterDurationMs: num(d.enterDurationMs, 480),
+      maxDepth: num(d.maxDepth, 1),
+      enterFrom: d.enterFrom as LineEffectDef['enterFrom'],
+      pose: d.pose as LineEffectDef['pose']
+    })
+  }
   return {
     api: 1,
     name: m.name,
     version: typeof m.version === 'string' ? m.version : undefined,
     author: typeof m.author === 'string' ? m.author : undefined,
-    textEffects
+    textEffects,
+    lineTransitions
   }
 }

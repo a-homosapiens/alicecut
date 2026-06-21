@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { installTextEffects } from './plugins'
+import { installTextEffects, installLineEffects, installPlugin } from './plugins'
 import { getEffect } from './core/effects'
 import type { PluginManifest } from './core/effects/sdk'
 
@@ -52,5 +52,39 @@ describe('插件导入注册路径', () => {
     // 未指定字段取恒等默认
     expect(fx.dx).toBe(0)
     expect(fx.scale).toBe(1)
+  })
+})
+
+describe('整行转场导入注册路径', () => {
+  const manifest: PluginManifest = {
+    api: 1,
+    name: 'Lines',
+    lineTransitions: [
+      {
+        id: 'test.tilt',
+        name: '上叠',
+        enterDurationMs: 460,
+        maxDepth: 2,
+        enterFrom: () => ({ alpha: 0, scale: 0.6 }),
+        pose: (depth) => (depth === 0 ? {} : { dy: -80 * depth, scale: 0.5 })
+      }
+    ]
+  }
+
+  it('installLineEffects 注册 unit=line 预设', () => {
+    expect(installLineEffects(manifest)).toEqual([{ id: 'test.tilt', name: '上叠' }])
+    const preset = getEffect('test.tilt')
+    expect(preset.unit).toBe('line')
+    expect(preset.lineTransition?.maxDepth).toBe(2)
+  })
+
+  it('installPlugin 合并文字 + 整行特效', () => {
+    const all = installPlugin({
+      api: 1,
+      name: 'Both',
+      textEffects: [{ id: 't.x', name: 'x', unit: 'char', enterDurationMs: 300, apply: () => ({}) }],
+      lineTransitions: manifest.lineTransitions
+    })
+    expect(all.map((e) => e.id).sort()).toEqual(['t.x', 'test.tilt'])
   })
 })

@@ -69,6 +69,44 @@ describe('validatePlugin', () => {
   })
 })
 
+describe('validatePlugin 整行转场', () => {
+  const lineGood = {
+    api: 1,
+    name: 'Lines',
+    lineTransitions: [
+      {
+        id: 'l.tilt',
+        name: '上叠',
+        enterDurationMs: 460,
+        maxDepth: 2,
+        enterFrom: () => ({ alpha: 0, scale: 0.6 }),
+        pose: (depth: number) => (depth === 0 ? {} : { dy: -80 * depth, scale: 0.5 })
+      }
+    ]
+  }
+
+  it('合法整行转场通过并计入 effectCount', () => {
+    const r = validatePlugin(lineGood, 'export default {}')
+    expect(r.ok).toBe(true)
+    expect(r.effectCount).toBe(1)
+    expect(r.sample.some((s) => /enterFrom/.test(s))).toBe(true)
+  })
+
+  it('pose 非确定性 → 致命错误', () => {
+    const r = validatePlugin({
+      ...lineGood,
+      lineTransitions: [{ ...lineGood.lineTransitions[0], pose: () => ({ dy: Math.random() }) }]
+    })
+    expect(r.ok).toBe(false)
+    expect(r.issues.some((i) => i.level === 'error' && /非确定性/.test(i.message))).toBe(true)
+  })
+
+  it('缺 enterFrom/pose → 致命错误', () => {
+    const r = validatePlugin({ api: 1, name: 'X', lineTransitions: [{ id: 'a', name: 'b' }] })
+    expect(r.ok).toBe(false)
+  })
+})
+
 describe('校验器内联工具与 easing 对齐', () => {
   it('clamp01 / easeOutCubic / easeOutBack / spring / noise 一致', () => {
     for (let i = 0; i <= 20; i++) {

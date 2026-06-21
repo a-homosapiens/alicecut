@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeCharFx, textEffectToPreset, validateManifest, normReveal, normTrail, type TextEffectDef } from './sdk'
+import {
+  sanitizeCharFx,
+  sanitizeLineFx,
+  textEffectToPreset,
+  lineEffectToPreset,
+  validateManifest,
+  normReveal,
+  normTrail,
+  type TextEffectDef,
+  type LineEffectDef
+} from './sdk'
 import { registerTextEffect, getEffect } from './index'
 
 const baseArgs = {
@@ -166,5 +176,53 @@ describe('声明式能力：reveal / trail / wordBox', () => {
     expect(m.textEffects?.[0].reveal).toBe('clockWipe')
     expect(m.textEffects?.[0].wordBox).toBe(true)
     expect(m.textEffects?.[1].reveal).toBeUndefined()
+  })
+})
+
+describe('整行停靠式转场 lineTransitions', () => {
+  const def: LineEffectDef = {
+    id: 'l.tilt',
+    name: '上叠',
+    enterDurationMs: 460,
+    maxDepth: 3,
+    enterFrom: ({ height }) => ({ dy: height * 0.2, scale: 0.6, alpha: 0 }),
+    pose: (depth) => (depth === 0 ? {} : { dy: -100 * depth, scale: 0.5, alpha: 1 - depth * 0.3 })
+  }
+
+  it('sanitizeLineFx 合并恒等并钳制', () => {
+    expect(sanitizeLineFx({})).toEqual({ dx: 0, dy: 0, scale: 1, rotate: 0, alpha: 1, blur: 0 })
+    expect(sanitizeLineFx({ alpha: 9, scale: -2, blur: -1 })).toMatchObject({ alpha: 1, scale: 0, blur: 0 })
+  })
+
+  it('lineEffectToPreset 建出 unit=line + lineTransition', () => {
+    const preset = lineEffectToPreset(def)
+    expect(preset.unit).toBe('line')
+    expect(preset.enterDuration).toBe(460)
+    expect(preset.lineTransition).toBeDefined()
+    expect(preset.lineTransition!.maxDepth).toBe(3)
+    const center = preset.lineTransition!.pose(0, { lineId: 0, width: 1080, height: 1920, fontSize: 88, intensity: 1, blocks: [{ w: 1, h: 1 }] })
+    expect(center).toEqual({ dx: 0, dy: 0, scale: 1, rotate: 0, alpha: 1, blur: 0 })
+  })
+
+  it('maxDepth 钳到 0..6', () => {
+    expect(lineEffectToPreset({ ...def, maxDepth: 99 }).lineTransition!.maxDepth).toBe(6)
+    expect(lineEffectToPreset({ ...def, maxDepth: -5 }).lineTransition!.maxDepth).toBe(0)
+  })
+
+  it('enterFrom/pose 抛错回退恒等（不崩渲染）', () => {
+    const bad = lineEffectToPreset({
+      ...def,
+      pose: () => {
+        throw new Error('boom')
+      }
+    })
+    const args = { lineId: 0, width: 1080, height: 1920, fontSize: 88, intensity: 1, blocks: [{ w: 1, h: 1 }] }
+    expect(bad.lineTransition!.pose(1, args)).toEqual({ dx: 0, dy: 0, scale: 1, rotate: 0, alpha: 1, blur: 0 })
+  })
+
+  it('validateManifest 携带 lineTransitions，拒绝缺 enterFrom/pose', () => {
+    const m = validateManifest({ api: 1, name: 'X', lineTransitions: [def] })
+    expect(m.lineTransitions).toHaveLength(1)
+    expect(() => validateManifest({ api: 1, name: 'X', lineTransitions: [{ id: 'x', name: 'y' }] })).toThrow()
   })
 })
