@@ -6,6 +6,7 @@ import { Readable } from 'stream'
 import { registerExportHandlers } from './exporter'
 import { parseExportArg, prepareJob, registerHeadlessHandlers } from './headless'
 import { readLrcText } from './lrcFile'
+import { buildMenu, loadLocale, saveLocale, type Locale } from './menu'
 
 const exportJobPath = parseExportArg(process.argv)
 // 无头导出走软件渲染，CI/无 GPU 环境也能跑
@@ -69,7 +70,7 @@ function registerMediaProtocol(): void {
   })
 }
 
-function createWindow(headless: boolean): void {
+function createWindow(headless: boolean): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -84,13 +85,15 @@ function createWindow(headless: boolean): void {
     }
   })
 
-  win.setMenuBarVisibility(false)
+  // 无头导出隐藏菜单栏；GUI 显示原生菜单（含语言切换）
+  win.setMenuBarVisibility(headless ? false : true)
 
   if (process.env['ELECTRON_RENDERER_URL']) {
     win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  return win
 }
 
 /** 打开文件并把内容读给渲染进程（渲染进程无 Node 权限） */
@@ -239,12 +242,30 @@ app.whenReady().then(async () => {
 
   registerHeadlessHandlers(null)
   registerFileHandlers()
-  createWindow(false)
+  const win = createWindow(false)
+  registerLocaleHandlers(win)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(false)
   })
 })
+
+/** 语言：主进程持有持久化值与原生菜单；切换时重建菜单（更新选中态与菜单文案）并通知渲染进程 */
+function registerLocaleHandlers(win: BrowserWindow): void {
+  let currentLocale = loadLocale()
+  const apply = (locale: Locale): void => {
+    currentLocale = locale
+    saveLocale(locale)
+    buildMenu(locale, apply)
+    if (!win.isDestroyed()) win.webContents.send('app:locale-changed', locale)
+  }
+  buildMenu(currentLocale, apply)
+  // 页面加载后把当前语言推给渲染进程，使 UI 与持久化值一致
+  win.webContents.on('did-finish-load', () => win.webContents.send('app:locale-changed', currentLocale))
+  ipcMain.handle('app:get-locale', () => currentLocale)
+  // 供未来应用内切换器使用（菜单切换走 click→apply，不经此处）
+  ipcMain.handle('app:set-locale', (_e, locale: Locale) => apply(locale))
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

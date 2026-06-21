@@ -12,8 +12,10 @@ import { Timeline } from './components/Timeline'
 import { LyricsPanel } from './components/LyricsPanel'
 import { StylePanel } from './components/StylePanel'
 import { ExportDialog } from './components/ExportDialog'
+import { useT } from './i18n'
 
 export function App(): React.JSX.Element {
+  const t = useT()
   const lrcName = useProject((s) => s.lrcName)
   const clips = useProject((s) => s.clips)
   const hasLines = useProject((s) => s.lines.length > 0)
@@ -182,31 +184,31 @@ export function App(): React.JSX.Element {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>动态歌词</h1>
+        <h1>{t('topbar.title')}</h1>
         <button className="btn" onClick={() => void importLrc()}>
-          导入歌词 {lrcName ? `· ${lrcName}` : ''}
+          {t('topbar.importLyrics')} {lrcName ? `· ${lrcName}` : ''}
         </button>
         <button className="btn" onClick={() => void importVideo()}>
-          导入视频 {videoCount > 0 ? `· ${videoCount} 段` : ''}
+          {t('topbar.importVideo')} {videoCount > 0 ? t('topbar.videoSuffix', { n: videoCount }) : ''}
         </button>
         <button className="btn" onClick={() => void importAudio()}>
-          导入音频 {audioCount > 0 ? `· ${audioCount} 条` : ''}
+          {t('topbar.importAudio')} {audioCount > 0 ? t('topbar.audioSuffix', { n: audioCount }) : ''}
         </button>
         <div className="spacer" />
         <button className="btn" onClick={() => void importPlugin()} title="导入第三方特效插件（.mjs/.js）">
-          导入插件
+          {t('topbar.importPlugin')}
         </button>
         <button className="btn" onClick={() => void openProject()}>
-          打开工程
+          {t('topbar.openProject')}
         </button>
         <button className="btn" disabled={!hasLines} onClick={() => void saveProject()}>
-          保存工程
+          {t('topbar.saveProject')}
         </button>
         <button className="btn" disabled={!hasLines} onClick={() => void exportSrt()}>
-          导出字幕
+          {t('topbar.exportSrt')}
         </button>
         <button className="btn btn-primary" disabled={!hasLines} onClick={() => setShowExport(true)}>
-          导出视频
+          {t('topbar.exportVideo')}
         </button>
       </header>
 

@@ -14,6 +14,11 @@ import {
   type VideoTransition
 } from '../core/media'
 import { invalidateLayoutCache, type RenderStyle } from '../core/render'
+import type { Locale } from '../i18n'
+
+/** 启动语言：先按系统语言猜，随后由主进程（持久化值）校正，避免首屏闪烁 */
+const initialLocale: Locale =
+  typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('zh') ? 'zh' : 'en'
 
 export type AspectId = '9:16' | '16:9' | '1:1'
 
@@ -77,6 +82,10 @@ interface ProjectState {
   /** 时间轴上选中的媒体线段 id */
   selectedClipId: number | null
 
+  /** 界面语言（应用级偏好，不写入工程文件；持久化在主进程 settings.json） */
+  locale: Locale
+  /** 仅更新界面语言状态（持久化与原生菜单由主进程负责） */
+  setLocale(locale: Locale): void
   /** 已导入的插件文字/整行特效（仅 id/name，函数体在 effects 注册表里） */
   pluginEffects: { id: string; name: string }[]
   /** 登记新导入的插件特效（去重） */
@@ -186,6 +195,10 @@ export const useProject = create<ProjectState>((set, get) => ({
   exporting: false,
   selectedIds: [],
   selectedClipId: null,
+  locale: initialLocale,
+  setLocale(locale) {
+    set({ locale })
+  },
   pluginEffects: [],
   pluginVideoTransitions: [],
 

@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { runHeadlessJob } from './headlessExport'
+import { useProject } from './store/project'
 import './styles.css'
 
 async function bootstrap(): Promise<void> {
@@ -11,6 +12,9 @@ async function bootstrap(): Promise<void> {
     void runHeadlessJob(job)
     return
   }
+  // 界面语言：用主进程持久化值校正初始猜测，并订阅原生菜单切换
+  void window.desktop.getLocale().then((l) => useProject.getState().setLocale(l))
+  window.desktop.onLocaleChanged((l) => useProject.getState().setLocale(l))
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <App />
