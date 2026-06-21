@@ -56,6 +56,17 @@ describe('validatePlugin', () => {
     const r = validatePlugin(good, 'const x = Math.random()')
     expect(r.issues.some((i) => /源码命中/.test(i.message))).toBe(true)
   })
+
+  it('注释里提及禁用 API 不误报（剥离注释后扫描）', () => {
+    const withComment = '// never call Math.random() or Date.now()\n/* performance.now is banned */\nexport default {}'
+    const r = validatePlugin(good, withComment)
+    expect(r.issues.some((i) => /源码命中/.test(i.message))).toBe(false)
+  })
+
+  it('真实使用仍被检出（注释剥离不漏报代码）', () => {
+    const r = validatePlugin(good, 'const t = Date.now() // comment')
+    expect(r.issues.some((i) => /源码命中/.test(i.message))).toBe(true)
+  })
 })
 
 describe('校验器内联工具与 easing 对齐', () => {

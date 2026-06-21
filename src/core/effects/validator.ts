@@ -106,6 +106,14 @@ function fmt(o: Record<string, unknown>): string {
     .join(' ')
 }
 
+/**
+ * 去掉注释后再做禁用项扫描，避免把"请勿使用 Math.random"这类文档注释误判为命中。
+ * 过度剥离只会让源码扫描漏报——而确定性由"同参两跑"动态兜底，因此偏向剥离是安全的。
+ */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+}
+
 /** 校验一个插件清单（raw = 默认导出对象；source = 源码文本，用于禁用项扫描） */
 export function validatePlugin(raw: unknown, source?: string): ValidationReport {
   const issues: ValidationIssue[] = []
@@ -184,10 +192,11 @@ export function validatePlugin(raw: unknown, source?: string): ValidationReport 
     }
   })
 
-  // 源码扫描（启发式，多为 warn）
+  // 源码扫描（启发式，多为 warn）：先剥离注释，避免文档注释里的"勿用 X"被误判
   if (source) {
+    const code = stripComments(source)
     for (const b of BANNED) {
-      if (b.re.test(source)) issues.push({ level: b.level, message: `源码命中：${b.msg}` })
+      if (b.re.test(code)) issues.push({ level: b.level, message: `源码命中：${b.msg}` })
     }
   }
 

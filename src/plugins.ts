@@ -1,15 +1,41 @@
 import { validateManifest, textEffectToPreset, type PluginManifest } from './core/effects/sdk'
 import { registerTextEffect } from './core/effects'
+import { probePluginInWorker, SandboxUnavailableError } from './pluginSandbox'
 
 /**
- * 运行时装载第三方特效插件（原型）：把插件源码当 ES module 经 blob URL 动态 import，
- * 取其默认导出清单并校验。注意：此为软装载，尚未做全局遮蔽/硬沙箱（见 docs/plugin-platform.md）。
+ * 运行时装载第三方特效插件。
+ *
+ * 安全闸门：先把源码送进隔离 Worker 探针（全局遮蔽 + 硬超时 + 样本网格两跑），
+ * 抓死循环 / 访问被禁全局 / 非确定性。通过后才在主世界 import 取得可用的实时函数。
+ * Worker 不可用（node/vitest/headless）时降级为仅同步校验（见 docs/plugin-platform.md）。
  */
-export async function loadPluginSource(src: string): Promise<PluginManifest> {
+export interface LoadResult {
+  manifest: PluginManifest
+  /** 是否经过了 Worker 硬隔离闸门（false = 环境无 Worker，已降级软校验） */
+  sandboxed: boolean
+}
+
+export async function loadPluginSource(src: string): Promise<LoadResult> {
+  // 1) 硬隔离闸门（在主世界导入之前，先抓住死循环/逃逸）
+  let sandboxed = false
+  try {
+    const report = await probePluginInWorker(src)
+    sandboxed = true
+    const fatal = report.issues.filter((i) => i.level === 'error')
+    if (fatal.length > 0) {
+      throw new Error('插件未通过隔离校验：\n' + fatal.map((i) => `• ${i.effect ? `[${i.effect}] ` : ''}${i.message}`).join('\n'))
+    }
+  } catch (err) {
+    if (!(err instanceof SandboxUnavailableError)) throw err
+    // 环境无 Worker：降级，靠后续同步校验兜底
+    sandboxed = false
+  }
+
+  // 2) 主世界导入取得实时清单（apply 为真实函数，供注册使用）
   const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }))
   try {
     const mod = await import(/* @vite-ignore */ url)
-    return validateManifest(mod.default)
+    return { manifest: validateManifest(mod.default), sandboxed }
   } finally {
     URL.revokeObjectURL(url)
   }

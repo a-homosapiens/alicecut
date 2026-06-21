@@ -116,7 +116,9 @@ export function App(): React.JSX.Element {
     const file = await window.desktop.openPlugin()
     if (!file) return
     try {
-      const manifest = await loadPluginSource(file.text)
+      // loadPluginSource 内含 Worker 硬隔离闸门（死循环/逃逸/非确定性）；
+      // 通过后再跑同步校验器拿到面向用户的详细报告（范围/性能/源码扫描）
+      const { manifest, sandboxed } = await loadPluginSource(file.text)
       const report = validatePlugin(manifest, file.text)
       if (!report.ok) {
         const errs = report.issues
@@ -133,7 +135,8 @@ export function App(): React.JSX.Element {
       }
       useProject.getState().addPluginEffects(added)
       const warns = report.issues.filter((i) => i.level === 'warn').length
-      alert(`已导入插件「${manifest.name}」：${added.length} 个文字特效` + (warns ? `\n（${warns} 条警告）` : ''))
+      const sb = sandboxed ? '' : '\n（注意：本环境无 Worker 隔离，已降级软校验）'
+      alert(`已导入插件「${manifest.name}」：${added.length} 个文字特效` + (warns ? `\n（${warns} 条警告）` : '') + sb)
     } catch (err) {
       alert('插件导入失败：' + (err instanceof Error ? err.message : String(err)))
     }

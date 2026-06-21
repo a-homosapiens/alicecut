@@ -14,11 +14,25 @@
 - 示例：`examples/plugin-wave.mjs`（波浪 / 弹跳落入）。测试：`src/core/effects/sdk.test.ts`。
 
 **校验器**（第 8 节）也已落地：
-- `src/core/effects/validator.ts`：自包含引擎 `validatePlugin(manifest, source?)`——确定性（同参两跑比对）、范围/有限性、性能、源码禁用项扫描、不崩；返回结构化报告。app 导入时调用它兜在沙箱之前。
+- `src/core/effects/validator.ts`：自包含引擎 `validatePlugin(manifest, source?)`——确定性（同参两跑比对）、范围/有限性、性能、源码禁用项扫描（先剥离注释避免误判）、不崩；返回结构化报告。app 导入时调用它兜在沙箱之前。
 - CLI：`node scripts/validate-plugin.ts <plugin.mjs>`（或 `npm run validate-plugin -- <file>`），通过/失败对应退出码 0/1，供第三方/agent 自检。
 - 测试：`src/core/effects/validator.test.ts`（含与 easing 工具对齐的守护）。
 
-**未做（下一步）**：视频转场插件（需把 `clipTransition` 的类型扩成可注册）、硬沙箱（当前仅软装载：输出校验 + try/catch，未遮蔽全局）、缩略图渲染（需 headless 画布）、工程/Job 的插件依赖记录、市场/签名。下文为完整设计。
+**SDK 已公开（第 9 节）**：`plugin-sdk/` 目录——
+- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。
+- `manifest.schema.json`：清单静态字段 JSON Schema。
+- `template.mjs`：带 JSDoc 类型引用的起步模板（零构建即得补全）。
+- `README.md`：贡献者指南（坐标系/单位/时序/确定性/校验/导入/安全模型）。
+
+**硬沙箱已落地（导入期闸门，第 6 节）**：`src/pluginSandbox.ts`——
+- `probePluginInWorker(source)`：把不受信源码送进**模块 Worker**，启动时遮蔽 `Date`/`Math.random`/`performance`/`fetch`/`XMLHttpRequest`/`WebSocket`/`importScripts` 等，再 `import` 插件，对样本网格**一次性批量两跑**（batched evaluation），并由宿主侧硬超时（默认 2s）抓死循环（超时即 `terminate`）。
+- `analyzeProbe`（纯函数，单测覆盖）：两跑比对判非确定性、范围/有限性检查。
+- `loadPluginSource` 先过 Worker 闸门再在主世界 import 使用；Worker 不可用（node/vitest/headless）抛 `SandboxUnavailableError` → 降级同步校验（determinism 由两跑保证，与渲染世界无关，降级仍安全）。
+- **架构权衡（已知局限）**：渲染热路径是**同步**逐帧逐字，Worker 是异步的，无法为逐帧渲染做隔离——因此 Worker 只作**导入期闸门**，逐帧执行仍在主世界（带 try/catch + 钳制）。真正的同步逐帧隔离需要 **QuickJS-WASM**（同步 in-process isolate），列为下一步。当前闸门已能抓住：死循环、访问被禁全局、非确定性、越界/NaN。
+
+**未做（下一步）**：QuickJS-WASM 逐帧隔离、视频转场插件（把 `clipTransition` 改为注册表驱动）、缩略图渲染（需 headless 画布）、工程/Job 的插件依赖记录、市场/签名。下文为完整设计。
+
+**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）。
 
 ## 0. 为什么我们的架构天然适合做插件
 
