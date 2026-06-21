@@ -27,7 +27,13 @@ const MEDIA_MIME: Record<string, string> = {
   '.m4a': 'audio/mp4',
   '.aac': 'audio/aac',
   '.flac': 'audio/flac',
-  '.ogg': 'audio/ogg'
+  '.ogg': 'audio/ogg',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp'
 }
 
 /**
@@ -91,8 +97,8 @@ function createWindow(headless: boolean): void {
 function registerFileHandlers(): void {
   ipcMain.handle('file:openLrc', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入歌词文件',
-      filters: [{ name: 'LRC 歌词', extensions: ['lrc', 'txt'] }],
+      title: '导入歌词/字幕文件',
+      filters: [{ name: '歌词/字幕', extensions: ['lrc', 'srt', 'vtt', 'txt'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
@@ -121,6 +127,16 @@ function registerFileHandlers(): void {
     return filePaths.map((path) => ({ path, name: basename(path) }))
   })
 
+  ipcMain.handle('file:openImage', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '选择背景图片',
+      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+      properties: ['openFile']
+    })
+    if (canceled || filePaths.length === 0) return null
+    return { path: filePaths[0], name: basename(filePaths[0]) }
+  })
+
   ipcMain.handle('file:openFont', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: '导入字体文件',
@@ -142,6 +158,31 @@ function registerFileHandlers(): void {
     if (canceled || !filePath) return null
     await writeFile(filePath, json, 'utf-8')
     return filePath
+  })
+
+  ipcMain.handle('file:saveSrt', async (_e, text: string, defaultName: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: '导出字幕',
+      defaultPath: defaultName,
+      filters: [{ name: 'SRT 字幕', extensions: ['srt'] }]
+    })
+    if (canceled || !filePath) return null
+    await writeFile(filePath, text, 'utf-8')
+    return filePath
+  })
+
+  ipcMain.handle('file:openPlugin', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: '导入特效插件',
+      filters: [{ name: '特效插件', extensions: ['mjs', 'js'] }],
+      properties: ['openFile']
+    })
+    if (canceled || filePaths.length === 0) return null
+    return {
+      path: filePaths[0],
+      name: basename(filePaths[0]),
+      text: await readFile(filePaths[0], 'utf-8')
+    }
   })
 
   ipcMain.handle('file:openProject', async () => {

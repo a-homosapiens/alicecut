@@ -58,7 +58,11 @@ export async function runHeadlessJob(job: HeadlessJobPayload): Promise<void> {
         layer: c.layer,
         tx: c.tx,
         ty: c.ty,
-        scale: c.scale
+        scale: c.scale,
+        fadeInMs: c.fadeInMs,
+        fadeOutMs: c.fadeOutMs,
+        transIn: c.transIn,
+        transOut: c.transOut
       })
     }
 

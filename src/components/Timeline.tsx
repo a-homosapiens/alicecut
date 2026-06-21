@@ -1,8 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useProject, getProjectDuration } from '../store/project'
 import { getEffect } from '../core/effects'
-import { clipEnd, clipSegmentMs, MAX_SPEED, MIN_SPEED, type MediaClip } from '../core/media'
+import {
+  clipEnd,
+  clipSegmentMs,
+  clipSourceTime,
+  MAX_SPEED,
+  MIN_SPEED,
+  VIDEO_TRANSITIONS,
+  type MediaClip,
+  type VideoTransition,
+  type VideoTransitionType
+} from '../core/media'
 import { seek } from '../playback'
+import { useWaveform } from '../waveform'
 import type { LrcLine } from '../core/types'
 
 /** 每种特效的线段配色，便于一眼区分 */
@@ -12,6 +23,7 @@ const EFFECT_COLORS: Record<string, string> = {
   slide: '#0ea5e9',
   typewriter: '#10b981',
   glow: '#f59e0b',
+  karaoke: '#eab308',
   flip: '#d946ef',
   'flip-bottom': '#a855f7',
   rise: '#14b8a6'
@@ -26,6 +38,53 @@ const TEXT_COLOR = '#eab308'
 /** 媒体轨一行的高度（含 4px 间距），竖向拖动换层按它换算 */
 const MEDIA_ROW_H = 34
 const MAX_LAYER = 4
+/** 选中音轨展开后的波形高度（与 CSS .tl-clip-wave 高度保持一致） */
+const WAVE_H = 54
+
+/** 时间轴缩放范围 px/秒：下限很小（几乎不限缩小，避免 0 导致除零/退化） */
+const ZOOM_MIN = 0.5
+const ZOOM_MAX = 300
+const clampZoom = (v: number): number => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v))
+
+/** 选中音轨内的波形画布：x→源时间（含修剪/循环/变速）→ 峰值，画竖条 */
+function ClipWaveform({
+  clip,
+  pxPerSec,
+  durationMs,
+  width,
+  color
+}: {
+  clip: MediaClip
+  pxPerSec: number
+  durationMs: number
+  width: number
+  color: string
+}): React.JSX.Element {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const peaks = useWaveform(clip.path)
+  useEffect(() => {
+    const cv = ref.current
+    if (!cv) return
+    const ctx = cv.getContext('2d')
+    if (!ctx) return
+    const W = Math.max(1, Math.round(width))
+    cv.width = W
+    cv.height = WAVE_H
+    ctx.clearRect(0, 0, W, WAVE_H)
+    if (!peaks) return
+    const mid = WAVE_H / 2
+    ctx.fillStyle = color
+    for (let x = 0; x < W; x++) {
+      const tMs = clip.start + (x / pxPerSec) * 1000
+      const src = clipSourceTime(clip, tMs, durationMs)
+      if (src === null) continue
+      const idx = Math.min(peaks.length - 1, Math.max(0, Math.floor((src / clip.sourceDuration) * peaks.length)))
+      const h = Math.max(1, peaks[idx] * (WAVE_H - 6))
+      ctx.fillRect(x, mid - h / 2, 1, h)
+    }
+  }, [peaks, width, color, pxPerSec, durationMs, clip.start, clip.sourceIn, clip.sourceOut, clip.speed, clip.loop, clip.sourceDuration])
+  return <canvas ref={ref} className="tl-wave" />
+}
 
 const TRIM_MODES = ['trim-l', 'trim-r'] as const
 type DragMode = 'move' | (typeof TRIM_MODES)[number]
@@ -139,9 +198,11 @@ function ClipSegment({
     window.addEventListener('mouseup', onUp)
   }
 
+  const showWave = clip.kind === 'audio' && selected
+
   return (
     <div
-      className={`tl-clip${selected ? ' selected' : ''}`}
+      className={`tl-clip${selected ? ' selected' : ''}${showWave ? ' tl-clip-wave' : ''}`}
       style={{
         left,
         width,
@@ -154,6 +215,9 @@ function ClipSegment({
       }${clip.speed !== 1 ? ` · ${clip.speed} 倍速` : ''}${clip.kind === 'video' ? '\n竖向拖动换层' : ''}`}
       onMouseDown={onMouseDown}
     >
+      {showWave && (
+        <ClipWaveform clip={clip} pxPerSec={pxPerSec} durationMs={durationMs} width={width} color={`${color}cc`} />
+      )}
       <span className="tl-clip-icon">{clip.kind === 'video' ? '🎬' : '🎵'}</span>
       <span className="tl-seg-text">{clip.name}</span>
       {badges.length > 0 && (
@@ -162,6 +226,144 @@ function ClipSegment({
         </span>
       )}
     </div>
+  )
+}
+
+/** 视频转场类型的中文标签 */
+const TRANS_LABELS: Record<VideoTransitionType, string> = {
+  fade: '淡入淡出',
+  slideL: '左滑',
+  slideR: '右滑',
+  slideU: '上滑',
+  slideD: '下滑',
+  zoom: '缩放',
+  wipeL: '左擦',
+  wipeR: '右擦'
+}
+
+/** 视频转场：进场(transIn)/退场(transOut)。从菜单添加后可选类型与秒数 */
+function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const st = useProject.getState
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const add = (which: 'in' | 'out'): void => {
+    st().setClipTransition(clip.id, which, { type: 'fade', durationMs: 1000 })
+    setMenuOpen(false)
+  }
+
+  const chip = (which: 'in' | 'out', trans: VideoTransition): React.JSX.Element => (
+    <span className="clip-fx-chip" title={which === 'in' ? '视频进场转场' : '视频退场转场'}>
+      {which === 'in' ? '进场' : '退场'}
+      <select
+        value={trans.type}
+        onChange={(e) => st().setClipTransition(clip.id, which, { ...trans, type: e.target.value as VideoTransitionType })}
+      >
+        {VIDEO_TRANSITIONS.map((t) => (
+          <option key={t} value={t}>
+            {TRANS_LABELS[t]}
+          </option>
+        ))}
+      </select>
+      <input
+        type="number"
+        step={0.1}
+        min={0}
+        value={(trans.durationMs / 1000).toFixed(1)}
+        onChange={(e) =>
+          st().setClipTransition(clip.id, which, { ...trans, durationMs: Math.max(0, Number(e.target.value) * 1000) })
+        }
+      />
+      秒
+      <button className="clip-fx-x" title="移除转场" onClick={() => st().setClipTransition(clip.id, which, null)}>
+        ✕
+      </button>
+    </span>
+  )
+
+  return (
+    <span className="clip-fx">
+      <span className="clip-fx-add">
+        <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title="为视频添加进/退场转场">
+          + 转场 ▾
+        </button>
+        {menuOpen && (
+          <div className="clip-fx-menu">
+            <button onClick={() => add('in')} disabled={!!clip.transIn}>
+              进场转场
+            </button>
+            <button onClick={() => add('out')} disabled={!!clip.transOut}>
+              退场转场
+            </button>
+          </div>
+        )}
+      </span>
+      {clip.transIn && chip('in', clip.transIn)}
+      {clip.transOut && chip('out', clip.transOut)}
+    </span>
+  )
+}
+
+/** 音轨特效：淡入(transit in)/淡出(transit out)。从菜单添加后以可编辑「?秒」呈现 */
+function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const st = useProject.getState
+  const [menuOpen, setMenuOpen] = useState(false)
+  const DEFAULT_MS = 2000
+
+  const add = (which: 'in' | 'out'): void => {
+    st().setClipFade(clip.id, which === 'in' ? { in: DEFAULT_MS } : { out: DEFAULT_MS })
+    setMenuOpen(false)
+  }
+
+  return (
+    <span className="clip-fx">
+      <span className="clip-fx-add">
+        <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title="为音轨添加淡入/淡出">
+          + 特效 ▾
+        </button>
+        {menuOpen && (
+          <div className="clip-fx-menu">
+            <button onClick={() => add('in')} disabled={clip.fadeInMs > 0}>
+              淡入 · transit in
+            </button>
+            <button onClick={() => add('out')} disabled={clip.fadeOutMs > 0}>
+              淡出 · transit out
+            </button>
+          </div>
+        )}
+      </span>
+      {clip.fadeInMs > 0 && (
+        <span className="clip-fx-chip" title="淡入：从线段起点起的时长">
+          淡入
+          <input
+            type="number"
+            step={0.1}
+            min={0}
+            value={(clip.fadeInMs / 1000).toFixed(1)}
+            onChange={(e) => st().setClipFade(clip.id, { in: Number(e.target.value) * 1000 })}
+          />
+          秒
+          <button className="clip-fx-x" title="移除淡入" onClick={() => st().setClipFade(clip.id, { in: 0 })}>
+            ✕
+          </button>
+        </span>
+      )}
+      {clip.fadeOutMs > 0 && (
+        <span className="clip-fx-chip" title="淡出：到线段结束处的时长">
+          淡出
+          <input
+            type="number"
+            step={0.1}
+            min={0}
+            value={(clip.fadeOutMs / 1000).toFixed(1)}
+            onChange={(e) => st().setClipFade(clip.id, { out: Number(e.target.value) * 1000 })}
+          />
+          秒
+          <button className="clip-fx-x" title="移除淡出" onClick={() => st().setClipFade(clip.id, { out: 0 })}>
+            ✕
+          </button>
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -280,8 +482,10 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
           <button className="btn btn-sm" onClick={() => void extractAudio()} title="把视频的音频抽取成一条音轨线段">
             提取音频
           </button>
+          <ClipVideoFx clip={clip} />
         </>
       )}
+      {clip.kind === 'audio' && <ClipAudioFx clip={clip} />}
       <button className="btn btn-sm" onClick={() => st().removeClip(clip.id)}>
         删除
       </button>
@@ -315,26 +519,62 @@ export function Timeline(): React.JSX.Element {
     }
   }, [pxPerSec])
 
-  // 时间轴内滚轮缩放 + 触控板双指捏合缩放（捏合 = ctrlKey 的 wheel）；横向滑动仍可滚动
+  // 时间轴缩放：滚轮 / 触控板捏合（ctrl+wheel）/ 触屏双指捏合；横向滑动仍走原生滚动。
+  // 缩放时把锚点（光标或捏合中心）下的时间点固定，用新刻度重排后由 useLayoutEffect 校正 scrollLeft
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const onWheel = (e: WheelEvent): void => {
-      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // 横向滑动：交给原生滚动
-      e.preventDefault()
-      const rect = el.getBoundingClientRect()
-      const offsetX = e.clientX - rect.left
+
+    /** 应用缩放：以容器内 offsetX 处为锚点把 pxPerSec 设为 next */
+    const applyZoom = (next: number, offsetX: number): void => {
       const old = pxPerSecRef.current
-      const k = e.ctrlKey ? 0.012 : 0.0018 // 捏合更灵敏
-      const next = Math.min(300, Math.max(12, old * Math.exp(-e.deltaY * k)))
       if (next === old) return
       zoomAnchorRef.current = { timeAtCursor: (offsetX + el.scrollLeft) / old, offsetX }
       pxPerSecRef.current = next
       setPxPerSec(next)
     }
+
+    const onWheel = (e: WheelEvent): void => {
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return // 横向滑动：交给原生滚动
+      e.preventDefault()
+      const offsetX = e.clientX - el.getBoundingClientRect().left
+      const k = e.ctrlKey ? 0.012 : 0.0018 // 捏合更灵敏
+      applyZoom(clampZoom(pxPerSecRef.current * Math.exp(-e.deltaY * k)), offsetX)
+    }
+
+    // 触屏双指捏合：按两指间距比例缩放，锚定捏合中心
+    let pinch: { dist: number; base: number; offsetX: number } | null = null
+    const touchDist = (t: TouchList): number => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+    const onTouchStart = (e: TouchEvent): void => {
+      if (e.touches.length !== 2) return
+      const rect = el.getBoundingClientRect()
+      const offsetX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left
+      pinch = { dist: touchDist(e.touches), base: pxPerSecRef.current, offsetX }
+    }
+    const onTouchMove = (e: TouchEvent): void => {
+      if (!pinch || e.touches.length !== 2) return
+      e.preventDefault()
+      const d = touchDist(e.touches)
+      if (pinch.dist <= 0) return
+      applyZoom(clampZoom(pinch.base * (d / pinch.dist)), pinch.offsetX)
+    }
+    const onTouchEnd = (e: TouchEvent): void => {
+      if (e.touches.length < 2) pinch = null
+    }
+
     el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-    // 内容从无到有时时间轴才挂载 scrollRef，需在此时重挂滚轮监听
+    el.addEventListener('touchstart', onTouchStart, { passive: false })
+    el.addEventListener('touchmove', onTouchMove, { passive: false })
+    el.addEventListener('touchend', onTouchEnd)
+    el.addEventListener('touchcancel', onTouchEnd)
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('touchstart', onTouchStart)
+      el.removeEventListener('touchmove', onTouchMove)
+      el.removeEventListener('touchend', onTouchEnd)
+      el.removeEventListener('touchcancel', onTouchEnd)
+    }
+    // 内容从无到有时时间轴才挂载 scrollRef，需在此时重挂监听
   }, [lines.length === 0 && clips.length === 0])
 
   const duration = getProjectDuration({ lines, clips })
@@ -359,7 +599,7 @@ export function Timeline(): React.JSX.Element {
   const textBlocks = lines.filter((l) => l.kind === 'text')
 
   const zoom = (factor: number): void => {
-    setPxPerSec((v) => Math.min(300, Math.max(12, v * factor)))
+    setPxPerSec((v) => clampZoom(v * factor))
   }
 
   const addAtPlayhead = (kind: 'lyric' | 'text'): void => {
@@ -575,7 +815,7 @@ export function Timeline(): React.JSX.Element {
             </div>
           ))}
           {audioClips.length > 0 && (
-            <div className="tl-mediatrack">
+            <div className={`tl-mediatrack tl-audiotrack${selectedClip?.kind === 'audio' ? ' expanded' : ''}`}>
               {audioClips.map((c) => (
                 <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
               ))}

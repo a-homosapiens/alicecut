@@ -52,6 +52,11 @@ export interface ParsedLrc {
 export interface RawEntry {
   time: number
   content: string
+  /**
+   * 行显式结束时间 ms（字幕格式 SRT/VTT 自带，可能与下一行起点之间留有空白）。
+   * 缺省时由 buildLines 按"下一行起点"推算（LRC 行为）。
+   */
+  end?: number
   /** 增强型 LRC 的 <mm:ss.xx> 分段；标准 LRC 为 null */
   segments: { time: number; text: string }[] | null
 }

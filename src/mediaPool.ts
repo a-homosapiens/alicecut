@@ -1,4 +1,4 @@
-import { clipSourceTime, type MediaClip } from './core/media'
+import { clipSourceTime, clipGain, clipTransition, type MediaClip, type VideoClipFx } from './core/media'
 
 /**
  * 媒体元素池：每个媒体线段对应一个 <video>/<audio> 元素，
@@ -9,6 +9,43 @@ import { clipSourceTime, type MediaClip } from './core/media'
 /** 本地绝对路径 → media:// URL */
 export function mediaUrl(path: string): string {
   return 'media:///' + path.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
+}
+
+/* ---- 背景图片：按路径缓存一个 HTMLImageElement，cover 铺满画布 ---- */
+const bgImages = new Map<string, HTMLImageElement>()
+
+function getBgImage(path: string): HTMLImageElement {
+  let img = bgImages.get(path)
+  if (!img) {
+    img = new Image()
+    img.src = mediaUrl(path)
+    bgImages.set(path, img)
+  }
+  return img
+}
+
+/** 导出前预解码背景图片，确保首帧就能画出 */
+export async function loadBgImage(path: string): Promise<void> {
+  const img = getBgImage(path)
+  if (img.complete && img.naturalWidth > 0) return
+  await img.decode().catch(() => {})
+}
+
+/** 把背景图片按 cover 铺满画布（保持比例裁切居中） */
+export function drawBackgroundImage(
+  ctx: CanvasRenderingContext2D,
+  path: string,
+  w: number,
+  h: number
+): void {
+  const img = getBgImage(path)
+  const iw = img.naturalWidth
+  const ih = img.naturalHeight
+  if (iw === 0 || ih === 0) return
+  const scale = Math.max(w / iw, h / ih)
+  const dw = iw * scale
+  const dh = ih * scale
+  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
 }
 
 const pool = new Map<number, HTMLVideoElement | HTMLAudioElement>()
@@ -78,6 +115,8 @@ export function syncMediaPlayback(
 
   for (const clip of clips) {
     const el = getMediaEl(clip)
+    // 音轨淡入淡出：每帧按时间轴位置设音量
+    if (clip.kind === 'audio') el.volume = clipGain(clip, tMs, projectEndMs)
     const srcT = clipSourceTime(clip, tMs, projectEndMs)
     if (srcT === null || !playing) {
       if (!el.paused) el.pause()
@@ -194,6 +233,35 @@ export function drawVideoBackdrop(
   for (const clip of videos) {
     if (clipSourceTime(clip, tMs, projectEndMs) === null) continue
     const el = getMediaEl(clip)
-    if (el instanceof HTMLVideoElement) drawCover(ctx, el, clip, width, height)
+    if (!(el instanceof HTMLVideoElement)) continue
+    const fx = clipTransition(clip, tMs, projectEndMs)
+    if (fx.alpha <= 0.004) continue
+    // 无转场时走快路径，避免每帧 save/restore
+    if (fx.alpha === 1 && fx.dxFrac === 0 && fx.dyFrac === 0 && fx.scale === 1 && !fx.wipe) {
+      drawCover(ctx, el, clip, width, height)
+      continue
+    }
+    ctx.save()
+    ctx.globalAlpha = fx.alpha
+    if (fx.dxFrac !== 0 || fx.dyFrac !== 0) ctx.translate(fx.dxFrac * width, fx.dyFrac * height)
+    if (fx.scale !== 1) {
+      ctx.translate(width / 2, height / 2)
+      ctx.scale(fx.scale, fx.scale)
+      ctx.translate(-width / 2, -height / 2)
+    }
+    if (fx.wipe) applyWipeClip(ctx, fx.wipe, width, height)
+    drawCover(ctx, el, clip, width, height)
+    ctx.restore()
   }
+}
+
+/** 擦除遮罩：从某侧裁出 reveal 比例的可见区域 */
+function applyWipeClip(ctx: CanvasRenderingContext2D, wipe: NonNullable<VideoClipFx['wipe']>, w: number, h: number): void {
+  const r = Math.max(0, Math.min(1, wipe.reveal))
+  ctx.beginPath()
+  if (wipe.dir === 'L') ctx.rect(0, 0, w * r, h)
+  else if (wipe.dir === 'R') ctx.rect(w * (1 - r), 0, w * r, h)
+  else if (wipe.dir === 'U') ctx.rect(0, 0, w, h * r)
+  else ctx.rect(0, h * (1 - r), w, h * r)
+  ctx.clip()
 }

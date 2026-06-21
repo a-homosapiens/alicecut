@@ -1,6 +1,35 @@
 /** 媒体线段（背景视频 / 音轨）：纯数据 + 时间计算，预览与导出共用 */
 
+import { clamp01, easeOutCubic } from './easing'
+
 export type LoopSpec = number | 'infinite'
+
+/** 视频转场类型（进/出场）：fade 淡入淡出、slide 四向滑动、zoom 缩放、wipe 横向擦 */
+export type VideoTransitionType =
+  | 'fade'
+  | 'slideL'
+  | 'slideR'
+  | 'slideU'
+  | 'slideD'
+  | 'zoom'
+  | 'wipeL'
+  | 'wipeR'
+
+export const VIDEO_TRANSITIONS: VideoTransitionType[] = [
+  'fade',
+  'slideL',
+  'slideR',
+  'slideU',
+  'slideD',
+  'zoom',
+  'wipeL',
+  'wipeR'
+]
+
+export interface VideoTransition {
+  type: VideoTransitionType
+  durationMs: number
+}
 
 export interface MediaClip {
   id: number
@@ -25,6 +54,14 @@ export interface MediaClip {
   tx: number
   ty: number
   scale: number
+  /** 音频淡入时长 ms（从线段起点起，0 = 无）；视频忽略 */
+  fadeInMs: number
+  /** 音频淡出时长 ms（到线段结束处止，0 = 无）；视频忽略 */
+  fadeOutMs: number
+  /** 视频进场转场（null = 无）；音频忽略。视频间转场靠重叠两段 + 后一段 transIn 实现 */
+  transIn?: VideoTransition | null
+  /** 视频退场转场（null = 无）；音频忽略 */
+  transOut?: VideoTransition | null
 }
 
 export const MIN_SPEED = 0.25
@@ -48,6 +85,11 @@ export function withClipDefaults(
   c: Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>
 ): Omit<MediaClip, 'id'> {
   const sourceIn = Math.max(0, c.sourceIn ?? 0)
+  const sourceOut = Math.min(c.sourceDuration, Math.max(sourceIn + 1, c.sourceOut ?? c.sourceDuration))
+  const speed = clampSpeed(c.speed ?? 1)
+  const loop = normalizeLoop(c.loop ?? 1)
+  // 淡入/淡出钳到线段在时间轴上的总占用时长内（无限循环不设上限）
+  const placedMs = loop === 'infinite' ? Infinity : ((sourceOut - sourceIn) / speed) * loop
   return {
     kind: c.kind,
     path: c.path,
@@ -55,14 +97,119 @@ export function withClipDefaults(
     start: Math.max(0, c.start),
     sourceDuration: c.sourceDuration,
     sourceIn,
-    sourceOut: Math.min(c.sourceDuration, Math.max(sourceIn + 1, c.sourceOut ?? c.sourceDuration)),
-    speed: clampSpeed(c.speed ?? 1),
-    loop: normalizeLoop(c.loop ?? 1),
+    sourceOut,
+    speed,
+    loop,
     layer: Math.max(0, Math.round(c.layer ?? 0)),
     tx: c.tx ?? 0,
     ty: c.ty ?? 0,
-    scale: c.scale && c.scale > 0 ? c.scale : 1
+    scale: c.scale && c.scale > 0 ? c.scale : 1,
+    fadeInMs: Math.min(placedMs, Math.max(0, Math.round(c.fadeInMs ?? 0))),
+    fadeOutMs: Math.min(placedMs, Math.max(0, Math.round(c.fadeOutMs ?? 0))),
+    transIn: normTransition(c.transIn),
+    transOut: normTransition(c.transOut)
   }
+}
+
+/** 规范化视频转场：类型非法或时长 ≤0 → null */
+function normTransition(t: VideoTransition | null | undefined): VideoTransition | null {
+  if (!t || !VIDEO_TRANSITIONS.includes(t.type) || !(t.durationMs > 0)) return null
+  return { type: t.type, durationMs: Math.round(t.durationMs) }
+}
+
+/**
+ * tMs 时刻该音轨的淡入/淡出增益 0..1（线性）。
+ * 线段外或无淡入淡出返回 1。淡入从线段起点、淡出到线段结束（含无限循环到项目结束）。
+ */
+export function clipGain(clip: MediaClip, tMs: number, projectEndMs: number): number {
+  const fin = clip.fadeInMs ?? 0
+  const fout = clip.fadeOutMs ?? 0
+  if (fin <= 0 && fout <= 0) return 1
+  const end = clipEnd(clip, projectEndMs)
+  if (tMs < clip.start || tMs >= end) return 1
+  let g = 1
+  if (fin > 0) g = Math.min(g, (tMs - clip.start) / fin)
+  if (fout > 0) g = Math.min(g, (end - tMs) / fout)
+  return Math.max(0, Math.min(1, g))
+}
+
+/** 视频转场对绘制的修正：透明度、平移（占画布比例）、额外缩放、擦除遮罩 */
+export interface VideoClipFx {
+  alpha: number
+  /** 画布宽/高的比例平移 */
+  dxFrac: number
+  dyFrac: number
+  /** 乘到线段自身 scale 之上的额外缩放 */
+  scale: number
+  /** 擦除遮罩：从某侧揭示 reveal∈[0,1] 比例；null = 不裁剪 */
+  wipe: { dir: 'L' | 'R' | 'U' | 'D'; reveal: number } | null
+}
+
+const IDENTITY_CLIP_FX: VideoClipFx = { alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null }
+
+/** 进场姿态：p 为进场进度 0→1（1 = 完全到位） */
+function fxIn(type: VideoTransitionType, p: number): VideoClipFx {
+  const off = 1 - p
+  switch (type) {
+    case 'fade':
+      return { ...IDENTITY_CLIP_FX, alpha: p }
+    case 'slideL':
+      return { ...IDENTITY_CLIP_FX, dxFrac: -off }
+    case 'slideR':
+      return { ...IDENTITY_CLIP_FX, dxFrac: off }
+    case 'slideU':
+      return { ...IDENTITY_CLIP_FX, dyFrac: -off }
+    case 'slideD':
+      return { ...IDENTITY_CLIP_FX, dyFrac: off }
+    case 'zoom':
+      return { ...IDENTITY_CLIP_FX, alpha: p, scale: 1.3 - 0.3 * p }
+    case 'wipeL':
+      return { ...IDENTITY_CLIP_FX, wipe: { dir: 'L', reveal: p } }
+    case 'wipeR':
+      return { ...IDENTITY_CLIP_FX, wipe: { dir: 'R', reveal: p } }
+  }
+}
+
+/** 退场姿态：p 为剩余呈现度 1→0（1 = 仍完整，0 = 已离场） */
+function fxOut(type: VideoTransitionType, p: number): VideoClipFx {
+  const off = 1 - p
+  switch (type) {
+    case 'fade':
+      return { ...IDENTITY_CLIP_FX, alpha: p }
+    case 'slideL':
+      return { ...IDENTITY_CLIP_FX, dxFrac: -off }
+    case 'slideR':
+      return { ...IDENTITY_CLIP_FX, dxFrac: off }
+    case 'slideU':
+      return { ...IDENTITY_CLIP_FX, dyFrac: -off }
+    case 'slideD':
+      return { ...IDENTITY_CLIP_FX, dyFrac: off }
+    case 'zoom':
+      return { ...IDENTITY_CLIP_FX, alpha: p, scale: 1 + 0.3 * off }
+    case 'wipeL':
+      return { ...IDENTITY_CLIP_FX, wipe: { dir: 'L', reveal: p } }
+    case 'wipeR':
+      return { ...IDENTITY_CLIP_FX, wipe: { dir: 'R', reveal: p } }
+  }
+}
+
+/**
+ * tMs 时刻该视频线段的转场绘制修正。进场窗口 [start, start+inDur]、
+ * 退场窗口 [end-outDur, end]；窗口外或无转场返回恒等。
+ */
+export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: number): VideoClipFx {
+  const ti = clip.transIn
+  const to = clip.transOut
+  if ((!ti || ti.durationMs <= 0) && (!to || to.durationMs <= 0)) return IDENTITY_CLIP_FX
+  const end = clipEnd(clip, projectEndMs)
+  if (tMs < clip.start || tMs >= end) return IDENTITY_CLIP_FX
+  if (ti && ti.durationMs > 0 && tMs < clip.start + ti.durationMs) {
+    return fxIn(ti.type, easeOutCubic(clamp01((tMs - clip.start) / ti.durationMs)))
+  }
+  if (to && to.durationMs > 0 && tMs > end - to.durationMs) {
+    return fxOut(to.type, easeOutCubic(clamp01((end - tMs) / to.durationMs)))
+  }
+  return IDENTITY_CLIP_FX
 }
 
 /** 一圈在时间轴上占的毫秒数（修剪区间 ÷ 速度） */

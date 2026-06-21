@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useProject, toRenderStyle, getProjectDuration } from '../store/project'
-import { renderFrame, getLineBlockRect } from '../core/render'
-import { drawVideoBackdrop, getClipDrawRect, type ClipRect } from '../mediaPool'
+import { renderFrame, getLineBlockRect, applyGlobalTextTransform } from '../core/render'
+import { drawBackgroundImage, drawVideoBackdrop, getClipDrawRect, type ClipRect } from '../mediaPool'
 import { getTime, tick } from '../playback'
 
 /**
@@ -60,17 +60,20 @@ function drawTextSelection(ctx: CanvasRenderingContext2D, view: View, tMs: numbe
   const style = toRenderStyle(st.style)
   const sel = new Set(st.selectedIds)
   ctx.save()
+  // 与文字同一坐标系（含视图变换 + 全局文字变换），框随旋转/平移一起动
+  ctx.translate(view.panX, view.panY)
+  ctx.scale(view.zoom, view.zoom)
+  applyGlobalTextTransform(ctx, style)
   ctx.strokeStyle = '#818cf8'
-  ctx.lineWidth = 2
-  ctx.setLineDash([10, 6])
+  ctx.lineWidth = 2 / view.zoom
+  ctx.setLineDash([10 / view.zoom, 6 / view.zoom])
   for (const line of st.lines) {
     if (!sel.has(line.id)) continue
     if (tMs < line.start || tMs >= line.end) continue
     const r = getLineBlockRect(ctx, line, style)
     if (!r) continue
     const pad = style.fontSize * 0.25
-    const [x, y] = toView(view, r.x - pad, r.y - pad)
-    ctx.strokeRect(x, y, (r.w + pad * 2) * view.zoom, (r.h + pad * 2) * view.zoom)
+    ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2)
   }
   ctx.restore()
 }
@@ -131,8 +134,10 @@ export function PreviewCanvas(): React.JSX.Element {
 
         const tMs = getTime() * 1000
         const endMs = getProjectDuration(st) * 1000
-        const drawBackdrop = (c: CanvasRenderingContext2D): void =>
+        const drawBackdrop = (c: CanvasRenderingContext2D): void => {
+          if (style.bgType === 'image' && style.bgImage) drawBackgroundImage(c, style.bgImage, W, H)
           drawVideoBackdrop(c, st.clips, tMs, endMs, W, H)
+        }
 
         const editVideo = !st.playing
           ? st.clips.find((c) => c.id === st.selectedClipId && c.kind === 'video')

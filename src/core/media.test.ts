@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   clipEnd,
+  clipGain,
+  clipTransition,
   clipSegmentMs,
   clipSourceTime,
   clipsDuration,
@@ -28,9 +30,141 @@ function clip(over: Partial<MediaClip> = {}): MediaClip {
     tx: 0,
     ty: 0,
     scale: 1,
+    fadeInMs: 0,
+    fadeOutMs: 0,
     ...over
   }
 }
+
+describe('clipGain 淡入/淡出', () => {
+  // start 1000, seg 4000, loop 1 → end 5000
+  it('无淡入淡出恒为 1', () => {
+    const c = clip({ kind: 'audio' })
+    expect(clipGain(c, 3000, 99999)).toBe(1)
+  })
+
+  it('淡入：起点 0 → 满增益线性上升', () => {
+    const c = clip({ kind: 'audio', fadeInMs: 1000 })
+    expect(clipGain(c, 1000, 99999)).toBe(0)
+    expect(clipGain(c, 1500, 99999)).toBeCloseTo(0.5, 5)
+    expect(clipGain(c, 2000, 99999)).toBe(1)
+    expect(clipGain(c, 3000, 99999)).toBe(1)
+  })
+
+  it('淡出：到结束处线性下降', () => {
+    const c = clip({ kind: 'audio', fadeOutMs: 1000 })
+    expect(clipGain(c, 4000, 99999)).toBe(1)
+    expect(clipGain(c, 4500, 99999)).toBeCloseTo(0.5, 5)
+    expect(clipGain(c, 4999, 99999)).toBeCloseTo(0.001, 3)
+  })
+
+  it('淡入淡出并存时取较小者', () => {
+    const c = clip({ kind: 'audio', fadeInMs: 1000, fadeOutMs: 1000 })
+    expect(clipGain(c, 1500, 99999)).toBeCloseTo(0.5, 5) // 受淡入限制
+    expect(clipGain(c, 4500, 99999)).toBeCloseTo(0.5, 5) // 受淡出限制
+    expect(clipGain(c, 2500, 99999)).toBe(1)
+  })
+
+  it('线段外返回 1（不改音量）', () => {
+    const c = clip({ kind: 'audio', fadeInMs: 1000, fadeOutMs: 1000 })
+    expect(clipGain(c, 500, 99999)).toBe(1)
+    expect(clipGain(c, 5000, 99999)).toBe(1)
+  })
+
+  it('无限循环淡出锚定到项目结束', () => {
+    const c = clip({ kind: 'audio', loop: 'infinite', fadeOutMs: 1000 })
+    // 项目结束 8000 → 淡出窗口 [7000, 8000]
+    expect(clipGain(c, 7500, 8000)).toBeCloseTo(0.5, 5)
+    expect(clipGain(c, 3000, 8000)).toBe(1)
+  })
+})
+
+describe('withClipDefaults 淡入淡出', () => {
+  it('补默认 0 并钳到线段占用时长内', () => {
+    const c = withClipDefaults({ kind: 'audio', path: 'a.mp3', name: 'a', start: 0, sourceDuration: 4000 })
+    expect(c.fadeInMs).toBe(0)
+    expect(c.fadeOutMs).toBe(0)
+    // seg 4000, loop 1 → 占用 4000ms；超额淡入被钳
+    const big = withClipDefaults({
+      kind: 'audio',
+      path: 'a.mp3',
+      name: 'a',
+      start: 0,
+      sourceDuration: 4000,
+      fadeInMs: 99999
+    })
+    expect(big.fadeInMs).toBe(4000)
+  })
+})
+
+describe('clipTransition 视频转场', () => {
+  // start 1000, seg 4000, loop 1 → end 5000
+  it('无转场恒等', () => {
+    const fx = clipTransition(clip(), 3000, 99999)
+    expect(fx).toEqual({ alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null })
+  })
+
+  it('fade 进场：起点 alpha 0，窗口外 alpha 1', () => {
+    const c = clip({ transIn: { type: 'fade', durationMs: 1000 } })
+    expect(clipTransition(c, 1000, 99999).alpha).toBe(0)
+    expect(clipTransition(c, 1500, 99999).alpha).toBeGreaterThan(0)
+    expect(clipTransition(c, 1500, 99999).alpha).toBeLessThan(1)
+    expect(clipTransition(c, 2500, 99999).alpha).toBe(1) // 进场窗口外
+  })
+
+  it('fade 退场：结束前 alpha 衰减到 0', () => {
+    const c = clip({ transOut: { type: 'fade', durationMs: 1000 } })
+    expect(clipTransition(c, 3500, 99999).alpha).toBe(1) // 退场窗口外
+    expect(clipTransition(c, 4500, 99999).alpha).toBeLessThan(1)
+    expect(clipTransition(c, 4990, 99999).alpha).toBeLessThan(0.1)
+  })
+
+  it('slide 进场：起点有方向位移，到位后归零', () => {
+    const c = clip({ transIn: { type: 'slideL', durationMs: 1000 } })
+    expect(clipTransition(c, 1000, 99999).dxFrac).toBe(-1)
+    expect(clipTransition(c, 2500, 99999).dxFrac).toBe(0)
+  })
+
+  it('zoom 进场：放大 + 淡入', () => {
+    const c = clip({ transIn: { type: 'zoom', durationMs: 1000 } })
+    const fx = clipTransition(c, 1000, 99999)
+    expect(fx.scale).toBeCloseTo(1.3, 5)
+    expect(fx.alpha).toBe(0)
+  })
+
+  it('wipe 进场：揭示比例随进度增加', () => {
+    const c = clip({ transIn: { type: 'wipeL', durationMs: 1000 } })
+    const fx = clipTransition(c, 1300, 99999)
+    expect(fx.wipe).not.toBeNull()
+    expect(fx.wipe!.dir).toBe('L')
+    expect(fx.wipe!.reveal).toBeGreaterThan(0)
+    expect(fx.wipe!.reveal).toBeLessThan(1)
+  })
+
+  it('线段外恒等', () => {
+    const c = clip({ transIn: { type: 'fade', durationMs: 1000 } })
+    expect(clipTransition(c, 500, 99999).alpha).toBe(1)
+    expect(clipTransition(c, 6000, 99999).alpha).toBe(1)
+  })
+})
+
+describe('withClipDefaults 视频转场规范化', () => {
+  const mk = (over: Record<string, unknown>): ReturnType<typeof withClipDefaults> =>
+    withClipDefaults({ kind: 'video', path: 'v.mp4', name: 'v', start: 0, sourceDuration: 4000, ...over })
+
+  it('合法转场保留', () => {
+    expect(mk({ transIn: { type: 'wipeR', durationMs: 800 } }).transIn).toEqual({ type: 'wipeR', durationMs: 800 })
+  })
+  it('未知类型或非正时长 → null', () => {
+    expect(mk({ transIn: { type: 'bogus', durationMs: 500 } }).transIn).toBeNull()
+    expect(mk({ transOut: { type: 'fade', durationMs: 0 } }).transOut).toBeNull()
+  })
+  it('缺省为 null', () => {
+    const c = mk({})
+    expect(c.transIn).toBeNull()
+    expect(c.transOut).toBeNull()
+  })
+})
 
 describe('normalizeLoop', () => {
   it('保留 infinite，数字取整且至少 1', () => {

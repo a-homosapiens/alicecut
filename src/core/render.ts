@@ -1,7 +1,7 @@
 import type { LrcLine, LrcMeta } from './types'
 import { layoutLine, type PlacedChar } from './layout'
-import { getEffect, type EffectPreset, type LineFx } from './effects'
-import { seededRand, clamp01, easeOutCubic } from './easing'
+import { getEffect, type EffectPreset, type LineFx, type CharFx } from './effects'
+import { seededRand, clamp01, easeOutCubic, easeOutBack } from './easing'
 
 export interface RenderStyle {
   width: number
@@ -11,16 +11,24 @@ export interface RenderStyle {
   fontSize: number
   textColor: string
   glowColor: string
-  bgType: 'solid' | 'gradient'
+  bgType: 'solid' | 'gradient' | 'image'
   bgFrom: string
   bgTo: string
   /** 渐变角度，度 */
   bgAngle: number
+  /** 背景图片路径；图片本身由调用方（drawBackdrop）按 cover 绘制 */
+  bgImage: string | null
   /** 全局默认特效；行可用 line.effectId 覆盖 */
   effectId: string
   intensity: number
   /** 片头显示歌名/歌手 */
   showMeta: boolean
+  /** 全局文字变换：所有文字一起平移（画布像素）与旋转（度），绕画面中心 */
+  globalDx: number
+  globalDy: number
+  globalRotate: number
+  /** 卡拉OK高亮色（当前词染色） */
+  highlightColor: string
   /** 文字不透明度 0–1 */
   textAlpha: number
   italic: boolean
@@ -93,6 +101,134 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${clamp01(alpha).toFixed(3)})`
 }
 
+/** 两个 #rrggbb 按 t∈[0,1] 线性混合，返回 rgb() 字符串（卡拉OK高亮染色用） */
+function mixHex(a: string, b: string, t: number): string {
+  const pa = a.match(/^#?([0-9a-f]{6})$/i)
+  const pb = b.match(/^#?([0-9a-f]{6})$/i)
+  if (!pa || !pb) return a
+  const na = parseInt(pa[1], 16)
+  const nb = parseInt(pb[1], 16)
+  const mix = (sh: number): number =>
+    Math.round(((na >> sh) & 255) + (((nb >> sh) & 255) - ((na >> sh) & 255)) * t)
+  return `rgb(${mix(16)},${mix(8)},${mix(0)})`
+}
+
+/** 按高亮块颜色亮度选对比文字色（亮块配深字 / 暗块配白字），保证块内词可读 */
+function contrastColor(hex: string): string {
+  const m = hex.match(/^#?([0-9a-f]{6})$/i)
+  if (!m) return '#111111'
+  const n = parseInt(m[1], 16)
+  const lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)
+  return lum > 150 ? '#111111' : '#ffffff'
+}
+
+/* ---- 跳动高亮块（highlightBox 特效）---- */
+interface WordBoxRect {
+  cx: number
+  cy: number
+  w: number
+  h: number
+}
+
+/** 高亮块从上一词跳到当前词的弹跳时长 ms */
+const BOX_SPRING_MS = 220
+
+/**
+ * 计算当前帧高亮块的姿态：找出"最近开始"的词（当前朗读词），
+ * 取其包围盒为目标；从上一词包围盒按弹跳缓动插值过去，逐词"跳"。
+ * 首词无前驱 → 缩放+淡入登场。返回块矩形（画布坐标，未含行偏移）。
+ */
+function resolveWordBox(
+  placed: PlacedChar[],
+  tMs: number,
+  fontSize: number
+): { activeIdx: number; rect: WordBoxRect; alpha: number } | null {
+  interface Group {
+    start: number
+    minX: number
+    maxX: number
+    top: number
+    bottom: number
+  }
+  const groups = new Map<number, Group>()
+  for (const p of placed) {
+    const top = p.y - p.fontSize * 0.62
+    const bottom = p.y + p.fontSize * 0.62
+    const g = groups.get(p.unitIndex)
+    if (!g) {
+      groups.set(p.unitIndex, { start: p.word.start, minX: p.x - p.w / 2, maxX: p.x + p.w / 2, top, bottom })
+    } else {
+      g.minX = Math.min(g.minX, p.x - p.w / 2)
+      g.maxX = Math.max(g.maxX, p.x + p.w / 2)
+      g.top = Math.min(g.top, top)
+      g.bottom = Math.max(g.bottom, bottom)
+    }
+  }
+  if (groups.size === 0) return null
+
+  // 当前词 = 已开始且开始时间最晚的词
+  let activeIdx = -1
+  let activeStart = -Infinity
+  for (const [idx, g] of groups) {
+    if (g.start <= tMs && (g.start > activeStart || (g.start === activeStart && idx > activeIdx))) {
+      activeIdx = idx
+      activeStart = g.start
+    }
+  }
+  if (activeIdx < 0) return null
+
+  const padX = fontSize * 0.3
+  const padY = fontSize * 0.18
+  const rectOf = (g: Group): WordBoxRect => ({
+    cx: (g.minX + g.maxX) / 2,
+    cy: (g.top + g.bottom) / 2,
+    w: g.maxX - g.minX + padX * 2,
+    h: g.bottom - g.top + padY * 2
+  })
+  const cur = rectOf(groups.get(activeIdx)!)
+  const t = clamp01((tMs - activeStart) / BOX_SPRING_MS)
+  const prevG = groups.get(activeIdx - 1)
+  if (!prevG) {
+    // 首词登场：从 0 缩放弹入并淡入
+    const s = easeOutBack(t)
+    return { activeIdx, alpha: clamp01(t * 2), rect: { cx: cur.cx, cy: cur.cy, w: cur.w * s, h: cur.h * s } }
+  }
+  const prev = rectOf(prevG)
+  const ePos = easeOutBack(t)
+  const eSize = easeOutCubic(t)
+  const L = (a: number, b: number, k: number): number => a + (b - a) * k
+  return {
+    activeIdx,
+    alpha: 1,
+    rect: {
+      cx: L(prev.cx, cur.cx, ePos),
+      cy: L(prev.cy, cur.cy, ePos),
+      w: L(prev.w, cur.w, eSize),
+      h: L(prev.h, cur.h, eSize)
+    }
+  }
+}
+
+/** 绘制圆角高亮块（在当前词文字之下） */
+function drawWordBox(
+  ctx: CanvasRenderingContext2D,
+  rect: WordBoxRect,
+  style: RenderStyle,
+  alpha: number,
+  dx: number,
+  dy: number
+): void {
+  ctx.save()
+  ctx.globalAlpha = clamp01(alpha)
+  ctx.fillStyle = style.highlightColor
+  const w = Math.max(rect.w, 1)
+  const h = Math.max(rect.h, 1)
+  ctx.beginPath()
+  ctx.roundRect(rect.cx - w / 2 + dx, rect.cy - h / 2 + dy, w, h, Math.min(h * 0.34, style.fontSize * 0.34))
+  ctx.fill()
+  ctx.restore()
+}
+
 /** 文字底色块：在整行文字后面垫一个圆角色块（透明度可调） */
 function drawTextBg(
   ctx: CanvasRenderingContext2D,
@@ -133,6 +269,12 @@ function applyGlow(ctx: CanvasRenderingContext2D, style: RenderStyle, glow: numb
 }
 
 function drawBackground(ctx: CanvasRenderingContext2D, style: RenderStyle): void {
+  if (style.bgType === 'image') {
+    // 图片由 drawBackdrop 按 cover 绘制；这里先铺黑底兜底（图片未加载/有空白时）
+    ctx.fillStyle = '#000000'
+    ctx.fillRect(0, 0, style.width, style.height)
+    return
+  }
   if (style.bgType === 'solid') {
     ctx.fillStyle = style.bgFrom
   } else {
@@ -325,6 +467,69 @@ function drawLineStack(
   }
 }
 
+/** 计算某字符在指定时刻的 CharFx；时刻早于其出场门限则返回 null（残影/主体共用） */
+function charFxAt(
+  effect: EffectPreset,
+  p: PlacedChar,
+  line: LrcLine,
+  tMs: number,
+  intensity: number,
+  rand: (key: number) => number,
+  unitCount: number
+): CharFx | null {
+  const [uStart, uEnd] = effect.unit === 'word' ? [p.word.start, p.word.end] : [p.char.start, p.char.end]
+  const gateStart = effect.appearAtLineStart ? line.start : uStart
+  if (tMs < gateStart) return null
+  const enterT = clamp01((tMs - gateStart) / effect.enterDuration)
+  return effect.apply({
+    unitIndex: p.unitIndex,
+    unitCount,
+    charIndexInUnit: p.charIndexInUnit,
+    enterT,
+    timeInLine: tMs - line.start,
+    lineDuration: line.end - line.start,
+    unitStart: uStart - line.start,
+    unitEnd: uEnd - line.start,
+    intensity,
+    rand
+  })
+}
+
+/** 运动残影：按更早时刻的姿态画 count 枚淡出残影（仅在字符相对当前帧有位移时） */
+function drawCharTrail(
+  ctx: CanvasRenderingContext2D,
+  effect: EffectPreset,
+  p: PlacedChar,
+  line: LrcLine,
+  style: RenderStyle,
+  tMs: number,
+  lineAlpha: number,
+  lineDy: number,
+  mainFx: CharFx,
+  rand: (key: number) => number,
+  unitCount: number
+): void {
+  const trail = effect.trail!
+  const decay = trail.decay ?? 0.5
+  for (let i = trail.count; i >= 1; i--) {
+    const gf = charFxAt(effect, p, line, tMs - i * trail.stepMs, style.intensity, rand, unitCount)
+    if (!gf) continue
+    // 与当前帧几乎重合 = 没在动，不画残影，避免静止时字符变粗
+    if (Math.abs(gf.dx - mainFx.dx) < 0.5 && Math.abs(gf.dy - mainFx.dy) < 0.5) continue
+    const a = gf.alpha * lineAlpha * (1 - i / (trail.count + 1)) * decay
+    if (a <= 0.01 || gf.scale <= 0.003) continue
+    ctx.save()
+    ctx.translate(p.x + gf.dx + line.dx, p.y + gf.dy + lineDy + line.dy)
+    if (p.rotate !== 0 || gf.rotate !== 0) ctx.rotate(p.rotate + gf.rotate)
+    if (gf.scale !== 1) ctx.scale(gf.scale, gf.scale)
+    ctx.globalAlpha = clamp01(a * style.textAlpha)
+    ctx.fillStyle = style.textColor
+    ctx.font = fontStr(style, p.fontSize)
+    ctx.fillText(p.char.text, 0, 0)
+    ctx.restore()
+  }
+}
+
 function drawLine(
   ctx: CanvasRenderingContext2D,
   effect: EffectPreset,
@@ -347,31 +552,37 @@ function drawLine(
   drawTextBg(ctx, placed, style, lineAlpha, line.dx, line.dy + lineDy)
   ctx.fillStyle = style.textColor
 
+  // 跳动高亮块：在当前朗读词背后画圆角块，块内词用对比色保证可读
+  const box = effect.wordBox ? resolveWordBox(placed, tMs, style.fontSize) : null
+  const boxTextColor = box ? contrastColor(style.highlightColor) : style.textColor
+  if (box && box.alpha > 0.003) {
+    drawWordBox(ctx, box.rect, style, lineAlpha * box.alpha, line.dx, line.dy + lineDy)
+  }
+
   let lastVisible: PlacedChar | null = null
   for (const p of placed) {
-    const unitStart = effect.unit === 'word' ? p.word.start : p.char.start
-    if (tMs < unitStart) continue
-    const enterT = clamp01((tMs - unitStart) / effect.enterDuration)
-    const fx = effect.apply({
-      unitIndex: p.unitIndex,
-      unitCount,
-      charIndexInUnit: p.charIndexInUnit,
-      enterT,
-      timeInLine,
-      lineDuration: line.end - line.start,
-      intensity: style.intensity,
-      rand
-    })
+    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount)
+    if (!fx) continue
     const alpha = fx.alpha * lineAlpha
     if (alpha <= 0.003 || fx.scale <= 0.003) continue
     lastVisible = p
+
+    // 运动残影画在主体之下
+    if (effect.trail) drawCharTrail(ctx, effect, p, line, style, tMs, lineAlpha, lineDy, fx, rand, unitCount)
 
     ctx.save()
     ctx.translate(p.x + fx.dx + line.dx, p.y + fx.dy + lineDy + line.dy)
     if (p.rotate !== 0 || fx.rotate !== 0) ctx.rotate(p.rotate + fx.rotate)
     if (fx.scale !== 1) ctx.scale(fx.scale, fx.scale)
+    if (fx.skewX || fx.skewY) ctx.transform(1, fx.skewY ?? 0, fx.skewX ?? 0, 1, 0, 0)
     ctx.globalAlpha = clamp01(alpha * style.textAlpha)
     if (fx.blur > 0.3) ctx.filter = `blur(${Math.min(fx.blur, 24)}px)`
+    ctx.fillStyle =
+      box && p.unitIndex === box.activeIdx
+        ? boxTextColor
+        : fx.highlight
+          ? mixHex(style.textColor, style.highlightColor, clamp01(fx.highlight))
+          : style.textColor
     ctx.font = fontStr(style, p.fontSize)
     // 特效辉光与常驻光晕取较强者；阴影与光晕共用 shadow 通道，都开时画两遍
     const glow = Math.max(fx.glow > 0.5 ? fx.glow : 0, style.halo)
@@ -402,13 +613,62 @@ function drawLine(
   ctx.restore()
 }
 
+/**
+ * 遮罩式入场转场：在 enterDuration 内用动画裁剪区域把整行揭示出来。
+ * 揭示完成后（进度≥1）直接走常规 drawLine。整块在裁剪内一次性全显，
+ * 可见性完全由裁剪边界推进决定。
+ */
+function drawLineReveal(
+  ctx: CanvasRenderingContext2D,
+  effect: EffectPreset,
+  line: LrcLine,
+  style: RenderStyle,
+  tMs: number
+): void {
+  const p = clamp01((tMs - line.start) / effect.enterDuration)
+  if (p >= 1) {
+    drawLine(ctx, effect, line, style, tMs, 1, 0)
+    return
+  }
+  const placed = getLayout(ctx, line, style, effect.layoutVariant)
+  if (placed.length === 0) return
+  const b = measureBlock(placed, style.fontSize)
+  // 余量：避免裁掉抗锯齿边缘与辉光（擦入的推进边仍是硬边，符合 wipe 观感）
+  const pad = style.fontSize * 0.6
+  const x = b.x + line.dx - pad
+  const y = b.y + line.dy - pad
+  const w = b.w + pad * 2
+  const h = b.h + pad * 2
+  const e = easeOutCubic(p)
+
+  ctx.save()
+  ctx.beginPath()
+  if (effect.reveal === 'iris') {
+    ctx.arc(x + w / 2, y + h / 2, Math.max(Math.hypot(w, h) * 0.5 * e, 0.01), 0, Math.PI * 2)
+  } else if (effect.reveal === 'clockWipe') {
+    const cx = x + w / 2
+    const cy = y + h / 2
+    const a0 = -Math.PI / 2 // 从 12 点方向顺时针扫
+    ctx.moveTo(cx, cy)
+    ctx.arc(cx, cy, Math.hypot(w, h) * 0.5, a0, a0 + e * Math.PI * 2)
+    ctx.closePath()
+  } else {
+    // wipe：矩形从左向右展开
+    ctx.rect(x, y, w * e, h)
+  }
+  ctx.clip()
+  drawLine(ctx, effect, line, style, tMs, 1, 0)
+  ctx.restore()
+}
+
 /** 独立文字块：不参与歌词流，自己的起止区间内独立进退场 */
 function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, style: RenderStyle, tMs: number): void {
   const effect = effectFor(line, style)
   const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
 
   if (!effect.lineTransition) {
-    drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+    if (effect.reveal && exitP === 0) drawLineReveal(ctx, effect, line, style, tMs)
+    else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
     return
   }
 
@@ -453,6 +713,15 @@ export function renderFrame(
   drawBackdrop?.(ctx)
   if (lines.length === 0) return
 
+  // 全局文字变换：绕画面中心平移+旋转所有文字（背景/视频不受影响）
+  const hasGlobalTf = style.globalDx !== 0 || style.globalDy !== 0 || style.globalRotate !== 0
+  if (hasGlobalTf) {
+    ctx.save()
+    ctx.translate(style.width / 2 + style.globalDx, style.height / 2 + style.globalDy)
+    ctx.rotate((style.globalRotate * Math.PI) / 180)
+    ctx.translate(-style.width / 2, -style.height / 2)
+  }
+
   const lyric = lines.filter((l) => l.kind !== 'text')
 
   if (lyric.length > 0) {
@@ -480,7 +749,8 @@ export function renderFrame(
       if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
       const effect = effectFor(line, style)
       if (tMs < line.end) {
-        drawLine(ctx, effect, line, style, tMs, 1, 0)
+        if (effect.reveal) drawLineReveal(ctx, effect, line, style, tMs)
+        else drawLine(ctx, effect, line, style, tMs, 1, 0)
       } else {
         // 默认退场：淡出 + 上浮（停靠式特效的行离开堆叠后也走这里收尾）
         const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
@@ -495,4 +765,14 @@ export function renderFrame(
     if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
     drawTextBlock(ctx, line, style, tMs)
   }
+
+  if (hasGlobalTf) ctx.restore()
+}
+
+/** 全局文字变换矩阵应用到当前 ctx（供预览选中框等覆盖层与渲染保持一致） */
+export function applyGlobalTextTransform(ctx: CanvasRenderingContext2D, style: RenderStyle): void {
+  if (style.globalDx === 0 && style.globalDy === 0 && style.globalRotate === 0) return
+  ctx.translate(style.width / 2 + style.globalDx, style.height / 2 + style.globalDy)
+  ctx.rotate((style.globalRotate * Math.PI) / 180)
+  ctx.translate(-style.width / 2, -style.height / 2)
 }

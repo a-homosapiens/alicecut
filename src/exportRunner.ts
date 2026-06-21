@@ -1,7 +1,14 @@
 import type { LrcLine, LrcMeta } from './core/types'
 import { renderFrame, type RenderStyle } from './core/render'
 import { clipSourceTime, type MediaClip } from './core/media'
-import { drawVideoBackdrop, pauseAllMedia, seekClipExact, getMediaEl } from './mediaPool'
+import {
+  drawBackgroundImage,
+  drawVideoBackdrop,
+  loadBgImage,
+  pauseAllMedia,
+  seekClipExact,
+  getMediaEl
+} from './mediaPool'
 
 export interface RunExportOptions {
   lines: LrcLine[]
@@ -43,11 +50,16 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
       sourceInMs: c.sourceIn,
       sourceOutMs: c.sourceOut,
       speed: c.speed,
-      loop: c.loop
+      loop: c.loop,
+      fadeInMs: c.fadeInMs,
+      fadeOutMs: c.fadeOutMs
     }))
 
   // 导出期间预览不在播放，确保元素都停住，只按帧 seek
   pauseAllMedia()
+
+  // 背景图片：先解码，保证首帧就能画出
+  if (o.style.bgType === 'image' && o.style.bgImage) await loadBgImage(o.style.bgImage)
 
   const durationMs = o.durationSec * 1000
   const totalFrames = Math.max(1, Math.ceil(o.durationSec * o.fps))
@@ -75,9 +87,12 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
           await seekClipExact(clip, srcT / 1000)
         }
       }
-      renderFrame(ctx, o.lines, o.meta, o.style, tMs, (c) =>
+      renderFrame(ctx, o.lines, o.meta, o.style, tMs, (c) => {
+        if (o.style.bgType === 'image' && o.style.bgImage) {
+          drawBackgroundImage(c, o.style.bgImage, o.style.width, o.style.height)
+        }
         drawVideoBackdrop(c, videoClips, tMs, durationMs, o.style.width, o.style.height)
-      )
+      })
       const img = ctx.getImageData(0, 0, o.style.width, o.style.height)
       await window.desktop.exportFrame(new Uint8Array(img.data.buffer))
       if (n % 5 === 0 || n === totalFrames - 1) o.onProgress?.((n + 1) / totalFrames)

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { LrcLine, LrcMeta } from '../core/types'
-import { parseLrc } from '../core/lrc'
+import { parseCaptions, repaginateLines } from '../core/subtitles'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
 import {
   clampSpeed,
@@ -10,7 +10,8 @@ import {
   splitClipAt,
   withClipDefaults,
   type LoopSpec,
-  type MediaClip
+  type MediaClip,
+  type VideoTransition
 } from '../core/media'
 import { invalidateLayoutCache, type RenderStyle } from '../core/render'
 
@@ -29,13 +30,22 @@ export interface StyleState {
   fontSize: number
   textColor: string
   glowColor: string
-  bgType: 'solid' | 'gradient'
+  /** 卡拉OK高亮色（当前词染色） */
+  highlightColor: string
+  /** 背景类型：纯色 / 渐变 / 图片 */
+  bgType: 'solid' | 'gradient' | 'image'
   bgFrom: string
   bgTo: string
   bgAngle: number
+  /** 背景图片绝对路径（bgType='image' 时使用）；null = 未选 */
+  bgImage: string | null
   effectId: string
   intensity: number
   showMeta: boolean
+  /** 全局文字变换：所有文字一起平移（画布像素）与旋转（度），绕画面中心 */
+  globalDx: number
+  globalDy: number
+  globalRotate: number
   /** 文字不透明度 0–1 */
   textAlpha: number
   italic: boolean
@@ -67,7 +77,13 @@ interface ProjectState {
   /** 时间轴上选中的媒体线段 id */
   selectedClipId: number | null
 
+  /** 已导入的插件文字特效（仅 id/name，函数体在 effects 注册表里） */
+  pluginEffects: { id: string; name: string }[]
+  /** 登记新导入的插件特效（去重） */
+  addPluginEffects(list: { id: string; name: string }[]): void
   loadLrc(text: string, name: string): void
+  /** 按"每页时长阈值"重新分页（整句 ↔ 逐词）；重置行级特效/位置 */
+  repaginate(combineWithinMs: number): void
   hydrate(data: { meta: LrcMeta; lines: LrcLine[]; style: StyleState; lrcName: string | null }): void
   /** 加入媒体线段；缺省字段（trim/speed/layer/变换等）自动补默认值 */
   addClip(clip: Parameters<typeof withClipDefaults>[0]): MediaClip
@@ -78,6 +94,10 @@ interface ProjectState {
   setClipLoop(id: number, loop: LoopSpec): void
   setClipSpeed(id: number, speed: number): void
   setClipLayer(id: number, layer: number): void
+  /** 设置音轨淡入/淡出时长 ms（钳到线段时间轴占用时长内） */
+  setClipFade(id: number, patch: { in?: number; out?: number }): void
+  /** 设置视频进/退场转场（null = 清除） */
+  setClipTransition(id: number, which: 'in' | 'out', trans: VideoTransition | null): void
   /** 视频画面变换：从拖拽起始快照平移 / 直接设缩放 */
   setClipTransformFrom(original: { id: number; tx: number; ty: number }, dtx: number, dty: number): void
   setClipScale(id: number, scale: number): void
@@ -136,13 +156,18 @@ export const useProject = create<ProjectState>((set, get) => ({
     fontSize: 88,
     textColor: '#ffffff',
     glowColor: '#7dd3fc',
+    highlightColor: '#ffd400',
     bgType: 'gradient',
     bgFrom: '#0f0c29',
     bgTo: '#24243e',
     bgAngle: 160,
+    bgImage: null,
     effectId: 'pop',
     intensity: 1,
     showMeta: true,
+    globalDx: 0,
+    globalDy: 0,
+    globalRotate: 0,
     textAlpha: 1,
     italic: false,
     textBgColor: '#000000',
@@ -158,11 +183,30 @@ export const useProject = create<ProjectState>((set, get) => ({
   exporting: false,
   selectedIds: [],
   selectedClipId: null,
+  pluginEffects: [],
+
+  addPluginEffects(list) {
+    const seen = new Set(get().pluginEffects.map((e) => e.id))
+    const merged = [...get().pluginEffects, ...list.filter((e) => !seen.has(e.id))]
+    set({ pluginEffects: merged })
+  },
 
   loadLrc(text, name) {
-    const parsed = parseLrc(text)
+    const parsed = parseCaptions(text, name)
     invalidateLayoutCache()
     set({ meta: parsed.meta, lines: parsed.lines, lrcName: name, currentTime: 0, selectedIds: [] })
+  },
+
+  repaginate(combineWithinMs) {
+    const st = get()
+    const lyric = st.lines.filter((l) => l.kind !== 'text')
+    if (lyric.length === 0) return
+    const textBlocks = st.lines.filter((l) => l.kind === 'text')
+    // text 块 id 保留，重排的歌词行 id 顺延其后，保证全局唯一
+    const maxTextId = textBlocks.reduce((m, l) => Math.max(m, l.id), -1)
+    const repaged = repaginateLines(lyric, combineWithinMs).map((l, i) => ({ ...l, id: maxTextId + 1 + i }))
+    invalidateLayoutCache()
+    set({ lines: sortLines([...repaged, ...textBlocks]), selectedIds: [], selectedClipId: null })
   },
 
   hydrate(data) {
@@ -220,6 +264,26 @@ export const useProject = create<ProjectState>((set, get) => ({
   setClipLayer(id, layer) {
     const l = Math.max(0, Math.round(layer))
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, layer: l } : c)) })
+  },
+
+  setClipFade(id, patch) {
+    set({
+      clips: get().clips.map((c) => {
+        if (c.id !== id) return c
+        const placedMs = c.loop === 'infinite' ? Infinity : ((c.sourceOut - c.sourceIn) / c.speed) * c.loop
+        const clamp = (v: number): number => Math.min(placedMs, Math.max(0, Math.round(v)))
+        return {
+          ...c,
+          fadeInMs: patch.in !== undefined ? clamp(patch.in) : c.fadeInMs,
+          fadeOutMs: patch.out !== undefined ? clamp(patch.out) : c.fadeOutMs
+        }
+      })
+    })
+  },
+
+  setClipTransition(id, which, trans) {
+    const key = which === 'in' ? 'transIn' : 'transOut'
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, [key]: trans } : c)) })
   },
 
   setClipTransformFrom(original, dtx, dty) {
@@ -368,13 +432,18 @@ export function toRenderStyle(style: StyleState): RenderStyle {
     fontSize: style.fontSize,
     textColor: style.textColor,
     glowColor: style.glowColor,
+    highlightColor: style.highlightColor,
     bgType: style.bgType,
     bgFrom: style.bgFrom,
     bgTo: style.bgTo,
     bgAngle: style.bgAngle,
+    bgImage: style.bgImage,
     effectId: style.effectId,
     intensity: style.intensity,
     showMeta: style.showMeta,
+    globalDx: style.globalDx,
+    globalDy: style.globalDy,
+    globalRotate: style.globalRotate,
     textAlpha: style.textAlpha,
     italic: style.italic,
     textBgColor: style.textBgColor,

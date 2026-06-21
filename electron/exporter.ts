@@ -11,6 +11,9 @@ export interface ExportAudioClip {
   sourceOutMs: number
   speed: number
   loop: number | 'infinite'
+  /** 淡入/淡出时长 ms（0 = 无） */
+  fadeInMs: number
+  fadeOutMs: number
 }
 
 export interface ExportOptions {
@@ -47,9 +50,15 @@ const AUDIO_RATE = 48000
 /**
  * 单条音轨的滤镜链：
  * atrim 取修剪区间 → atempo 变速 → aloop 循环（统一重采样到 48k 定采样数）
- * → adelay 平移到时间轴起点。
+ * → afade 淡入/淡出（作用于循环后的整段，st 为流内时间）→ adelay 平移到时间轴起点。
  */
-function audioClipFilter(clip: ExportAudioClip, inputIdx: number, label: string): string {
+function audioClipFilter(
+  clip: ExportAudioClip,
+  inputIdx: number,
+  label: string,
+  durationSec: number
+): string {
+  const segSec = (clip.sourceOutMs - clip.sourceInMs) / 1000 / clip.speed
   const steps: string[] = [
     `atrim=start=${(clip.sourceInMs / 1000).toFixed(3)}:end=${(clip.sourceOutMs / 1000).toFixed(3)}`,
     'asetpts=PTS-STARTPTS',
@@ -57,10 +66,19 @@ function audioClipFilter(clip: ExportAudioClip, inputIdx: number, label: string)
     `aresample=${AUDIO_RATE}`
   ]
   if (clip.loop === 'infinite' || clip.loop > 1) {
-    const segSec = (clip.sourceOutMs - clip.sourceInMs) / 1000 / clip.speed
     const size = Math.ceil(segSec * AUDIO_RATE)
     const loops = clip.loop === 'infinite' ? -1 : clip.loop - 1
     steps.push(`aloop=loop=${loops}:size=${size}`)
+  }
+  // 淡入：从流首（= 线段起点）开始；淡出：到线段在时间轴上的可听结束处
+  // （无限循环按项目结束折算，否则为循环后总长）
+  const placedSec = clip.loop === 'infinite' ? Math.max(0, durationSec - clip.startMs / 1000) : segSec * clip.loop
+  if (clip.fadeInMs > 0) {
+    steps.push(`afade=t=in:st=0:d=${(clip.fadeInMs / 1000).toFixed(3)}`)
+  }
+  if (clip.fadeOutMs > 0 && placedSec > 0) {
+    const d = Math.min(clip.fadeOutMs / 1000, placedSec)
+    steps.push(`afade=t=out:st=${Math.max(0, placedSec - d).toFixed(3)}:d=${d.toFixed(3)}`)
   }
   steps.push(`adelay=${Math.max(0, Math.round(clip.startMs))}:all=1`)
   return `[${inputIdx}:a]${steps.join(',')}${label}`
@@ -80,7 +98,7 @@ function buildArgs(o: ExportOptions): string[] {
   }
   args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p')
   if (o.audioClips.length > 0) {
-    const parts = o.audioClips.map((clip, i) => audioClipFilter(clip, i + 1, `[a${i}]`))
+    const parts = o.audioClips.map((clip, i) => audioClipFilter(clip, i + 1, `[a${i}]`, o.durationSec))
     let filter = parts.join(';')
     let outLabel = '[a0]'
     if (o.audioClips.length > 1) {

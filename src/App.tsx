@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useProject } from './store/project'
+import { serializeSrt } from './core/subtitles'
+import { loadPluginSource, installTextEffects } from './plugins'
+import { validatePlugin } from './core/effects/validator'
 import { clipEnd, type MediaClip } from './core/media'
 import { probeMediaDuration } from './mediaPool'
 import { toggle } from './playback'
@@ -45,7 +48,7 @@ export function App(): React.JSX.Element {
     if (!file) return
     useProject.getState().loadLrc(file.text, file.name)
     if (useProject.getState().lines.length === 0) {
-      alert('未在文件中找到带时间戳（[mm:ss.xx]）的歌词行，请确认是有效的 .lrc 文件')
+      alert('未在文件中找到带时间戳的歌词行，请确认是有效的 .lrc / .srt / .vtt 文件')
     }
   }
 
@@ -98,6 +101,44 @@ export function App(): React.JSX.Element {
     await window.desktop.saveProject(json, `${base}.dlv.json`)
   }
 
+  const exportSrt = async (): Promise<void> => {
+    const st = useProject.getState()
+    const srt = serializeSrt(st.lines)
+    if (!srt) {
+      alert('没有可导出的字幕')
+      return
+    }
+    const base = (st.lrcName ?? '字幕').replace(/\.[^.]+$/, '')
+    await window.desktop.saveSrt(srt, `${base}.srt`)
+  }
+
+  const importPlugin = async (): Promise<void> => {
+    const file = await window.desktop.openPlugin()
+    if (!file) return
+    try {
+      const manifest = await loadPluginSource(file.text)
+      const report = validatePlugin(manifest, file.text)
+      if (!report.ok) {
+        const errs = report.issues
+          .filter((i) => i.level === 'error')
+          .map((i) => `• ${i.effect ? `[${i.effect}] ` : ''}${i.message}`)
+          .join('\n')
+        alert(`插件「${report.pluginName}」未通过校验，已拒绝导入：\n${errs}`)
+        return
+      }
+      const added = installTextEffects(manifest)
+      if (added.length === 0) {
+        alert('插件未包含可用的文字特效')
+        return
+      }
+      useProject.getState().addPluginEffects(added)
+      const warns = report.issues.filter((i) => i.level === 'warn').length
+      alert(`已导入插件「${manifest.name}」：${added.length} 个文字特效` + (warns ? `\n（${warns} 条警告）` : ''))
+    } catch (err) {
+      alert('插件导入失败：' + (err instanceof Error ? err.message : String(err)))
+    }
+  }
+
   const openProject = async (): Promise<void> => {
     const file = await window.desktop.openProject()
     if (!file) return
@@ -146,11 +187,17 @@ export function App(): React.JSX.Element {
           导入音频 {audioCount > 0 ? `· ${audioCount} 条` : ''}
         </button>
         <div className="spacer" />
+        <button className="btn" onClick={() => void importPlugin()} title="导入第三方特效插件（.mjs/.js）">
+          导入插件
+        </button>
         <button className="btn" onClick={() => void openProject()}>
           打开工程
         </button>
         <button className="btn" disabled={!hasLines} onClick={() => void saveProject()}>
           保存工程
+        </button>
+        <button className="btn" disabled={!hasLines} onClick={() => void exportSrt()}>
+          导出字幕
         </button>
         <button className="btn btn-primary" disabled={!hasLines} onClick={() => setShowExport(true)}>
           导出视频

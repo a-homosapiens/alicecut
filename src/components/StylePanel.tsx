@@ -4,14 +4,93 @@ import { EFFECTS } from '../core/effects'
 import { SYSTEM_FONTS, loadBuiltinFonts, registerImportedFont, type FontOption } from '../fonts'
 import { invalidateLayoutCache } from '../core/render'
 
+/** 内联 style 用的 font-family（含空格/中文名加引号） */
+const cssFamily = (family: string): string => `"${family}"`
+
+/** 可折叠区块：标题点击展开/收起，收起时显示摘要 */
+function Section({
+  title,
+  summary,
+  defaultOpen = true,
+  children
+}: {
+  title: string
+  summary?: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}): React.JSX.Element {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="sp-section">
+      <h3 className="sp-head" onClick={() => setOpen((o) => !o)}>
+        <span className={`sp-caret${open ? ' open' : ''}`}>▸</span>
+        {title}
+        {!open && summary && <span className="sp-summary">{summary}</span>}
+      </h3>
+      {open && <div className="sp-body">{children}</div>}
+    </section>
+  )
+}
+
+/** 字体可视化选择：点击展开，每个字体用它自身渲染出字体名预览 */
+function FontPicker({
+  fonts,
+  value,
+  onPick,
+  onImport
+}: {
+  fonts: FontOption[]
+  value: string
+  onPick: (family: string) => void
+  onImport: () => void
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const current = fonts.find((f) => f.family === value)
+  return (
+    <div className="font-picker">
+      <button className="font-current" onClick={() => setOpen((o) => !o)}>
+        <span style={{ fontFamily: cssFamily(value) }}>{current?.label ?? value}</span>
+        <span className="font-caret">{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div className="font-grid">
+          {fonts.map((f) => (
+            <button
+              key={f.family}
+              className={`font-cell${f.family === value ? ' active' : ''}`}
+              style={{ fontFamily: cssFamily(f.family) }}
+              title={f.label}
+              onClick={() => {
+                onPick(f.family)
+                setOpen(false)
+              }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <button className="btn btn-sm" onClick={onImport}>
+        导入字体文件…
+      </button>
+    </div>
+  )
+}
+
 export function StylePanel(): React.JSX.Element {
   const style = useProject((s) => s.style)
   const patchStyle = useProject((s) => s.patchStyle)
   const selectedIds = useProject((s) => s.selectedIds)
   const lines = useProject((s) => s.lines)
+  const pluginEffects = useProject((s) => s.pluginEffects)
   const [fonts, setFonts] = useState<FontOption[]>(SYSTEM_FONTS)
 
-  // 选中线段时特效作用于选中项：全部同一特效则高亮它，混合则都不高亮
+  // 内置 + 插件特效合并展示（插件项带标记）
+  const effectChips = [
+    ...EFFECTS.map((e) => ({ id: e.id, name: e.name, plugin: false })),
+    ...pluginEffects.map((e) => ({ id: e.id, name: e.name, plugin: true }))
+  ]
+
   const selectedEffects = new Set(
     lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectId ?? style.effectId)
   )
@@ -48,12 +127,19 @@ export function StylePanel(): React.JSX.Element {
     }
   }
 
+  const chooseBgImage = async (): Promise<void> => {
+    const file = await window.desktop.openImage()
+    if (file) patchStyle({ bgType: 'image', bgImage: file.path })
+  }
+
+  const bgName = style.bgImage ? style.bgImage.split(/[\\/]/).pop() : null
+  const bgSummary =
+    style.bgType === 'image' ? `图片：${bgName ?? '未选'}` : style.bgType === 'gradient' ? '渐变' : '纯色'
+
   return (
     <div className="style-panel">
-      <section>
-        <h3>画面</h3>
+      <Section title="画面尺寸">
         <label>
-          尺寸
           <select value={style.aspect} onChange={(e) => patchStyle({ aspect: e.target.value as AspectId })}>
             {(Object.keys(RESOLUTIONS) as AspectId[]).map((id) => (
               <option key={id} value={id}>
@@ -62,22 +148,44 @@ export function StylePanel(): React.JSX.Element {
             ))}
           </select>
         </label>
-        <label>
-          背景
-          <select
-            value={style.bgType}
-            onChange={(e) => patchStyle({ bgType: e.target.value as 'solid' | 'gradient' })}
-          >
-            <option value="solid">纯色</option>
-            <option value="gradient">渐变</option>
-          </select>
-        </label>
-        <label className="row">
-          {style.bgType === 'solid' ? '颜色' : '渐变起点'}
-          <input type="color" value={style.bgFrom} onChange={(e) => patchStyle({ bgFrom: e.target.value })} />
-        </label>
+      </Section>
+
+      <Section title="背景" summary={bgSummary} defaultOpen={false}>
+        <div className="bg-types">
+          {(['image', 'gradient', 'solid'] as const).map((t) => (
+            <button
+              key={t}
+              className={`effect-chip${style.bgType === t ? ' active' : ''}`}
+              onClick={() => patchStyle({ bgType: t })}
+            >
+              {t === 'image' ? '图片' : t === 'gradient' ? '渐变' : '纯色'}
+            </button>
+          ))}
+        </div>
+
+        {style.bgType === 'image' && (
+          <div className="bg-image">
+            <button className="btn btn-primary btn-sm" onClick={() => void chooseBgImage()}>
+              {style.bgImage ? '更换图片…' : '选择图片…'}
+            </button>
+            {bgName && <div className="bg-image-name">{bgName}</div>}
+            <p className="hint">图片按 cover 铺满画面（保持比例裁切）</p>
+          </div>
+        )}
+
+        {style.bgType === 'solid' && (
+          <label className="row">
+            颜色
+            <input type="color" value={style.bgFrom} onChange={(e) => patchStyle({ bgFrom: e.target.value })} />
+          </label>
+        )}
+
         {style.bgType === 'gradient' && (
           <>
+            <label className="row">
+              渐变起点
+              <input type="color" value={style.bgFrom} onChange={(e) => patchStyle({ bgFrom: e.target.value })} />
+            </label>
             <label className="row">
               渐变终点
               <input type="color" value={style.bgTo} onChange={(e) => patchStyle({ bgTo: e.target.value })} />
@@ -94,23 +202,15 @@ export function StylePanel(): React.JSX.Element {
             </label>
           </>
         )}
-      </section>
+      </Section>
 
-      <section>
-        <h3>文字</h3>
-        <label>
-          字体
-          <select value={style.fontFamily} onChange={(e) => patchStyle({ fontFamily: e.target.value })}>
-            {fonts.map((f) => (
-              <option key={f.family} value={f.family}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button className="btn btn-sm" onClick={importFont}>
-          导入字体文件…
-        </button>
+      <Section title="文字">
+        <FontPicker
+          fonts={fonts}
+          value={style.fontFamily}
+          onPick={(family) => patchStyle({ fontFamily: family })}
+          onImport={importFont}
+        />
         <label>
           字号 {style.fontSize}px
           <input
@@ -131,11 +231,7 @@ export function StylePanel(): React.JSX.Element {
         </label>
         <label className="row">
           斜体
-          <input
-            type="checkbox"
-            checked={style.italic}
-            onChange={(e) => patchStyle({ italic: e.target.checked })}
-          />
+          <input type="checkbox" checked={style.italic} onChange={(e) => patchStyle({ italic: e.target.checked })} />
         </label>
         <label className="row">
           文字颜色
@@ -153,16 +249,51 @@ export function StylePanel(): React.JSX.Element {
         </label>
         <label className="row">
           片头显示歌名
+          <input type="checkbox" checked={style.showMeta} onChange={(e) => patchStyle({ showMeta: e.target.checked })} />
+        </label>
+      </Section>
+
+      <Section title="文字整体变换" summary={`X${style.globalDx} Y${style.globalDy} ${style.globalRotate}°`} defaultOpen={false}>
+        <p className="hint">所有文字（歌词与文字块）一起平移、旋转</p>
+        <label>
+          水平 X {style.globalDx}px
           <input
-            type="checkbox"
-            checked={style.showMeta}
-            onChange={(e) => patchStyle({ showMeta: e.target.checked })}
+            type="range"
+            min={-800}
+            max={800}
+            value={style.globalDx}
+            onChange={(e) => patchStyle({ globalDx: Number(e.target.value) })}
           />
         </label>
-      </section>
+        <label>
+          垂直 Y {style.globalDy}px
+          <input
+            type="range"
+            min={-800}
+            max={800}
+            value={style.globalDy}
+            onChange={(e) => patchStyle({ globalDy: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          旋转 {style.globalRotate}°
+          <input
+            type="range"
+            min={-180}
+            max={180}
+            value={style.globalRotate}
+            onChange={(e) => patchStyle({ globalRotate: Number(e.target.value) })}
+          />
+        </label>
+        <button
+          className="btn btn-sm"
+          onClick={() => patchStyle({ globalDx: 0, globalDy: 0, globalRotate: 0 })}
+        >
+          重置
+        </button>
+      </Section>
 
-      <section>
-        <h3>字幕底色与描影</h3>
+      <Section title="字幕底色与描影" defaultOpen={false}>
         <label>
           底色不透明度 {Math.round(style.textBgAlpha * 100)}%{style.textBgAlpha === 0 ? '（无底色）' : ''}
           <input
@@ -176,11 +307,7 @@ export function StylePanel(): React.JSX.Element {
         {style.textBgAlpha > 0 && (
           <label className="row">
             底色颜色
-            <input
-              type="color"
-              value={style.textBgColor}
-              onChange={(e) => patchStyle({ textBgColor: e.target.value })}
-            />
+            <input type="color" value={style.textBgColor} onChange={(e) => patchStyle({ textBgColor: e.target.value })} />
           </label>
         )}
         <label>
@@ -211,11 +338,7 @@ export function StylePanel(): React.JSX.Element {
           <>
             <label className="row">
               阴影颜色
-              <input
-                type="color"
-                value={style.shadowColor}
-                onChange={(e) => patchStyle({ shadowColor: e.target.value })}
-              />
+              <input type="color" value={style.shadowColor} onChange={(e) => patchStyle({ shadowColor: e.target.value })} />
             </label>
             <label>
               阴影偏移 {style.shadowOffset}px
@@ -239,29 +362,35 @@ export function StylePanel(): React.JSX.Element {
             </label>
           </>
         )}
-      </section>
+      </Section>
 
-      <section>
-        <h3>特效{selectedIds.length > 0 ? `（应用到选中的 ${selectedIds.length} 条）` : '（全局默认）'}</h3>
+      <Section title={`特效${selectedIds.length > 0 ? `（选中 ${selectedIds.length} 条）` : '（全局默认）'}`}>
         <div className="effect-list">
-          {EFFECTS.map((fx) => (
+          {effectChips.map((fx) => (
             <button
               key={fx.id}
-              className={`effect-chip${activeEffectId === fx.id ? ' active' : ''}`}
+              className={`effect-chip${activeEffectId === fx.id ? ' active' : ''}${fx.plugin ? ' plugin' : ''}`}
               onClick={() => chooseEffect(fx.id)}
+              title={fx.plugin ? '插件特效' : undefined}
             >
               {fx.name}
+              {fx.plugin && <span className="effect-chip-tag">插件</span>}
             </button>
           ))}
         </div>
         {selectedIds.length > 0 && (
-          <button
-            className="btn btn-sm"
-            onClick={() => useProject.getState().setLineEffect(selectedIds, null)}
-          >
+          <button className="btn btn-sm" onClick={() => useProject.getState().setLineEffect(selectedIds, null)}>
             恢复跟随全局默认
           </button>
         )}
+        <label className="row">
+          卡拉OK高亮色
+          <input
+            type="color"
+            value={style.highlightColor}
+            onChange={(e) => patchStyle({ highlightColor: e.target.value })}
+          />
+        </label>
         <label>
           强度 {style.intensity.toFixed(1)}
           <input
@@ -273,7 +402,7 @@ export function StylePanel(): React.JSX.Element {
             onChange={(e) => patchStyle({ intensity: Number(e.target.value) })}
           />
         </label>
-      </section>
+      </Section>
     </div>
   )
 }

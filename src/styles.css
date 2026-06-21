@@ -196,6 +196,41 @@ body,
   line-height: 1.8;
 }
 
+/* ---- 重新分页控件 ---- */
+.repaginate {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+}
+
+.repaginate input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.repaginate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.repaginate-label {
+  color: var(--text);
+}
+
+.repaginate-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.repaginate-ends .btn-sm {
+  margin: 0;
+}
+
 .lyric-row {
   display: flex;
   gap: 8px;
@@ -288,6 +323,126 @@ body,
   cursor: pointer;
 }
 
+/* 可折叠区块 */
+.sp-section {
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: none !important;
+  padding: 8px 0;
+  margin: 0 !important;
+}
+
+.sp-caret {
+  display: inline-block;
+  transition: transform 0.12s;
+  font-size: 10px;
+}
+
+.sp-caret.open {
+  transform: rotate(90deg);
+}
+
+.sp-summary {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  font-size: 11px;
+  max-width: 130px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sp-body {
+  padding: 4px 0 8px;
+}
+
+/* 背景类型 + 图片 */
+.bg-types {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.bg-image {
+  margin-bottom: 10px;
+}
+
+.bg-image-name {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+/* 字体可视化选择 */
+.font-picker {
+  margin-bottom: 10px;
+}
+
+.font-current {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.font-caret {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.font-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.font-cell {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.font-cell:hover {
+  border-color: var(--accent);
+}
+
+.font-cell.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, var(--bg));
+}
+
 .effect-list {
   display: flex;
   flex-wrap: wrap;
@@ -308,6 +463,17 @@ body,
 .effect-chip.active {
   background: var(--accent);
   border-color: var(--accent);
+}
+
+.effect-chip.plugin {
+  border-style: dashed;
+}
+
+.effect-chip-tag {
+  margin-left: 5px;
+  font-size: 9px;
+  opacity: 0.7;
+  vertical-align: middle;
 }
 
 /* ---- 时间轴 ---- */
@@ -448,6 +614,32 @@ body,
   z-index: 2;
 }
 
+/* 选中音轨：轨道与线段加高，内部显示波形 */
+.tl-audiotrack.expanded {
+  height: 58px;
+}
+
+.tl-clip-wave {
+  height: 54px;
+  align-items: flex-start;
+  padding-top: 3px;
+}
+
+.tl-wave {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: 4px;
+}
+
+.tl-clip-wave > span {
+  position: relative;
+  z-index: 1;
+}
+
 .tl-clip-icon {
   font-size: 11px;
   pointer-events: none;
@@ -496,6 +688,94 @@ body,
   padding: 1px 6px;
   font-size: 10px;
   line-height: 1.2;
+}
+
+/* ---- 音轨特效（淡入/淡出）---- */
+.clip-fx {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.clip-fx-add {
+  position: relative;
+  display: inline-flex;
+}
+
+.clip-fx-add .btn-sm {
+  margin: 0;
+}
+
+.clip-fx-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 20;
+  white-space: nowrap;
+}
+
+.clip-fx-menu button {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.clip-fx-menu button:hover:not(:disabled) {
+  background: var(--accent);
+}
+
+.clip-fx-menu button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.clip-fx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.clip-fx-chip input {
+  width: 44px;
+}
+
+.clip-fx-chip select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 1px 2px;
+}
+
+.clip-fx-x {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+}
+
+.clip-fx-x:hover {
+  color: var(--text);
 }
 
 /* 独立文字块轨 */

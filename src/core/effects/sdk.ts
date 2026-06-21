@@ -1,0 +1,144 @@
+/**
+ * 特效插件 SDK（公开契约，api=1）。第三方按此实现纯函数特效，
+ * 宿主用本文件的适配器把它包成内部 EffectPreset：合并到恒等值、钳制范围、
+ * 异常兜底——坏插件不能搞崩渲染。详见 docs/plugin-platform.md。
+ *
+ * 注：本原型为「软」装载（仅输出校验 + try/catch），尚未做全局遮蔽/硬沙箱。
+ */
+import { clamp01, easeOutCubic, easeOutBack, springEase, valueNoise } from '../easing'
+import { IDENTITY_FX, type CharFx, type EffectPreset } from './types'
+
+/** 平台提供给插件的纯工具，免去访问全局 */
+export interface PluginHelpers {
+  clamp01(t: number): number
+  lerp(a: number, b: number, t: number): number
+  easeOutCubic(t: number): number
+  easeOutBack(t: number): number
+  spring(t: number): number
+  noise(seed: number, x: number): number
+}
+
+/** 插件可返回的字符变换增量（只写要改的，其余取恒等） */
+export type PartialCharFx = Partial<{
+  dx: number
+  dy: number
+  scale: number
+  rotate: number
+  alpha: number
+  blur: number
+  glow: number
+  highlight: number
+  skewX: number
+  skewY: number
+}>
+
+/** 传给插件 apply 的参数（公开契约，与内部 FxArgs 对齐） */
+export interface TextFxArgs {
+  unitIndex: number
+  unitCount: number
+  charIndexInUnit: number
+  enterT: number
+  timeInLine: number
+  lineDuration: number
+  unitStart: number
+  unitEnd: number
+  intensity: number
+  rand(key: number): number
+}
+
+export interface TextEffectDef {
+  id: string
+  name: string
+  unit: 'char' | 'word'
+  enterDurationMs: number
+  appearAtLineStart?: boolean
+  apply(args: TextFxArgs, m: PluginHelpers): PartialCharFx
+}
+
+export interface PluginManifest {
+  api: number
+  name: string
+  version?: string
+  author?: string
+  textEffects?: TextEffectDef[]
+}
+
+export const HELPERS: PluginHelpers = {
+  clamp01,
+  lerp: (a, b, t) => a + (b - a) * t,
+  easeOutCubic,
+  easeOutBack,
+  spring: springEase,
+  noise: valueNoise
+}
+
+function num(v: unknown, fallback: number): number {
+  return typeof v === 'number' && Number.isFinite(v) ? v : fallback
+}
+
+/** 把插件返回的部分增量合并成完整 CharFx，并钳制到安全范围 */
+export function sanitizeCharFx(p: PartialCharFx | null | undefined): CharFx {
+  if (!p || typeof p !== 'object') return { ...IDENTITY_FX }
+  return {
+    dx: num(p.dx, 0),
+    dy: num(p.dy, 0),
+    scale: Math.max(0, num(p.scale, 1)),
+    rotate: num(p.rotate, 0),
+    alpha: clamp01(num(p.alpha, 1)),
+    blur: Math.max(0, num(p.blur, 0)),
+    glow: Math.max(0, num(p.glow, 0)),
+    highlight: clamp01(num(p.highlight, 0)),
+    skewX: num(p.skewX, 0),
+    skewY: num(p.skewY, 0)
+  }
+}
+
+/** 适配器：TextEffectDef → 内部 EffectPreset（apply 包裹校验与兜底） */
+export function textEffectToPreset(def: TextEffectDef): EffectPreset {
+  return {
+    id: def.id,
+    name: def.name,
+    enterDuration: Math.max(1, num(def.enterDurationMs, 300)),
+    layoutVariant: 'center',
+    unit: def.unit === 'word' ? 'word' : 'char',
+    appearAtLineStart: !!def.appearAtLineStart,
+    apply(args) {
+      try {
+        return sanitizeCharFx(def.apply(args, HELPERS))
+      } catch {
+        return { ...IDENTITY_FX }
+      }
+    }
+  }
+}
+
+/** 校验插件清单结构，返回规整后的 manifest；非法则抛出可读错误 */
+export function validateManifest(raw: unknown): PluginManifest {
+  if (!raw || typeof raw !== 'object') throw new Error('插件没有默认导出对象')
+  const m = raw as Record<string, unknown>
+  if (m.api !== 1) throw new Error(`不支持的插件 api 版本：${String(m.api)}（需要 1）`)
+  if (typeof m.name !== 'string' || m.name.length === 0) throw new Error('插件缺少 name')
+  const rawEffects = Array.isArray(m.textEffects) ? m.textEffects : []
+  const textEffects: TextEffectDef[] = []
+  for (const t of rawEffects) {
+    const d = t as Record<string, unknown>
+    if (typeof d.id !== 'string' || typeof d.name !== 'string' || typeof d.apply !== 'function') {
+      throw new Error('textEffects 条目需含 id、name 与 apply')
+    }
+    textEffects.push({
+      id: d.id,
+      name: d.name,
+      unit: d.unit === 'word' ? 'word' : 'char',
+      enterDurationMs: num(d.enterDurationMs, 300),
+      appearAtLineStart: !!d.appearAtLineStart,
+      apply: d.apply as TextEffectDef['apply']
+    })
+  }
+  return {
+    api: 1,
+    name: m.name,
+    version: typeof m.version === 'string' ? m.version : undefined,
+    author: typeof m.author === 'string' ? m.author : undefined,
+    textEffects
+  }
+}

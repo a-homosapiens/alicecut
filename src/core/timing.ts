@@ -108,7 +108,10 @@ export function buildLines(entries: RawEntry[]): LrcLine[] {
   return entries.map((entry, i) => {
     const start = entry.time
     let end: number
-    if (i + 1 < entries.length) {
+    if (entry.end != null) {
+      // 字幕格式自带显式结束时间：行在自身区间结束（可与下一行之间留空白）
+      end = entry.end
+    } else if (i + 1 < entries.length) {
       end = entries[i + 1].time
     } else {
       const estimate = Math.max(MIN_LINE_MS, [...entry.content].length * PER_CHAR_MS)

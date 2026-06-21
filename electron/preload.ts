@@ -22,12 +22,16 @@ const api = {
   openLrc: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openLrc'),
   openAudio: (): Promise<PickedMediaFile[] | null> => ipcRenderer.invoke('file:openAudio'),
   openVideo: (): Promise<PickedMediaFile[] | null> => ipcRenderer.invoke('file:openVideo'),
+  openImage: (): Promise<PickedMediaFile | null> => ipcRenderer.invoke('file:openImage'),
   openFont: (): Promise<OpenedBinaryFile | null> => ipcRenderer.invoke('file:openFont'),
   saveVideoPath: (defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveVideoPath', defaultName),
   saveProject: (json: string, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveProject', json, defaultName),
+  saveSrt: (text: string, defaultName: string): Promise<string | null> =>
+    ipcRenderer.invoke('file:saveSrt', text, defaultName),
   openProject: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openProject'),
+  openPlugin: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openPlugin'),
   fileExists: (path: string): Promise<boolean> => ipcRenderer.invoke('file:exists', path),
   mediaHasAudio: (path: string): Promise<boolean> => ipcRenderer.invoke('media:hasAudio', path),
 
@@ -42,6 +46,8 @@ const api = {
       sourceOutMs: number
       speed: number
       loop: number | 'infinite'
+      fadeInMs: number
+      fadeOutMs: number
     }[]
     durationSec: number
     outPath: string

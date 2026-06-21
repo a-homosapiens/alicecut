@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useProject } from '../store/project'
+import { repaginateLines } from '../core/subtitles'
 import { seek } from '../playback'
 
 function fmt(ms: number): string {
@@ -8,16 +9,21 @@ function fmt(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-/** 歌词行列表：点击跳转、双击编辑文本 */
+/** 歌词行列表：点击跳转、双击编辑文本；顶部可按粒度重新分页 */
 export function LyricsPanel(): React.JSX.Element {
   const lines = useProject((s) => s.lines)
   const currentTime = useProject((s) => s.currentTime)
   const updateLineText = useProject((s) => s.updateLineText)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
+  const [gran, setGran] = useState(1200)
 
   const tMs = currentTime * 1000
   const activeId = lines.findLast((l) => l.start <= tMs)?.id
+
+  // 应用前预览：当前粒度会切成多少页（不改动状态）
+  const lyricLines = lines.filter((l) => l.kind !== 'text')
+  const previewPages = repaginateLines(lyricLines, gran).length
 
   const commit = (id: number): void => {
     if (draft.trim().length > 0) updateLineText(id, draft)
@@ -38,6 +44,29 @@ export function LyricsPanel(): React.JSX.Element {
 
   return (
     <div className="lyrics-panel">
+      {lyricLines.length > 0 && (
+        <div className="repaginate">
+          <div className="repaginate-row">
+            <span className="repaginate-label">分页粒度</span>
+            <span className="repaginate-count">≈ {previewPages} 页</span>
+          </div>
+          <input
+            type="range"
+            min={200}
+            max={4000}
+            step={100}
+            value={gran}
+            onChange={(e) => setGran(Number(e.target.value))}
+          />
+          <div className="repaginate-row repaginate-ends">
+            <span>逐词</span>
+            <button className="btn btn-sm" onClick={() => useProject.getState().repaginate(gran)}>
+              应用分页
+            </button>
+            <span>整句</span>
+          </div>
+        </div>
+      )}
       {lines.map((line) => (
         <div
           key={line.id}

@@ -195,10 +195,10 @@ dynamic-caption.exe --export job.json
 | `video` | | 背景视频：写法同 `audio`，cover 铺满画布，文字画在其上 |
 | `duration` | | 成片时长（秒）；缺省按歌词与有限媒体线段推算 |
 | `fps` | | 10–60，默认 30 |
-| `style` | | 覆盖默认样式：`aspect`（"9:16"/"16:9"/"1:1"）、`effectId`（全局默认特效）、`fontFamily`、`fontSize`、`fontWeight`、`italic`、`textColor`、`textAlpha`、`textBgColor`/`textBgAlpha`（字幕底色）、`halo`/`glowColor`（光晕）、`shadowColor`/`shadowAlpha`/`shadowBlur`/`shadowOffset`（阴影）、`bgType`/`bgFrom`/`bgTo`/`bgAngle`、`intensity`、`showMeta` 等 |
+| `style` | | 覆盖默认样式：`aspect`（"9:16"/"16:9"/"1:1"）、`effectId`（全局默认特效）、`fontFamily`、`fontSize`、`fontWeight`、`italic`、`textColor`、`textAlpha`、`textBgColor`/`textBgAlpha`（字幕底色）、`halo`/`glowColor`（光晕）、`shadowColor`/`shadowAlpha`/`shadowBlur`/`shadowOffset`（阴影）、`bgType`（solid/gradient/image）/`bgFrom`/`bgTo`/`bgAngle`/`bgImage`（图片路径）、`globalDx`/`globalDy`/`globalRotate`（全局文字变换）、`intensity`、`showMeta` 等 |
 | `lineEffects` | | 行级特效：`{"0-7": "rise", "9": "punch"}`，键为行序号或区间，值为特效 id |
 
-特效 id：`pop` `punch` `slide` `typewriter` `glow` `flip` `flip-bottom` `rise`。
+特效 id：`pop` `punch` `slide` `typewriter` `glow` `karaoke` `flip` `flip-bottom` `rise`。
 
 ### 输出协议
 

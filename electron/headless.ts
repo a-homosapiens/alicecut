@@ -2,6 +2,27 @@ import { app, ipcMain } from 'electron'
 import { access, readFile, mkdir } from 'fs/promises'
 import { basename, dirname, isAbsolute, resolve } from 'path'
 import { readLrcText } from './lrcFile'
+import type { VideoTransition, VideoTransitionType } from '../src/core/media'
+
+/** 转场写法：对象 { type, dur(秒) } 或简写字符串 "type:dur"（如 "fade:1"） */
+type TransitionSpec = string | { type: string; dur: number }
+
+/** 解析转场为 { type, durationMs }；类型合法性由渲染端 withClipDefaults 兜底校验 */
+function parseTransition(spec: TransitionSpec | undefined): VideoTransition | null {
+  if (!spec) return null
+  let type = ''
+  let durSec = NaN
+  if (typeof spec === 'string') {
+    const [t, d] = spec.split(':')
+    type = (t ?? '').trim()
+    durSec = Number(d)
+  } else {
+    type = String(spec.type ?? '')
+    durSec = Number(spec.dur)
+  }
+  if (!type || !(durSec > 0)) return null
+  return { type: type as VideoTransitionType, durationMs: Math.round(durSec * 1000) }
+}
 
 /** job.json 里的媒体线段：字符串简写 = { path, start: 0, loop: 1 } */
 export interface JobClipSpec {
@@ -21,6 +42,12 @@ export interface JobClipSpec {
   x?: number
   y?: number
   scale?: number
+  /** 音轨淡入/淡出时长（秒，0 = 无）；视频忽略 */
+  fadeIn?: number
+  fadeOut?: number
+  /** 视频进/退场转场（音频忽略）；视频间转场 = 重叠两段 + 后段 transIn */
+  transIn?: TransitionSpec
+  transOut?: TransitionSpec
 }
 
 /** job.json 里的独立文字块 */
@@ -74,6 +101,10 @@ export interface HeadlessClip {
   tx: number
   ty: number
   scale: number
+  fadeInMs: number
+  fadeOutMs: number
+  transIn: VideoTransition | null
+  transOut: VideoTransition | null
 }
 
 /** 准备好、可直接发给渲染进程的任务载荷 */
@@ -126,6 +157,10 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
     return t
   })
 
+  // 背景图片：把相对路径解析为绝对路径（相对 job 文件目录）
+  const style = { ...(job.style ?? {}) }
+  if (typeof style.bgImage === 'string') style.bgImage = rel(style.bgImage)
+
   return {
     lrcText,
     lrcName: basename(lrcPath),
@@ -134,7 +169,7 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
     outPath,
     fps,
     durationSec,
-    style: job.style ?? {},
+    style,
     lineEffects: job.lineEffects ?? {}
   }
 }
@@ -169,7 +204,11 @@ async function normalizeClips(
       layer: Math.max(0, Math.round(obj.layer ?? 0)),
       tx: Math.round(obj.x ?? 0),
       ty: Math.round(obj.y ?? 0),
-      scale: obj.scale && obj.scale > 0 ? obj.scale : 1
+      scale: obj.scale && obj.scale > 0 ? obj.scale : 1,
+      fadeInMs: Math.max(0, Math.round((obj.fadeIn ?? 0) * 1000)),
+      fadeOutMs: Math.max(0, Math.round((obj.fadeOut ?? 0) * 1000)),
+      transIn: parseTransition(obj.transIn),
+      transOut: parseTransition(obj.transOut)
     })
   }
   return clips

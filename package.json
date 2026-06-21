@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "fonts": "node scripts/download-fonts.js",
+    "validate-plugin": "node scripts/validate-plugin.ts",
     "start": "electron-vite preview"
   },
   "dependencies": {
