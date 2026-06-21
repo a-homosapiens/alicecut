@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://dynamic-caption/plugin-sdk/manifest.schema.json",
+  "title": "Dynamic Caption Effect Plugin Manifest (api 1)",
+  "description": "Validates the static, JSON-serializable fields of a plugin's default export. NOTE: a manifest is a live JS module, so the `apply` FUNCTION on each effect cannot be checked by JSON Schema — it is validated at runtime by the host (must be a function) and by the plugin validator (must be pure/deterministic/in-range). Use this schema to lint the static metadata only.",
+  "type": "object",
+  "required": ["api", "name"],
+  "additionalProperties": true,
+  "properties": {
+    "api": {
+      "const": 1,
+      "description": "Contract version. Must be 1."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plugin name shown to users."
+    },
+    "version": {
+      "type": "string",
+      "description": "Optional semver string, e.g. 1.0.0."
+    },
+    "author": {
+      "type": "string",
+      "description": "Optional author handle."
+    },
+    "textEffects": {
+      "type": "array",
+      "description": "Text effects contributed by this plugin.",
+      "items": { "$ref": "#/definitions/textEffect" }
+    }
+  },
+  "definitions": {
+    "textEffect": {
+      "type": "object",
+      "required": ["id", "name", "apply"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.-]+$",
+          "description": "Globally unique id; namespace it, e.g. alice.wave."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Display name in the effect picker."
+        },
+        "unit": {
+          "enum": ["char", "word"],
+          "default": "char",
+          "description": "Animation unit: per character or per word."
+        },
+        "enterDurationMs": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 300,
+          "description": "Per-unit enter animation duration, ms."
+        },
+        "appearAtLineStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, all chars appear at line start together (karaoke-style)."
+        },
+        "apply": {
+          "description": "REQUIRED function (args, m) => PartialCharFx. Cannot be expressed in JSON; validated at runtime."
+        }
+      }
+    }
+  }
+}
