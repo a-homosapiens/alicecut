@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { installTextEffects, installLineEffects, installPlugin } from './plugins'
+import { installTextEffects, installLineEffects, installVideoTransitions, installPlugin } from './plugins'
 import { getEffect } from './core/effects'
+import { getVideoTransition } from './core/media'
 import type { PluginManifest } from './core/effects/sdk'
 
 /**
@@ -78,13 +79,50 @@ describe('整行转场导入注册路径', () => {
     expect(preset.lineTransition?.maxDepth).toBe(2)
   })
 
-  it('installPlugin 合并文字 + 整行特效', () => {
-    const all = installPlugin({
+  it('installPlugin 文字/整行进 pickerEffects、视频转场单列', () => {
+    const r = installPlugin({
       api: 1,
-      name: 'Both',
+      name: 'All',
       textEffects: [{ id: 't.x', name: 'x', unit: 'char', enterDurationMs: 300, apply: () => ({}) }],
-      lineTransitions: manifest.lineTransitions
+      lineTransitions: manifest.lineTransitions,
+      videoTransitions: [{ id: 'v.x', name: 'V', in: () => ({ alpha: 0 }), out: () => ({ alpha: 0 }) }]
     })
-    expect(all.map((e) => e.id).sort()).toEqual(['t.x', 'test.tilt'])
+    expect(r.pickerEffects.map((e) => e.id).sort()).toEqual(['t.x', 'test.tilt'])
+    expect(r.videoTransitions).toEqual([{ id: 'v.x', name: 'V' }])
+  })
+})
+
+describe('视频转场导入注册路径', () => {
+  const manifest: PluginManifest = {
+    api: 1,
+    name: 'VT',
+    videoTransitions: [
+      {
+        id: 'test.spinIn',
+        name: '旋入',
+        in: (p, m) => ({ alpha: m.clamp01(p), scale: 1.2 - 0.2 * p }),
+        out: (p) => ({ alpha: p })
+      }
+    ]
+  }
+
+  it('installVideoTransitions 注册可由 getVideoTransition 取回', () => {
+    expect(installVideoTransitions(manifest)).toEqual([{ id: 'test.spinIn', name: '旋入' }])
+    const impl = getVideoTransition('test.spinIn')
+    expect(impl?.name).toBe('旋入')
+    // in/out 输出经 sanitizeVideoFx 合并钳制
+    const fx = impl!.in(1)
+    expect(fx.alpha).toBe(1)
+    expect(fx.scale).toBe(1)
+    expect(fx.wipe).toBeNull()
+  })
+
+  it('in 抛错回退恒等（不崩渲染）', () => {
+    installVideoTransitions({
+      api: 1,
+      name: 'Bad',
+      videoTransitions: [{ id: 'test.boom', name: 'B', in: () => { throw new Error('x') }, out: () => ({}) }]
+    })
+    expect(getVideoTransition('test.boom')!.in(0.5)).toEqual({ alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null })
   })
 })

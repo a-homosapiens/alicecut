@@ -7,6 +7,7 @@
  */
 import { clamp01, easeOutCubic, easeOutBack, springEase, valueNoise } from '../easing'
 import { IDENTITY_FX, IDENTITY_LINE_FX, type CharFx, type EffectPreset, type LineFx } from './types'
+import { sanitizeVideoFx, type VideoTransitionImpl } from '../media'
 
 /** 整行转场参数（公开契约，与内部 LineFxArgs 对齐） */
 export interface LineFxArgs {
@@ -105,6 +106,30 @@ export interface LineEffectDef {
   pose(depth: number, args: LineFxArgs, m: PluginHelpers): PartialLineFx
 }
 
+/** 视频转场变换增量（只写要改的，其余取恒等） */
+export type PartialVideoFx = Partial<{
+  /** 0..1 不透明度 */
+  alpha: number
+  /** 画布宽/高的比例平移 */
+  dxFrac: number
+  dyFrac: number
+  /** 乘到线段自身缩放之上的额外缩放 */
+  scale: number
+  /** 擦除遮罩：从某侧揭示 reveal∈[0,1]；null = 不裁剪 */
+  wipe: { dir: 'L' | 'R' | 'U' | 'D'; reveal: number } | null
+}>
+
+/**
+ * 视频转场（进/退场）。进场 in(p)：p 0→1（1=完全到位）；退场 out(p)：p 1→0
+ * （1=仍完整、0=已离场）。纯函数返回 PartialVideoFx。视频间转场仍靠"重叠两段+后段 in"。
+ */
+export interface VideoTransitionDef {
+  id: string
+  name: string
+  in(p: number, m: PluginHelpers): PartialVideoFx
+  out(p: number, m: PluginHelpers): PartialVideoFx
+}
+
 export interface PluginManifest {
   api: number
   name: string
@@ -113,6 +138,8 @@ export interface PluginManifest {
   textEffects?: TextEffectDef[]
   /** 整行停靠式转场（unit='line'） */
   lineTransitions?: LineEffectDef[]
+  /** 视频转场（进/退场） */
+  videoTransitions?: VideoTransitionDef[]
 }
 
 export const HELPERS: PluginHelpers = {
@@ -211,6 +238,28 @@ export function lineEffectToPreset(def: LineEffectDef): EffectPreset {
   }
 }
 
+/** 适配器：VideoTransitionDef → 内部 VideoTransitionImpl（in/out 包裹校验与兜底） */
+export function videoTransitionToImpl(def: VideoTransitionDef): VideoTransitionImpl {
+  return {
+    id: def.id,
+    name: def.name,
+    in(p) {
+      try {
+        return sanitizeVideoFx(def.in(p, HELPERS))
+      } catch {
+        return sanitizeVideoFx(null)
+      }
+    },
+    out(p) {
+      try {
+        return sanitizeVideoFx(def.out(p, HELPERS))
+      } catch {
+        return sanitizeVideoFx(null)
+      }
+    }
+  }
+}
+
 /** 适配器：TextEffectDef → 内部 EffectPreset（apply 包裹校验与兜底；声明式能力规范化后透传） */
 export function textEffectToPreset(def: TextEffectDef): EffectPreset {
   const preset: EffectPreset = {
@@ -277,12 +326,27 @@ export function validateManifest(raw: unknown): PluginManifest {
       pose: d.pose as LineEffectDef['pose']
     })
   }
+  const rawVT = Array.isArray(m.videoTransitions) ? m.videoTransitions : []
+  const videoTransitions: VideoTransitionDef[] = []
+  for (const t of rawVT) {
+    const d = t as Record<string, unknown>
+    if (typeof d.id !== 'string' || typeof d.name !== 'string' || typeof d.in !== 'function' || typeof d.out !== 'function') {
+      throw new Error('videoTransitions 条目需含 id、name、in 与 out')
+    }
+    videoTransitions.push({
+      id: d.id,
+      name: d.name,
+      in: d.in as VideoTransitionDef['in'],
+      out: d.out as VideoTransitionDef['out']
+    })
+  }
   return {
     api: 1,
     name: m.name,
     version: typeof m.version === 'string' ? m.version : undefined,
     author: typeof m.author === 'string' ? m.author : undefined,
     textEffects,
-    lineTransitions
+    lineTransitions,
+    videoTransitions
   }
 }

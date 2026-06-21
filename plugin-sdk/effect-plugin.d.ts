@@ -177,6 +177,32 @@ export interface LineEffectDef {
   pose(depth: number, args: LineFxArgs, m: PluginHelpers): PartialLineFx
 }
 
+/** A whole-clip video transition transform. Return only what you change. */
+export type PartialVideoFx = Partial<{
+  /** 0..1 opacity. */
+  alpha: number
+  /** translate as a fraction of canvas width/height. */
+  dxFrac: number
+  dyFrac: number
+  /** extra scale multiplied onto the clip's own scale. */
+  scale: number
+  /** wipe mask revealing `reveal` (0..1) from a side; null = no clip. */
+  wipe: { dir: 'L' | 'R' | 'U' | 'D'; reveal: number } | null
+}>
+
+/**
+ * A video transition (enter/leave). `in(p)`: p goes 0→1 (1 = fully in place).
+ * `out(p)`: p goes 1→0 (1 = still whole, 0 = gone). Pure functions returning
+ * PartialVideoFx. A transition *between two clips* is done by overlapping the
+ * second clip's start before the first ends and giving it an `in` transition.
+ */
+export interface VideoTransitionDef {
+  id: string
+  name: string
+  in(p: number, m: PluginHelpers): PartialVideoFx
+  out(p: number, m: PluginHelpers): PartialVideoFx
+}
+
 /** A plugin's default export. */
 export interface PluginManifest {
   /** Contract version. Must be 1. */
@@ -191,6 +217,8 @@ export interface PluginManifest {
   textEffects?: TextEffectDef[]
   /** Whole-line docking transitions contributed by this plugin. */
   lineTransitions?: LineEffectDef[]
+  /** Video transitions (enter/leave) contributed by this plugin. */
+  videoTransitions?: VideoTransitionDef[]
 }
 
 /** Convenience type for `export default definePlugin({...})`-style authoring. */

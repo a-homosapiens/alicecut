@@ -19,7 +19,7 @@
 - 测试：`src/core/effects/validator.test.ts`（含与 easing 工具对齐的守护）。
 
 **SDK 已公开（第 9 节）**：`plugin-sdk/` 目录——
-- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`/`LineEffectDef`/`LineFxArgs`/`PartialLineFx`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。契约含**声明式遮罩能力** `reveal`/`trail`/`wordBox` 与**整行停靠式转场** `lineTransitions`（见第 5 节）。
+- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`/`LineEffectDef`/`LineFxArgs`/`PartialLineFx`/`VideoTransitionDef`/`PartialVideoFx`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。契约含**声明式遮罩能力** `reveal`/`trail`/`wordBox`、**整行停靠式转场** `lineTransitions`、**视频转场** `videoTransitions`（见第 5 节）。
 - `manifest.schema.json`：清单静态字段 JSON Schema。
 - `template.mjs`：带 JSDoc 类型引用的起步模板（零构建即得补全）。
 - `README.md`：贡献者指南（坐标系/单位/时序/确定性/校验/导入/安全模型）。
@@ -30,9 +30,11 @@
 - `loadPluginSource` 先过 Worker 闸门再在主世界 import 使用；Worker 不可用（node/vitest/headless）抛 `SandboxUnavailableError` → 降级同步校验（determinism 由两跑保证，与渲染世界无关，降级仍安全）。
 - **架构权衡（已知局限）**：渲染热路径是**同步**逐帧逐字，Worker 是异步的，无法为逐帧渲染做隔离——因此 Worker 只作**导入期闸门**，逐帧执行仍在主世界（带 try/catch + 钳制）。真正的同步逐帧隔离需要 **QuickJS-WASM**（同步 in-process isolate），列为下一步。当前闸门已能抓住：死循环、访问被禁全局、非确定性、越界/NaN。
 
-**未做（下一步）**：QuickJS-WASM 逐帧隔离、视频转场插件（把 `clipTransition` 改为注册表驱动）、缩略图渲染（需 headless 画布）、工程/Job 的插件依赖记录、市场/签名。下文为完整设计。
+**视频转场插件已落地**：`clipTransition` 改为**注册表驱动**（`media.ts` 的 `registerVideoTransition`/`getVideoTransition`/`videoTransitionList`，8 个内置自注册）；`VideoTransition.type` 放宽为 `string`，`normTransition` 不再强制已注册（插件载入前留住数据、渲染回退恒等）。插件契约 `VideoTransitionDef`（`in(p,m)`/`out(p,m)` → `PartialVideoFx`）+ 适配器 `videoTransitionToImpl` + `sanitizeVideoFx`；`installVideoTransitions` 注册、store `pluginVideoTransitions` 驱动时间轴转场菜单刷新；校验器与 Worker 探针均覆盖 in/out。示例 `examples/plugin-video.mjs`。**至此文字/整行/视频三类特效插件全部打通。**
 
-**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）、`examples/plugin-masks.mjs`（圆形展开/残影滑入/跳动高亮块，演示声明式 reveal/trail/wordBox）、`examples/plugin-lines.mjs`（倾斜上叠，演示整行停靠式转场 lineTransitions）。
+**未做（下一步）**：QuickJS-WASM 逐帧隔离、缩略图渲染（需 headless 画布）、工程/Job 的插件依赖记录、市场/签名。下文为完整设计。
+
+**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）、`examples/plugin-masks.mjs`（圆形展开/残影滑入/跳动高亮块，演示声明式 reveal/trail/wordBox）、`examples/plugin-lines.mjs`（倾斜上叠，演示整行停靠式转场 lineTransitions）、`examples/plugin-video.mjs`（冲入/斜滑入/百叶帘，演示视频转场 videoTransitions）。
 
 ## 0. 为什么我们的架构天然适合做插件
 
@@ -126,7 +128,9 @@ interface Helpers {          // 平台提供的纯工具，免去访问全局
 }
 ```
 
-## 4. 视频转场契约（VideoTransitionDef）
+## 4. 视频转场契约（VideoTransitionDef）✅ 已实现
+
+> 已落地（见上「原型状态」）。下方为契约定义，实际类型见 `plugin-sdk/effect-plugin.d.ts`。
 
 ```ts
 interface VideoTransitionDef {

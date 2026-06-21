@@ -5,12 +5,11 @@ import {
   clipEnd,
   clipSegmentMs,
   clipSourceTime,
+  videoTransitionList,
   MAX_SPEED,
   MIN_SPEED,
-  VIDEO_TRANSITIONS,
   type MediaClip,
-  type VideoTransition,
-  type VideoTransitionType
+  type VideoTransition
 } from '../core/media'
 import { seek } from '../playback'
 import { useWaveform } from '../waveform'
@@ -229,22 +228,13 @@ function ClipSegment({
   )
 }
 
-/** 视频转场类型的中文标签 */
-const TRANS_LABELS: Record<VideoTransitionType, string> = {
-  fade: '淡入淡出',
-  slideL: '左滑',
-  slideR: '右滑',
-  slideU: '上滑',
-  slideD: '下滑',
-  zoom: '缩放',
-  wipeL: '左擦',
-  wipeR: '右擦'
-}
-
 /** 视频转场：进场(transIn)/退场(transOut)。从菜单添加后可选类型与秒数 */
 function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
   const st = useProject.getState
   const [menuOpen, setMenuOpen] = useState(false)
+  // 订阅插件视频转场以触发重渲染；选项来自注册表（内置 + 插件）
+  useProject((s) => s.pluginVideoTransitions)
+  const options = videoTransitionList()
 
   const add = (which: 'in' | 'out'): void => {
     st().setClipTransition(clip.id, which, { type: 'fade', durationMs: 1000 })
@@ -256,11 +246,11 @@ function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
       {which === 'in' ? '进场' : '退场'}
       <select
         value={trans.type}
-        onChange={(e) => st().setClipTransition(clip.id, which, { ...trans, type: e.target.value as VideoTransitionType })}
+        onChange={(e) => st().setClipTransition(clip.id, which, { ...trans, type: e.target.value })}
       >
-        {VIDEO_TRANSITIONS.map((t) => (
-          <option key={t} value={t}>
-            {TRANS_LABELS[t]}
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
           </option>
         ))}
       </select>

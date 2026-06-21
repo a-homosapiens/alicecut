@@ -11,6 +11,9 @@ import {
   shiftClip,
   splitClipAt,
   withClipDefaults,
+  sanitizeVideoFx,
+  videoTransitionList,
+  getVideoTransition,
   type MediaClip
 } from './media'
 
@@ -97,6 +100,33 @@ describe('withClipDefaults 淡入淡出', () => {
   })
 })
 
+describe('视频转场注册表 + sanitizeVideoFx', () => {
+  it('内置 8 个转场已注册', () => {
+    const ids = videoTransitionList().map((v) => v.id)
+    for (const t of ['fade', 'slideL', 'slideR', 'slideU', 'slideD', 'zoom', 'wipeL', 'wipeR']) {
+      expect(ids).toContain(t)
+    }
+    expect(getVideoTransition('fade')?.name).toBe('淡入淡出')
+  })
+
+  it('sanitizeVideoFx 合并恒等并钳制', () => {
+    expect(sanitizeVideoFx({})).toEqual({ alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null })
+    const fx = sanitizeVideoFx({ alpha: 9, scale: -2, wipe: { dir: 'R', reveal: 5 } })
+    expect(fx.alpha).toBe(1)
+    expect(fx.scale).toBe(0)
+    expect(fx.wipe).toEqual({ dir: 'R', reveal: 1 })
+  })
+
+  it('非法 wipe.dir → null', () => {
+    expect(sanitizeVideoFx({ wipe: { dir: 'X' as 'L', reveal: 0.5 } }).wipe).toBeNull()
+  })
+
+  it('未注册的转场类型在渲染时回退恒等（数据仍保留）', () => {
+    const c = clip({ transIn: { type: 'plugin.unknown', durationMs: 1000 } })
+    expect(clipTransition(c, 1300, 99999)).toEqual({ alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null })
+  })
+})
+
 describe('clipTransition 视频转场', () => {
   // start 1000, seg 4000, loop 1 → end 5000
   it('无转场恒等', () => {
@@ -155,9 +185,13 @@ describe('withClipDefaults 视频转场规范化', () => {
   it('合法转场保留', () => {
     expect(mk({ transIn: { type: 'wipeR', durationMs: 800 } }).transIn).toEqual({ type: 'wipeR', durationMs: 800 })
   })
-  it('未知类型或非正时长 → null', () => {
-    expect(mk({ transIn: { type: 'bogus', durationMs: 500 } }).transIn).toBeNull()
+  it('未知类型（含插件）保留数据，渲染时回退恒等', () => {
+    // 放宽后：任意非空 type + 正时长都留住，避免插件载入顺序丢数据
+    expect(mk({ transIn: { type: 'plugin.x', durationMs: 500 } }).transIn).toEqual({ type: 'plugin.x', durationMs: 500 })
+  })
+  it('非正时长 / 空 type → null', () => {
     expect(mk({ transOut: { type: 'fade', durationMs: 0 } }).transOut).toBeNull()
+    expect(mk({ transIn: { type: '', durationMs: 500 } }).transIn).toBeNull()
   })
   it('缺省为 null', () => {
     const c = mk({})

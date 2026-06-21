@@ -147,7 +147,8 @@ export function validatePlugin(raw: unknown, source?: string): ValidationReport 
   if (typeof m.name !== 'string' || !m.name) err('缺少 name')
   const effects = Array.isArray(m.textEffects) ? m.textEffects : []
   const lineEffects = Array.isArray(m.lineTransitions) ? m.lineTransitions : []
-  if (effects.length === 0 && lineEffects.length === 0) warn('未声明任何 textEffects / lineTransitions')
+  const videoEffects = Array.isArray(m.videoTransitions) ? m.videoTransitions : []
+  if (effects.length === 0 && lineEffects.length === 0 && videoEffects.length === 0) warn('未声明任何 textEffects / lineTransitions / videoTransitions')
 
   const rand = seededRand(12345)
   // 每个采样参数都带确定性 rand（供插件 args.rand 使用）
@@ -263,6 +264,53 @@ export function validatePlugin(raw: unknown, source?: string): ValidationReport 
     }
   })
 
+  // 视频转场：探测 in/out 在进度网格上的确定性/范围/不崩
+  const pGrid = [0, 0.25, 0.5, 0.75, 1]
+  videoEffects.forEach((raw, i) => {
+    const d = raw as Record<string, unknown>
+    const id = typeof d.id === 'string' ? d.id : `vt#${i}`
+    if (typeof d.id !== 'string' || typeof d.name !== 'string' || typeof d.in !== 'function' || typeof d.out !== 'function') {
+      err('videoTransitions 条目需含 id、name、in 与 out', id)
+      return
+    }
+    const fin = d.in as (p: number, m: unknown) => unknown
+    const fout = d.out as (p: number, m: unknown) => unknown
+    let threw = false
+    for (const fn of [fin, fout]) {
+      for (const p of pGrid) {
+        try {
+          const o1 = fn(p, VALIDATOR_HELPERS)
+          const o2 = fn(p, VALIDATOR_HELPERS)
+          if (JSON.stringify(o1) !== JSON.stringify(o2)) {
+            err('in/out 非确定性（同参两次输出不同）', id)
+            threw = true
+            break
+          }
+          if (o1 && typeof o1 === 'object') {
+            for (const [k, v] of Object.entries(o1 as Record<string, unknown>)) {
+              if (typeof v !== 'number') continue
+              if (!Number.isFinite(v)) warn(`字段 ${k} 出现非有限值（宿主会回退恒等）`, id)
+              else if (RANGE[k] && (v < RANGE[k][0] || v > RANGE[k][1])) warn(`字段 ${k}=${v} 超出 [${RANGE[k][0]},${RANGE[k][1]}]（宿主会钳制）`, id)
+            }
+          }
+        } catch (e) {
+          if (!threw) err(`in/out 抛错：${e instanceof Error ? e.message : String(e)}`, id)
+          threw = true
+          break
+        }
+      }
+      if (threw) break
+    }
+    if (i === 0 && !threw) {
+      try {
+        sample.push(`${id} in(0): ${fmt(fin(0, VALIDATOR_HELPERS) as Record<string, unknown>)}`)
+        sample.push(`${id} in(1): ${fmt(fin(1, VALIDATOR_HELPERS) as Record<string, unknown>)}`)
+      } catch {
+        /* 已在上面报错 */
+      }
+    }
+  })
+
   // 源码扫描（启发式，多为 warn）：先剥离注释，避免文档注释里的"勿用 X"被误判
   if (source) {
     const code = stripComments(source)
@@ -274,7 +322,7 @@ export function validatePlugin(raw: unknown, source?: string): ValidationReport 
   return {
     ok: !issues.some((x) => x.level === 'error'),
     pluginName: typeof m.name === 'string' ? m.name : '?',
-    effectCount: effects.length + lineEffects.length,
+    effectCount: effects.length + lineEffects.length + videoEffects.length,
     issues,
     sample
   }

@@ -107,6 +107,36 @@ describe('validatePlugin 整行转场', () => {
   })
 })
 
+describe('validatePlugin 视频转场', () => {
+  const vtGood = {
+    api: 1,
+    name: 'VT',
+    videoTransitions: [
+      { id: 'v.spin', name: '旋入', in: (p: number) => ({ alpha: p, scale: 1.2 - 0.2 * p }), out: (p: number) => ({ alpha: p }) }
+    ]
+  }
+
+  it('合法视频转场通过并计入 effectCount', () => {
+    const r = validatePlugin(vtGood, 'export default {}')
+    expect(r.ok).toBe(true)
+    expect(r.effectCount).toBe(1)
+    expect(r.sample.some((s) => /in\(/.test(s))).toBe(true)
+  })
+
+  it('in 非确定性 → 致命错误', () => {
+    const r = validatePlugin({
+      ...vtGood,
+      videoTransitions: [{ ...vtGood.videoTransitions[0], in: () => ({ alpha: Math.random() }) }]
+    })
+    expect(r.ok).toBe(false)
+    expect(r.issues.some((i) => i.level === 'error' && /非确定性/.test(i.message))).toBe(true)
+  })
+
+  it('缺 in/out → 致命错误', () => {
+    expect(validatePlugin({ api: 1, name: 'X', videoTransitions: [{ id: 'a', name: 'b' }] }).ok).toBe(false)
+  })
+})
+
 describe('校验器内联工具与 easing 对齐', () => {
   it('clamp01 / easeOutCubic / easeOutBack / spring / noise 一致', () => {
     for (let i = 0; i <= 20; i++) {

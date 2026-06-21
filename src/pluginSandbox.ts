@@ -150,6 +150,17 @@ self.onmessage = async (ev) => {
     catch (e) { perEffect.push({ id, error: (e && e.message) || String(e) }) }
   }
 
+  // 视频转场：in/out 在进度网格上两跑
+  const vtDefs = manifest && Array.isArray(manifest.videoTransitions) ? manifest.videoTransitions : []
+  const pGrid = [0, 0.25, 0.5, 0.75, 1]
+  for (const def of vtDefs) {
+    const id = def && def.id || '?'
+    if (!def || typeof def.in !== 'function' || typeof def.out !== 'function') { perEffect.push({ id, error:'缺少 in/out' }); continue }
+    const runOnce = () => { const arr = []; for (const fn of [def.in, def.out]) for (const p of pGrid) arr.push(pick(fn(p, HELPERS))); return arr }
+    try { perEffect.push({ id, runA: runOnce(), runB: runOnce() }) }
+    catch (e) { perEffect.push({ id, error: (e && e.message) || String(e) }) }
+  }
+
   self.postMessage({ type:'result', perEffect })
 }
 `

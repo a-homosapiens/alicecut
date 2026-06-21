@@ -27,7 +27,8 @@ export const VIDEO_TRANSITIONS: VideoTransitionType[] = [
 ]
 
 export interface VideoTransition {
-  type: VideoTransitionType
+  /** 转场类型 id：内置（见 VIDEO_TRANSITIONS）或插件注册的 id */
+  type: string
   durationMs: number
 }
 
@@ -111,9 +112,13 @@ export function withClipDefaults(
   }
 }
 
-/** 规范化视频转场：类型非法或时长 ≤0 → null */
+/**
+ * 规范化视频转场：要求非空字符串 type 且时长 >0；否则 null。
+ * 不强制 type 必须已注册——插件转场可能在工程加载后才注册，先留住数据，
+ * 渲染时 clipTransition 查不到该 type 即回退恒等（插件载入后自然生效）。
+ */
 function normTransition(t: VideoTransition | null | undefined): VideoTransition | null {
-  if (!t || !VIDEO_TRANSITIONS.includes(t.type) || !(t.durationMs > 0)) return null
+  if (!t || typeof t.type !== 'string' || t.type.length === 0 || !(t.durationMs > 0)) return null
   return { type: t.type, durationMs: Math.round(t.durationMs) }
 }
 
@@ -193,9 +198,52 @@ function fxOut(type: VideoTransitionType, p: number): VideoClipFx {
   }
 }
 
+/* ---- 视频转场注册表（内置 + 插件）---- */
+
+/** 一个视频转场实现：进场 in(p) / 退场 out(p)，p 见 fxIn/fxOut 语义 */
+export interface VideoTransitionImpl {
+  id: string
+  name: string
+  in(p: number): VideoClipFx
+  out(p: number): VideoClipFx
+}
+
+/** 内置转场显示名 */
+const BUILTIN_NAMES: Record<VideoTransitionType, string> = {
+  fade: '淡入淡出',
+  slideL: '左滑',
+  slideR: '右滑',
+  slideU: '上滑',
+  slideD: '下滑',
+  zoom: '缩放',
+  wipeL: '左擦',
+  wipeR: '右擦'
+}
+
+const videoTransitionRegistry = new Map<string, VideoTransitionImpl>()
+
+/** 注册（或覆盖）一个视频转场实现 */
+export function registerVideoTransition(impl: VideoTransitionImpl): void {
+  videoTransitionRegistry.set(impl.id, impl)
+}
+
+export function getVideoTransition(id: string): VideoTransitionImpl | undefined {
+  return videoTransitionRegistry.get(id)
+}
+
+/** 当前可用的全部转场（内置 + 插件），供选择器展示 */
+export function videoTransitionList(): { id: string; name: string }[] {
+  return [...videoTransitionRegistry.values()].map(({ id, name }) => ({ id, name }))
+}
+
+// 注册 8 个内置转场（沿用 fxIn/fxOut 实现）
+for (const t of VIDEO_TRANSITIONS) {
+  registerVideoTransition({ id: t, name: BUILTIN_NAMES[t], in: (p) => fxIn(t, p), out: (p) => fxOut(t, p) })
+}
+
 /**
  * tMs 时刻该视频线段的转场绘制修正。进场窗口 [start, start+inDur]、
- * 退场窗口 [end-outDur, end]；窗口外或无转场返回恒等。
+ * 退场窗口 [end-outDur, end]；窗口外、无转场或 type 未注册返回恒等。
  */
 export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: number): VideoClipFx {
   const ti = clip.transIn
@@ -204,12 +252,29 @@ export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: numbe
   const end = clipEnd(clip, projectEndMs)
   if (tMs < clip.start || tMs >= end) return IDENTITY_CLIP_FX
   if (ti && ti.durationMs > 0 && tMs < clip.start + ti.durationMs) {
-    return fxIn(ti.type, easeOutCubic(clamp01((tMs - clip.start) / ti.durationMs)))
+    return getVideoTransition(ti.type)?.in(easeOutCubic(clamp01((tMs - clip.start) / ti.durationMs))) ?? IDENTITY_CLIP_FX
   }
   if (to && to.durationMs > 0 && tMs > end - to.durationMs) {
-    return fxOut(to.type, easeOutCubic(clamp01((end - tMs) / to.durationMs)))
+    return getVideoTransition(to.type)?.out(easeOutCubic(clamp01((end - tMs) / to.durationMs))) ?? IDENTITY_CLIP_FX
   }
   return IDENTITY_CLIP_FX
+}
+
+/** 把部分 VideoClipFx 合并到恒等并钳制（插件转场用） */
+export function sanitizeVideoFx(p: Partial<VideoClipFx> | null | undefined): VideoClipFx {
+  if (!p || typeof p !== 'object') return { ...IDENTITY_CLIP_FX }
+  const n = (v: unknown, f: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : f)
+  let wipe: VideoClipFx['wipe'] = null
+  if (p.wipe && typeof p.wipe === 'object' && ['L', 'R', 'U', 'D'].includes((p.wipe as { dir: string }).dir)) {
+    wipe = { dir: (p.wipe as { dir: 'L' | 'R' | 'U' | 'D' }).dir, reveal: clamp01(n((p.wipe as { reveal: number }).reveal, 1)) }
+  }
+  return {
+    alpha: clamp01(n(p.alpha, 1)),
+    dxFrac: n(p.dxFrac, 0),
+    dyFrac: n(p.dyFrac, 0),
+    scale: Math.max(0, n(p.scale, 1)),
+    wipe
+  }
 }
 
 /** 一圈在时间轴上占的毫秒数（修剪区间 ÷ 速度） */

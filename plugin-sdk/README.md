@@ -132,6 +132,35 @@ many docked lines to keep (host clamps 0..6; deeper lines should fade out).
 Same determinism rule applies (no `Math.random`/`Date`; the validator runs
 `enterFrom`/`pose` twice). See `examples/plugin-lines.mjs`.
 
+### 3.3 Video transitions (`videoTransitions`)
+
+Plugins can also contribute **video** clip transitions (the enter/leave effects
+in a timeline clip's 转场 menu). Provide `in`/`out` pure functions returning a
+`PartialVideoFx`:
+
+| Field | Unit | Meaning |
+|-------|------|---------|
+| `alpha` | 0..1 | clip opacity |
+| `dxFrac`, `dyFrac` | fraction of canvas w/h | translate the whole clip |
+| `scale` | multiplier | extra scale on top of the clip's own |
+| `wipe` | `{ dir:'L'\|'R'\|'U'\|'D', reveal:0..1 } \| null` | clip-mask reveal from a side |
+
+- `in(p, m)` — enter: `p` goes 0→1 (1 = fully in place).
+- `out(p, m)` — leave: `p` goes 1→0 (1 = still whole, 0 = gone).
+
+```js
+// manifest: { api:1, name:'…', videoTransitions: [ … ] }
+{
+  id: 'you.punchIn', name: '冲入',
+  in:  (p, m) => ({ alpha: m.clamp01(p*1.5), scale: 1.6 - 0.6*m.easeOutCubic(p) }),
+  out: (p)    => ({ alpha: p, scale: 1 + 0.4*(1-p) })
+}
+```
+
+A **transition between two clips** (e.g. A→B crossfade) is done by overlapping
+clip B's start before A ends and giving B an `in` transition — the same model as
+the built-ins (see the app manual). See `examples/plugin-video.mjs`.
+
 ## 4. Input fields — `TextFxArgs` (timing & position)
 
 All times are **milliseconds**; `timeInLine`, `unitStart`, `unitEnd` are

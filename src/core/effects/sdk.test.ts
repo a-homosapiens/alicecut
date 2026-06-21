@@ -4,11 +4,13 @@ import {
   sanitizeLineFx,
   textEffectToPreset,
   lineEffectToPreset,
+  videoTransitionToImpl,
   validateManifest,
   normReveal,
   normTrail,
   type TextEffectDef,
-  type LineEffectDef
+  type LineEffectDef,
+  type VideoTransitionDef
 } from './sdk'
 import { registerTextEffect, getEffect } from './index'
 
@@ -224,5 +226,44 @@ describe('整行停靠式转场 lineTransitions', () => {
     const m = validateManifest({ api: 1, name: 'X', lineTransitions: [def] })
     expect(m.lineTransitions).toHaveLength(1)
     expect(() => validateManifest({ api: 1, name: 'X', lineTransitions: [{ id: 'x', name: 'y' }] })).toThrow()
+  })
+})
+
+describe('视频转场 videoTransitions', () => {
+  const def: VideoTransitionDef = {
+    id: 'v.spin',
+    name: '旋入',
+    in: (p, m) => ({ alpha: m.clamp01(p), scale: 1.2 - 0.2 * p }),
+    out: (p) => ({ alpha: p })
+  }
+
+  it('videoTransitionToImpl 建出 in/out 并钳制输出', () => {
+    const impl = videoTransitionToImpl(def)
+    expect(impl.id).toBe('v.spin')
+    const fx = impl.in(1)
+    expect(fx).toEqual({ alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null })
+  })
+
+  it('越界/wipe 经 sanitize', () => {
+    const impl = videoTransitionToImpl({
+      id: 'v.wipe',
+      name: 'W',
+      in: () => ({ alpha: 9, wipe: { dir: 'L', reveal: 5 } }),
+      out: () => ({})
+    })
+    const fx = impl.in(0.5)
+    expect(fx.alpha).toBe(1)
+    expect(fx.wipe).toEqual({ dir: 'L', reveal: 1 })
+  })
+
+  it('in 抛错回退恒等', () => {
+    const impl = videoTransitionToImpl({ id: 'v.bad', name: 'B', in: () => { throw new Error('x') }, out: () => ({}) })
+    expect(impl.in(0.5)).toEqual({ alpha: 1, dxFrac: 0, dyFrac: 0, scale: 1, wipe: null })
+  })
+
+  it('validateManifest 携带 videoTransitions，拒绝缺 in/out', () => {
+    const m = validateManifest({ api: 1, name: 'X', videoTransitions: [def] })
+    expect(m.videoTransitions).toHaveLength(1)
+    expect(() => validateManifest({ api: 1, name: 'X', videoTransitions: [{ id: 'a', name: 'b' }] })).toThrow()
   })
 })

@@ -33,9 +33,25 @@
       "type": "array",
       "description": "Whole-line docking transitions (unit: 'line') contributed by this plugin.",
       "items": { "$ref": "#/definitions/lineTransition" }
+    },
+    "videoTransitions": {
+      "type": "array",
+      "description": "Video transitions (enter/leave) contributed by this plugin.",
+      "items": { "$ref": "#/definitions/videoTransition" }
     }
   },
   "definitions": {
+    "videoTransition": {
+      "type": "object",
+      "required": ["id", "name", "in", "out"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_.-]+$" },
+        "name": { "type": "string", "minLength": 1 },
+        "in": { "description": "REQUIRED function (p, m) => PartialVideoFx, p: 0→1. Validated at runtime." },
+        "out": { "description": "REQUIRED function (p, m) => PartialVideoFx, p: 1→0. Validated at runtime." }
+      }
+    },
     "lineTransition": {
       "type": "object",
       "required": ["id", "name", "enterFrom", "pose"],

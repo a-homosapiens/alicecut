@@ -1,5 +1,6 @@
-import { validateManifest, textEffectToPreset, lineEffectToPreset, type PluginManifest } from './core/effects/sdk'
+import { validateManifest, textEffectToPreset, lineEffectToPreset, videoTransitionToImpl, type PluginManifest } from './core/effects/sdk'
 import { registerTextEffect } from './core/effects'
+import { registerVideoTransition } from './core/media'
 import { probePluginInWorker, SandboxUnavailableError } from './pluginSandbox'
 
 /**
@@ -61,7 +62,26 @@ export function installLineEffects(manifest: PluginManifest): { id: string; name
   return added
 }
 
-/** 安装插件全部特效（文字 + 整行转场），返回合并后的 {id,name} */
-export function installPlugin(manifest: PluginManifest): { id: string; name: string }[] {
-  return [...installTextEffects(manifest), ...installLineEffects(manifest)]
+/** 安装插件的视频转场到注册表，返回登记的 {id,name} */
+export function installVideoTransitions(manifest: PluginManifest): { id: string; name: string }[] {
+  const added: { id: string; name: string }[] = []
+  for (const def of manifest.videoTransitions ?? []) {
+    registerVideoTransition(videoTransitionToImpl(def))
+    added.push({ id: def.id, name: def.name })
+  }
+  return added
+}
+
+/**
+ * 安装插件全部能力。文字+整行特效进特效选择器（pickerEffects），
+ * 视频转场进时间轴转场菜单（videoTransitions），分别返回供 UI 登记。
+ */
+export function installPlugin(manifest: PluginManifest): {
+  pickerEffects: { id: string; name: string }[]
+  videoTransitions: { id: string; name: string }[]
+} {
+  return {
+    pickerEffects: [...installTextEffects(manifest), ...installLineEffects(manifest)],
+    videoTransitions: installVideoTransitions(manifest)
+  }
 }

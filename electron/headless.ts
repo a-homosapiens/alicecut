@@ -2,7 +2,7 @@ import { app, ipcMain } from 'electron'
 import { access, readFile, mkdir } from 'fs/promises'
 import { basename, dirname, isAbsolute, resolve } from 'path'
 import { readLrcText } from './lrcFile'
-import type { VideoTransition, VideoTransitionType } from '../src/core/media'
+import type { VideoTransition } from '../src/core/media'
 
 /** 转场写法：对象 { type, dur(秒) } 或简写字符串 "type:dur"（如 "fade:1"） */
 type TransitionSpec = string | { type: string; dur: number }
@@ -21,7 +21,7 @@ function parseTransition(spec: TransitionSpec | undefined): VideoTransition | nu
     durSec = Number(spec.dur)
   }
   if (!type || !(durSec > 0)) return null
-  return { type: type as VideoTransitionType, durationMs: Math.round(durSec * 1000) }
+  return { type, durationMs: Math.round(durSec * 1000) }
 }
 
 /** job.json 里的媒体线段：字符串简写 = { path, start: 0, loop: 1 } */

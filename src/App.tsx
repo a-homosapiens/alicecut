@@ -128,15 +128,18 @@ export function App(): React.JSX.Element {
         alert(`插件「${report.pluginName}」未通过校验，已拒绝导入：\n${errs}`)
         return
       }
-      const added = installPlugin(manifest)
-      if (added.length === 0) {
+      const { pickerEffects, videoTransitions } = installPlugin(manifest)
+      const total = pickerEffects.length + videoTransitions.length
+      if (total === 0) {
         alert('插件未包含可用的特效')
         return
       }
-      useProject.getState().addPluginEffects(added)
+      useProject.getState().addPluginEffects(pickerEffects)
+      useProject.getState().addPluginVideoTransitions(videoTransitions)
       const warns = report.issues.filter((i) => i.level === 'warn').length
       const sb = sandboxed ? '' : '\n（注意：本环境无 Worker 隔离，已降级软校验）'
-      alert(`已导入插件「${manifest.name}」：${added.length} 个特效` + (warns ? `\n（${warns} 条警告）` : '') + sb)
+      const vt = videoTransitions.length ? `，${videoTransitions.length} 个视频转场` : ''
+      alert(`已导入插件「${manifest.name}」：${pickerEffects.length} 个特效${vt}` + (warns ? `\n（${warns} 条警告）` : '') + sb)
     } catch (err) {
       alert('插件导入失败：' + (err instanceof Error ? err.message : String(err)))
     }

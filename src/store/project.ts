@@ -77,10 +77,13 @@ interface ProjectState {
   /** 时间轴上选中的媒体线段 id */
   selectedClipId: number | null
 
-  /** 已导入的插件文字特效（仅 id/name，函数体在 effects 注册表里） */
+  /** 已导入的插件文字/整行特效（仅 id/name，函数体在 effects 注册表里） */
   pluginEffects: { id: string; name: string }[]
   /** 登记新导入的插件特效（去重） */
   addPluginEffects(list: { id: string; name: string }[]): void
+  /** 已导入的插件视频转场（仅 id/name，实现在 media 注册表里），驱动时间轴转场菜单刷新 */
+  pluginVideoTransitions: { id: string; name: string }[]
+  addPluginVideoTransitions(list: { id: string; name: string }[]): void
   loadLrc(text: string, name: string): void
   /** 按"每页时长阈值"重新分页（整句 ↔ 逐词）；重置行级特效/位置 */
   repaginate(combineWithinMs: number): void
@@ -184,11 +187,18 @@ export const useProject = create<ProjectState>((set, get) => ({
   selectedIds: [],
   selectedClipId: null,
   pluginEffects: [],
+  pluginVideoTransitions: [],
 
   addPluginEffects(list) {
     const seen = new Set(get().pluginEffects.map((e) => e.id))
     const merged = [...get().pluginEffects, ...list.filter((e) => !seen.has(e.id))]
     set({ pluginEffects: merged })
+  },
+
+  addPluginVideoTransitions(list) {
+    const seen = new Set(get().pluginVideoTransitions.map((e) => e.id))
+    const merged = [...get().pluginVideoTransitions, ...list.filter((e) => !seen.has(e.id))]
+    set({ pluginVideoTransitions: merged })
   },
 
   loadLrc(text, name) {
