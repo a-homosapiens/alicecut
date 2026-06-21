@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeCharFx, textEffectToPreset, validateManifest, type TextEffectDef } from './sdk'
+import { sanitizeCharFx, textEffectToPreset, validateManifest, normReveal, normTrail, type TextEffectDef } from './sdk'
 import { registerTextEffect, getEffect } from './index'
 
 const baseArgs = {
@@ -113,5 +113,58 @@ describe('注册表', () => {
 
   it('未知 id 回退内置 pop', () => {
     expect(getEffect('does-not-exist').id).toBe('pop')
+  })
+})
+
+describe('声明式能力：reveal / trail / wordBox', () => {
+  it('normReveal 仅接受已知枚举', () => {
+    expect(normReveal('iris')).toBe('iris')
+    expect(normReveal('wipe')).toBe('wipe')
+    expect(normReveal('bogus')).toBeUndefined()
+    expect(normReveal(123)).toBeUndefined()
+  })
+
+  it('normTrail 钳制并拒绝非法', () => {
+    expect(normTrail({ count: 99, stepMs: 9999, decay: 5 })).toEqual({ count: 12, stepMs: 200, decay: 1 })
+    expect(normTrail({ count: 0 })).toBeUndefined()
+    expect(normTrail(null)).toBeUndefined()
+    expect(normTrail({ count: 3, stepMs: 20 })).toEqual({ count: 3, stepMs: 20 })
+  })
+
+  it('textEffectToPreset 透传规范化后的声明式字段', () => {
+    const preset = textEffectToPreset({
+      id: 'p.mask',
+      name: 'M',
+      unit: 'char',
+      enterDurationMs: 500,
+      reveal: 'iris',
+      trail: { count: 4, stepMs: 20 },
+      wordBox: true,
+      apply: () => ({})
+    } as TextEffectDef)
+    expect(preset.reveal).toBe('iris')
+    expect(preset.trail).toEqual({ count: 4, stepMs: 20 })
+    expect(preset.wordBox).toBe(true)
+  })
+
+  it('未声明时不带这些字段', () => {
+    const preset = textEffectToPreset({ id: 'p.plain', name: 'P', unit: 'char', enterDurationMs: 300, apply: () => ({}) })
+    expect(preset.reveal).toBeUndefined()
+    expect(preset.trail).toBeUndefined()
+    expect(preset.wordBox).toBeUndefined()
+  })
+
+  it('validateManifest 丢弃非法 reveal、保留合法声明式字段', () => {
+    const m = validateManifest({
+      api: 1,
+      name: 'X',
+      textEffects: [
+        { id: 'a.good', name: 'g', unit: 'char', reveal: 'clockWipe', wordBox: true, apply: () => ({}) },
+        { id: 'a.bad', name: 'b', unit: 'char', reveal: 'nope', apply: () => ({}) }
+      ]
+    })
+    expect(m.textEffects?.[0].reveal).toBe('clockWipe')
+    expect(m.textEffects?.[0].wordBox).toBe(true)
+    expect(m.textEffects?.[1].reveal).toBeUndefined()
   })
 })

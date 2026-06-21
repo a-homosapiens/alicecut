@@ -52,6 +52,16 @@ export interface TextEffectDef {
   unit: 'char' | 'word'
   enterDurationMs: number
   appearAtLineStart?: boolean
+  /**
+   * 声明式遮罩揭示（几何裁剪，非 apply 能表达）：进场 enterDurationMs 内用裁剪区域
+   * 把整行揭示出来——wipe 矩形扫过 / iris 圆形展开 / clockWipe 角度扫掠。
+   * 建议搭配 appearAtLineStart: true（整行一起出现、由遮罩推进可见性）。apply 照常运行。
+   */
+  reveal?: 'wipe' | 'iris' | 'clockWipe'
+  /** 声明式运动残影：字符运动时按更早时刻姿态画 count 个淡出残影。 */
+  trail?: { count: number; stepMs: number; decay?: number }
+  /** 声明式：在当前朗读词背后画随词弹跳的圆角高亮块（仿抖音字幕）。 */
+  wordBox?: boolean
   apply(args: TextFxArgs, m: PluginHelpers): PartialCharFx
 }
 
@@ -76,6 +86,29 @@ function num(v: unknown, fallback: number): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback
 }
 
+const REVEALS = ['wipe', 'iris', 'clockWipe'] as const
+
+/** 规范化 reveal：仅接受已知枚举，否则 undefined（不静默退化成 wipe） */
+export function normReveal(v: unknown): TextEffectDef['reveal'] {
+  return typeof v === 'string' && (REVEALS as readonly string[]).includes(v)
+    ? (v as TextEffectDef['reveal'])
+    : undefined
+}
+
+/** 规范化 trail：count≥1（封顶 12 防性能爆炸）、stepMs∈[1,200]、decay∈[0,1]；非法 → undefined */
+export function normTrail(v: unknown): TextEffectDef['trail'] {
+  if (!v || typeof v !== 'object') return undefined
+  const t = v as Record<string, unknown>
+  const count = Math.round(num(t.count, 0))
+  if (count < 1) return undefined
+  const trail: { count: number; stepMs: number; decay?: number } = {
+    count: Math.min(12, count),
+    stepMs: Math.min(200, Math.max(1, num(t.stepMs, 24)))
+  }
+  if (t.decay !== undefined) trail.decay = clamp01(num(t.decay, 0.5))
+  return trail
+}
+
 /** 把插件返回的部分增量合并成完整 CharFx，并钳制到安全范围 */
 export function sanitizeCharFx(p: PartialCharFx | null | undefined): CharFx {
   if (!p || typeof p !== 'object') return { ...IDENTITY_FX }
@@ -93,9 +126,9 @@ export function sanitizeCharFx(p: PartialCharFx | null | undefined): CharFx {
   }
 }
 
-/** 适配器：TextEffectDef → 内部 EffectPreset（apply 包裹校验与兜底） */
+/** 适配器：TextEffectDef → 内部 EffectPreset（apply 包裹校验与兜底；声明式能力规范化后透传） */
 export function textEffectToPreset(def: TextEffectDef): EffectPreset {
-  return {
+  const preset: EffectPreset = {
     id: def.id,
     name: def.name,
     enterDuration: Math.max(1, num(def.enterDurationMs, 300)),
@@ -110,6 +143,12 @@ export function textEffectToPreset(def: TextEffectDef): EffectPreset {
       }
     }
   }
+  const reveal = normReveal(def.reveal)
+  if (reveal) preset.reveal = reveal
+  const trail = normTrail(def.trail)
+  if (trail) preset.trail = trail
+  if (def.wordBox) preset.wordBox = true
+  return preset
 }
 
 /** 校验插件清单结构，返回规整后的 manifest；非法则抛出可读错误 */
@@ -131,6 +170,9 @@ export function validateManifest(raw: unknown): PluginManifest {
       unit: d.unit === 'word' ? 'word' : 'char',
       enterDurationMs: num(d.enterDurationMs, 300),
       appearAtLineStart: !!d.appearAtLineStart,
+      reveal: normReveal(d.reveal),
+      trail: normTrail(d.trail),
+      wordBox: !!d.wordBox,
       apply: d.apply as TextEffectDef['apply']
     })
   }

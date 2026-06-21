@@ -19,7 +19,7 @@
 - 测试：`src/core/effects/validator.test.ts`（含与 easing 工具对齐的守护）。
 
 **SDK 已公开（第 9 节）**：`plugin-sdk/` 目录——
-- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。
+- `effect-plugin.d.ts`：独立、无依赖的公开契约（`PluginManifest`/`TextEffectDef`/`TextFxArgs`/`PartialCharFx`/`PluginHelpers`），由 `src/core/effects/sdk-parity.test.ts` 编译期守护与 `sdk.ts` 不漂移。契约含**声明式遮罩能力** `reveal`/`trail`/`wordBox`（见第 5 节）。
 - `manifest.schema.json`：清单静态字段 JSON Schema。
 - `template.mjs`：带 JSDoc 类型引用的起步模板（零构建即得补全）。
 - `README.md`：贡献者指南（坐标系/单位/时序/确定性/校验/导入/安全模型）。
@@ -32,7 +32,7 @@
 
 **未做（下一步）**：QuickJS-WASM 逐帧隔离、视频转场插件（把 `clipTransition` 改为注册表驱动）、缩略图渲染（需 headless 画布）、工程/Job 的插件依赖记录、市场/签名。下文为完整设计。
 
-**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）。
+**示例插件**：`examples/plugin-wave.mjs`（波浪/弹跳落入）、`examples/plugin-neon.mjs`（霓虹闪入/百叶窗，演示 glow/highlight/skew/rand）、`examples/plugin-masks.mjs`（圆形展开/残影滑入/跳动高亮块，演示声明式 reveal/trail/wordBox）。
 
 ## 0. 为什么我们的架构天然适合做插件
 
@@ -146,14 +146,14 @@ type PartialVideoFx = Partial<{
 
 视频间转场仍沿用"重叠两段 + 后段 `in`"的既有模型（见 MANUAL），插件只需定义 in/out 姿态。
 
-## 5. 高级能力（分期暴露）
+## 5. 高级能力（声明式暴露）
 
-内部还有几类更复杂的能力，初版**不**直接开放给任意代码，避免安全/复杂度失控，改用**声明式开关**或后续阶段：
+内部几类更复杂的能力不交给任意代码，而是以 **TextEffectDef 上的声明式字段**（数据而非函数）开放，宿主渲染、规范化、钳制——无新增可执行面，过隔离闸门不变：
 
-- `lineTransition`（停靠式整行转场）——结构复杂、需多行包围盒，留作平台内置或后期高级 SDK。
-- `trail`（运动残影）、`wordBox`（跳动高亮块）、`reveal`（遮罩揭示）——可作为 TextEffectDef 上的**声明式标志**开放（`trail: {count, stepMs}` 等数据，而非任意代码）。
+- ✅ **已开放**：`reveal`（`'wipe'|'iris'|'clockWipe'` 遮罩揭示）、`trail`（`{count, stepMs, decay?}` 运动残影，宿主钳 count≤12 / stepMs∈[1,200]）、`wordBox`（跳动高亮块布尔）。见 `sdk.ts` 的 `normReveal`/`normTrail` 与适配器透传；`validateManifest` 丢弃非法 `reveal`。示例 `examples/plugin-masks.mjs`。
+- ⏳ `lineTransition`（停靠式整行转场）——结构复杂、需多行包围盒，仍留作平台内置或后期高级 SDK。
 
-初版覆盖面：逐字 `apply` + 视频 in/out，已能表达绝大多数特效。
+覆盖面：逐字 `apply` + 声明式 reveal/trail/wordBox，已能表达绝大多数文字特效（含遮罩揭示）；视频 in/out 见下。
 
 ## 6. 安全与沙箱
 

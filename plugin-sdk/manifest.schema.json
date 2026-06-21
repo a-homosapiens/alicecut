@@ -63,6 +63,24 @@
           "default": false,
           "description": "If true, all chars appear at line start together (karaoke-style)."
         },
+        "reveal": {
+          "enum": ["wipe", "iris", "clockWipe"],
+          "description": "Declarative geometric clip-mask reveal during the enter window. Pair with appearAtLineStart: true."
+        },
+        "trail": {
+          "type": "object",
+          "description": "Declarative motion-blur trail.",
+          "required": ["count", "stepMs"],
+          "properties": {
+            "count": { "type": "integer", "minimum": 1, "maximum": 12 },
+            "stepMs": { "type": "number", "minimum": 1, "maximum": 200 },
+            "decay": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "wordBox": {
+          "type": "boolean",
+          "description": "Draw a rounded highlight box behind the current word that springs word-to-word."
+        },
         "apply": {
           "description": "REQUIRED function (args, m) => PartialCharFx. Cannot be expressed in JSON; validated at runtime."
         }

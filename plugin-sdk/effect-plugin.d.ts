@@ -108,6 +108,23 @@ export interface TextEffectDef {
   /** If true, all chars appear at line start together (karaoke-style). */
   appearAtLineStart?: boolean
   /**
+   * Declarative geometric reveal (a clip mask `apply` cannot express): during
+   * the enter window the line is revealed by an animated clip region — `wipe`
+   * (rectangle sweep), `iris` (circle grows), or `clockWipe` (angular sweep).
+   * Pair with `appearAtLineStart: true` (whole line present, mask reveals it).
+   * Your `apply` still runs (often just return {} for identity, or add motion).
+   */
+  reveal?: 'wipe' | 'iris' | 'clockWipe'
+  /**
+   * Declarative motion-blur trail: while a char moves, draw `count` fading
+   * ghosts sampled at earlier times. `stepMs` spaces the ghosts; `decay` (0..1)
+   * fades them. Host clamps count to 12 and stepMs to [1,200].
+   */
+  trail?: { count: number; stepMs: number; decay?: number }
+  /** Declarative: draw a rounded highlight box behind the current word that
+   *  springs word-to-word (TikTok-style). */
+  wordBox?: boolean
+  /**
    * Pure, synchronous, deterministic. Called once per character per frame.
    * Must return quickly (it runs thousands of times). Return a PartialCharFx.
    */

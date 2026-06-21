@@ -66,6 +66,35 @@ transformed about its own center.
 Scale your motion by `args.intensity` (the user's intensity slider; 1 = default)
 so users can dial your effect up and down.
 
+### 3.1 Declarative capabilities (masks, trails, word box)
+
+Some host render features can't be expressed by a per-character transform.
+Request them with **declarative fields on the effect** (data, not code) — the
+host renders them; your `apply` still runs alongside.
+
+| Field | Type | Effect |
+|-------|------|--------|
+| `reveal` | `'wipe' \| 'iris' \| 'clockWipe'` | geometric clip-mask reveal over the enter window: rectangle sweep / circle grow / angular sweep |
+| `trail` | `{ count, stepMs, decay? }` | motion-blur: `count` fading ghosts at earlier times (`stepMs` apart; `decay` 0..1). Host clamps `count`≤12, `stepMs`∈[1,200] |
+| `wordBox` | `boolean` | rounded highlight box behind the current word, springing word-to-word (TikTok style) |
+
+```js
+// A masked iris reveal — the whole line is present and the mask opens it.
+{
+  id: 'you.iris', name: 'Iris In', unit: 'char',
+  enterDurationMs: 520, appearAtLineStart: true,
+  reveal: 'iris',
+  apply() { return {} } // identity: let the clip mask do the reveal
+}
+```
+
+Notes:
+- Pair `reveal` with `appearAtLineStart: true` so the whole line is present and
+  the mask sweeps over it (otherwise chars also gate in by their own timing).
+- An unknown `reveal` value is dropped (not silently treated as `wipe`).
+- These fields are static — they add no executable surface, so they pass the
+  isolation gate untouched.
+
 ## 4. Input fields — `TextFxArgs` (timing & position)
 
 All times are **milliseconds**; `timeInLine`, `unitStart`, `unitEnd` are
