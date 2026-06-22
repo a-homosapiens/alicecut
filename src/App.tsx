@@ -50,7 +50,7 @@ export function App(): React.JSX.Element {
     if (!file) return
     useProject.getState().loadLrc(file.text, file.name)
     if (useProject.getState().lines.length === 0) {
-      alert('未在文件中找到带时间戳的歌词行，请确认是有效的 .lrc / .srt / .vtt 文件')
+      alert(t('app.noLyrics'))
     }
   }
 
@@ -123,7 +123,7 @@ export function App(): React.JSX.Element {
       null,
       2
     )
-    const base = (st.lrcName ?? '未命名').replace(/\.[^.]+$/, '')
+    const base = (st.lrcName ?? t('app.untitled')).replace(/\.[^.]+$/, '')
     await window.desktop.saveProject(json, `${base}.dlv.json`)
   }
 
@@ -131,10 +131,10 @@ export function App(): React.JSX.Element {
     const st = useProject.getState()
     const srt = serializeSrt(st.lines)
     if (!srt) {
-      alert('没有可导出的字幕')
+      alert(t('app.noSubtitles'))
       return
     }
-    const base = (st.lrcName ?? '字幕').replace(/\.[^.]+$/, '')
+    const base = (st.lrcName ?? t('app.subtitleDefault')).replace(/\.[^.]+$/, '')
     await window.desktop.saveSrt(srt, `${base}.srt`)
   }
 
@@ -151,23 +151,28 @@ export function App(): React.JSX.Element {
           .filter((i) => i.level === 'error')
           .map((i) => `• ${i.effect ? `[${i.effect}] ` : ''}${i.message}`)
           .join('\n')
-        alert(`插件「${report.pluginName}」未通过校验，已拒绝导入：\n${errs}`)
+        alert(t('app.pluginRejected', { name: report.pluginName, errs }))
         return
       }
       const { pickerEffects, videoTransitions } = installPlugin(manifest)
       const total = pickerEffects.length + videoTransitions.length
       if (total === 0) {
-        alert('插件未包含可用的特效')
+        alert(t('app.pluginNoEffects'))
         return
       }
       useProject.getState().addPluginEffects(pickerEffects)
       useProject.getState().addPluginVideoTransitions(videoTransitions)
       const warns = report.issues.filter((i) => i.level === 'warn').length
-      const sb = sandboxed ? '' : '\n（注意：本环境无 Worker 隔离，已降级软校验）'
-      const vt = videoTransitions.length ? `，${videoTransitions.length} 个视频转场` : ''
-      alert(`已导入插件「${manifest.name}」：${pickerEffects.length} 个特效${vt}` + (warns ? `\n（${warns} 条警告）` : '') + sb)
+      const sb = sandboxed ? '' : t('app.pluginNoSandbox')
+      const vt = videoTransitions.length ? t('app.pluginVtSuffix', { n: videoTransitions.length }) : ''
+      alert(
+        t('app.pluginImported', { name: manifest.name, n: pickerEffects.length }) +
+          vt +
+          (warns ? t('app.pluginWarnSuffix', { n: warns }) : '') +
+          sb
+      )
     } catch (err) {
-      alert('插件导入失败：' + (err instanceof Error ? err.message : String(err)))
+      alert(t('app.pluginImportFail') + (err instanceof Error ? err.message : String(err)))
     }
   }
 
@@ -198,10 +203,10 @@ export function App(): React.JSX.Element {
         useProject.getState().addClip({ ...c, sourceDuration })
       }
       if (missing.length > 0) {
-        alert(`以下媒体文件不在原路径，已跳过：\n${missing.join('\n')}`)
+        alert(t('app.mediaMissing', { list: missing.join('\n') }))
       }
     } catch {
-      alert('工程文件无法解析')
+      alert(t('app.projectParseFail'))
     }
   }
 
@@ -219,7 +224,7 @@ export function App(): React.JSX.Element {
           {t('topbar.importAudio')} {audioCount > 0 ? t('topbar.audioSuffix', { n: audioCount }) : ''}
         </button>
         <div className="spacer" />
-        <button className="btn" onClick={() => void importPlugin()} title="导入第三方特效插件（.mjs/.js）">
+        <button className="btn" onClick={() => void importPlugin()} title={t('app.importPluginTitle')}>
           {t('topbar.importPlugin')}
         </button>
         <button className="btn" onClick={() => void openProject()}>

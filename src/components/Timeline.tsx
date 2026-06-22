@@ -615,7 +615,7 @@ export function Timeline(): React.JSX.Element {
 
   const addAtPlayhead = (kind: 'lyric' | 'text'): void => {
     const st = useProject.getState()
-    st.addLineAt(st.currentTime * 1000, kind)
+    st.addLineAt(st.currentTime * 1000, kind, kind === 'text' ? t('tl.newText') : t('tl.newLyric'))
   }
 
   /* ---- 歌词/文字线段拖拽：移动 / 边缘微调 ---- */

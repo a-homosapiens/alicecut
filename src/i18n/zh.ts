@@ -160,6 +160,8 @@ export const zh = {
   'tl.audioDropHint': '（拖音频到此叠加）',
   'tl.textLayer': '文字层',
   'tl.textDropHint': '（拖文字到此叠加）',
+  'tl.newText': '文字',
+  'tl.newLyric': '新字幕',
 
   // 歌词面板（LyricsPanel）
   'lyrics.empty1': '尚未导入歌词',
@@ -193,5 +195,21 @@ export const zh = {
   'export.done': '✅ 导出完成：',
   'export.close': '关闭',
   'export.failed': '❌ 导出失败',
-  'export.ffmpegExit': 'FFmpeg 退出码 {code}'
+  'export.ffmpegExit': 'FFmpeg 退出码 {code}',
+
+  // 顶层提示 / 弹窗（App.tsx）
+  'app.noLyrics': '未在文件中找到带时间戳的歌词行，请确认是有效的 .lrc / .srt / .vtt 文件',
+  'app.untitled': '未命名',
+  'app.subtitleDefault': '字幕',
+  'app.noSubtitles': '没有可导出的字幕',
+  'app.pluginRejected': '插件「{name}」未通过校验，已拒绝导入：\n{errs}',
+  'app.pluginNoEffects': '插件未包含可用的特效',
+  'app.pluginNoSandbox': '\n（注意：本环境无 Worker 隔离，已降级软校验）',
+  'app.pluginVtSuffix': '，{n} 个视频转场',
+  'app.pluginImported': '已导入插件「{name}」：{n} 个特效',
+  'app.pluginWarnSuffix': '\n（{n} 条警告）',
+  'app.pluginImportFail': '插件导入失败：',
+  'app.mediaMissing': '以下媒体文件不在原路径，已跳过：\n{list}',
+  'app.projectParseFail': '工程文件无法解析',
+  'app.importPluginTitle': '导入第三方特效插件（.mjs/.js）'
 } as const

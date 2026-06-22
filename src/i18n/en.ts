@@ -158,6 +158,8 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.audioDropHint': ' (drop audio here to stack)',
   'tl.textLayer': 'Text',
   'tl.textDropHint': ' (drop text here to stack)',
+  'tl.newText': 'Text',
+  'tl.newLyric': 'New subtitle',
 
   // Lyrics panel
   'lyrics.empty1': 'No lyrics imported yet',
@@ -191,7 +193,23 @@ export const en: Record<keyof typeof zh, string> = {
   'export.done': '✅ Export complete:',
   'export.close': 'Close',
   'export.failed': '❌ Export failed',
-  'export.ffmpegExit': 'FFmpeg exit code {code}'
+  'export.ffmpegExit': 'FFmpeg exit code {code}',
+
+  // Top-level toasts / dialogs (App.tsx)
+  'app.noLyrics': 'No timestamped lyric lines found — make sure it is a valid .lrc / .srt / .vtt file.',
+  'app.untitled': 'Untitled',
+  'app.subtitleDefault': 'subtitles',
+  'app.noSubtitles': 'No subtitles to export.',
+  'app.pluginRejected': 'Plugin "{name}" failed validation and was not imported:\n{errs}',
+  'app.pluginNoEffects': 'The plugin contains no usable effects.',
+  'app.pluginNoSandbox': '\n(Note: no Worker isolation in this environment; fell back to soft validation.)',
+  'app.pluginVtSuffix': ', {n} video transitions',
+  'app.pluginImported': 'Imported plugin "{name}": {n} effects',
+  'app.pluginWarnSuffix': '\n({n} warnings)',
+  'app.pluginImportFail': 'Plugin import failed: ',
+  'app.mediaMissing': 'These media files are no longer at their original path and were skipped:\n{list}',
+  'app.projectParseFail': 'Could not parse the project file.',
+  'app.importPluginTitle': 'Import a third-party effect plugin (.mjs/.js)'
 }
 
 
