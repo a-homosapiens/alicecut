@@ -145,6 +145,7 @@ function ClipSegment({
   pxPerSec: number
   durationMs: number
 }): React.JSX.Element {
+  const t = useT()
   const selected = useProject((s) => s.selectedClipId === clip.id)
   const color = CLIP_COLORS[clip.kind]
   const endMs = clipEnd(clip, durationMs)
@@ -210,9 +211,11 @@ function ClipSegment({
         background: `${color}2e`,
         backgroundImage: loopMarks
       }}
-      title={`${clip.name}\n${clip.kind === 'video' ? `背景视频 · 第 ${clip.layer + 1} 层` : '音轨'} · ${
-        clip.loop === 'infinite' ? '无限循环' : `重复 ${clip.loop} 次`
-      }${clip.speed !== 1 ? ` · ${clip.speed} 倍速` : ''}${clip.kind === 'video' ? '\n竖向拖动换层' : ''}`}
+      title={`${clip.name}\n${
+        clip.kind === 'video' ? `${t('tl.bgVideo')} · ${t('tl.layerN', { n: clip.layer + 1 })}` : t('tl.audioTrack')
+      } · ${clip.loop === 'infinite' ? t('tl.loopInfinite') : t('tl.loopN', { n: clip.loop })}${
+        clip.speed !== 1 ? ` ${t('tl.speedSuffix', { x: clip.speed })}` : ''
+      }${clip.kind === 'video' ? `\n${t('tl.dragVertical')}` : ''}`}
       onMouseDown={onMouseDown}
     >
       {showWave && (
@@ -248,8 +251,8 @@ function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
   }
 
   const chip = (which: 'in' | 'out', trans: VideoTransition): React.JSX.Element => (
-    <span className="clip-fx-chip" title={which === 'in' ? '视频进场转场' : '视频退场转场'}>
-      {which === 'in' ? '进场' : '退场'}
+    <span className="clip-fx-chip" title={which === 'in' ? t('tl.transInTitle') : t('tl.transOutTitle')}>
+      {which === 'in' ? t('tl.enter') : t('tl.leave')}
       <select
         value={trans.type}
         onChange={(e) => st().setClipTransition(clip.id, which, { ...trans, type: e.target.value })}
@@ -269,8 +272,8 @@ function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
           st().setClipTransition(clip.id, which, { ...trans, durationMs: Math.max(0, Number(e.target.value) * 1000) })
         }
       />
-      秒
-      <button className="clip-fx-x" title="移除转场" onClick={() => st().setClipTransition(clip.id, which, null)}>
+      {t('tl.sec')}
+      <button className="clip-fx-x" title={t('tl.removeTrans')} onClick={() => st().setClipTransition(clip.id, which, null)}>
         ✕
       </button>
     </span>
@@ -279,16 +282,16 @@ function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
   return (
     <span className="clip-fx">
       <span className="clip-fx-add">
-        <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title="为视频添加进/退场转场">
-          + 转场 ▾
+        <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title={t('tl.addTransTitle')}>
+          + {t('tl.transition')} ▾
         </button>
         {menuOpen && (
           <div className="clip-fx-menu">
             <button onClick={() => add('in')} disabled={!!clip.transIn}>
-              进场转场
+              {t('tl.enterTrans')}
             </button>
             <button onClick={() => add('out')} disabled={!!clip.transOut}>
-              退场转场
+              {t('tl.leaveTrans')}
             </button>
           </div>
         )}
@@ -301,6 +304,7 @@ function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
 
 /** 音轨特效：淡入(transit in)/淡出(transit out)。从菜单添加后以可编辑「?秒」呈现 */
 function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const t = useT()
   const st = useProject.getState
   const [menuOpen, setMenuOpen] = useState(false)
   const DEFAULT_MS = 2000
@@ -313,23 +317,23 @@ function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
   return (
     <span className="clip-fx">
       <span className="clip-fx-add">
-        <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title="为音轨添加淡入/淡出">
-          + 特效 ▾
+        <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title={t('tl.addFadeTitle')}>
+          + {t('tl.fx')} ▾
         </button>
         {menuOpen && (
           <div className="clip-fx-menu">
             <button onClick={() => add('in')} disabled={clip.fadeInMs > 0}>
-              淡入 · transit in
+              {t('tl.fadeIn')}
             </button>
             <button onClick={() => add('out')} disabled={clip.fadeOutMs > 0}>
-              淡出 · transit out
+              {t('tl.fadeOut')}
             </button>
           </div>
         )}
       </span>
       {clip.fadeInMs > 0 && (
-        <span className="clip-fx-chip" title="淡入：从线段起点起的时长">
-          淡入
+        <span className="clip-fx-chip" title={t('tl.fadeInTitle')}>
+          {t('tl.fadeIn')}
           <input
             type="number"
             step={0.1}
@@ -337,15 +341,15 @@ function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
             value={(clip.fadeInMs / 1000).toFixed(1)}
             onChange={(e) => st().setClipFade(clip.id, { in: Number(e.target.value) * 1000 })}
           />
-          秒
-          <button className="clip-fx-x" title="移除淡入" onClick={() => st().setClipFade(clip.id, { in: 0 })}>
+          {t('tl.sec')}
+          <button className="clip-fx-x" title={t('tl.removeFadeIn')} onClick={() => st().setClipFade(clip.id, { in: 0 })}>
             ✕
           </button>
         </span>
       )}
       {clip.fadeOutMs > 0 && (
-        <span className="clip-fx-chip" title="淡出：到线段结束处的时长">
-          淡出
+        <span className="clip-fx-chip" title={t('tl.fadeOutTitle')}>
+          {t('tl.fadeOut')}
           <input
             type="number"
             step={0.1}
@@ -353,8 +357,8 @@ function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
             value={(clip.fadeOutMs / 1000).toFixed(1)}
             onChange={(e) => st().setClipFade(clip.id, { out: Number(e.target.value) * 1000 })}
           />
-          秒
-          <button className="clip-fx-x" title="移除淡出" onClick={() => st().setClipFade(clip.id, { out: 0 })}>
+          {t('tl.sec')}
+          <button className="clip-fx-x" title={t('tl.removeFadeOut')} onClick={() => st().setClipFade(clip.id, { out: 0 })}>
             ✕
           </button>
         </span>
@@ -365,23 +369,24 @@ function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
 
 /** 选中媒体线段时的工具条控件：切割/起点/循环/速度/提取音频/缩放/删除 */
 function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const t = useT()
   const st = useProject.getState
 
   const splitAtPlayhead = (): void => {
     const ok = st().splitClip(clip.id, st().currentTime * 1000)
-    if (!ok) alert('播放头不在该线段内部，无法切割')
+    if (!ok) alert(t('tl.cantSplit'))
   }
 
   const extractAudio = async (): Promise<void> => {
     const has = await window.desktop.mediaHasAudio(clip.path)
     if (!has) {
-      alert('该视频不包含音频流')
+      alert(t('tl.noAudioStream'))
       return
     }
     const audio = st().addClip({
       kind: 'audio',
       path: clip.path,
-      name: `${clip.name.replace(/\.[^.]+$/, '')}·音频`,
+      name: `${clip.name.replace(/\.[^.]+$/, '')}${t('tl.audioNameSuffix')}`,
       start: clip.start,
       sourceDuration: clip.sourceDuration,
       sourceIn: clip.sourceIn,
@@ -398,11 +403,11 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
 
   return (
     <span className="tl-times">
-      <button className="btn btn-sm" onClick={splitAtPlayhead} title="在红色播放头位置把线段切成两段">
-        ✂ 切割
+      <button className="btn btn-sm" onClick={splitAtPlayhead} title={t('tl.splitTitle')}>
+        ✂ {t('tl.splitWord')}
       </button>
       <label>
-        开始
+        {t('tl.start')}
         <input
           type="number"
           step={0.1}
@@ -412,7 +417,7 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
         />
       </label>
       <label>
-        循环
+        {t('tl.loop')}
         <input
           type="number"
           step={1}
@@ -422,9 +427,9 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
           placeholder="∞"
           onChange={(e) => st().setClipLoop(clip.id, Number(e.target.value))}
         />
-        次
+        {t('tl.times')}
       </label>
-      <label title="一直循环到项目结束">
+      <label title={t('tl.loopInfiniteTitle')}>
         <input
           type="checkbox"
           checked={clip.loop === 'infinite'}
@@ -432,8 +437,8 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
         />
         ∞
       </label>
-      <label title="播放速度（音轨导出时变速不变调）">
-        速度 {clip.speed}x
+      <label title={t('tl.speedTitle')}>
+        {t('tl.speed')} {clip.speed}x
         <input
           type="range"
           min={MIN_SPEED}
@@ -445,13 +450,13 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
       </label>
       {clip.kind === 'video' && (
         <>
-          <label className="tl-layer-ctl" title="图层：高层画面盖在低层上（画中画）。也可在时间轴上竖向拖动线段换层">
-            图层 {clip.layer + 1}
+          <label className="tl-layer-ctl" title={t('tl.layerTitle')}>
+            {t('tl.layer')} {clip.layer + 1}
             <button
               className="btn btn-sm"
               disabled={clip.layer >= MAX_LAYER}
               onClick={() => st().setClipLayer(clip.id, clip.layer + 1)}
-              title="上移一层"
+              title={t('tl.moveUp')}
             >
               ▲
             </button>
@@ -459,13 +464,13 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
               className="btn btn-sm"
               disabled={clip.layer <= 0}
               onClick={() => st().setClipLayer(clip.id, clip.layer - 1)}
-              title="下移一层"
+              title={t('tl.moveDown')}
             >
               ▼
             </button>
           </label>
-          <label title="画面缩放（以铺满画布为 1.0），画布上拖动可平移画面">
-            缩放 {clip.scale.toFixed(2)}
+          <label title={t('tl.scaleTitle')}>
+            {t('tl.scale')} {clip.scale.toFixed(2)}
             <input
               type="range"
               min={0.2}
@@ -475,15 +480,15 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
               onChange={(e) => st().setClipScale(clip.id, Number(e.target.value))}
             />
           </label>
-          <button className="btn btn-sm" onClick={() => void extractAudio()} title="把视频的音频抽取成一条音轨线段">
-            提取音频
+          <button className="btn btn-sm" onClick={() => void extractAudio()} title={t('tl.extractAudioTitle')}>
+            {t('tl.extractAudio')}
           </button>
           <ClipVideoFx clip={clip} />
         </>
       )}
       {clip.kind === 'audio' && <ClipAudioFx clip={clip} />}
       <button className="btn btn-sm" onClick={() => st().removeClip(clip.id)}>
-        删除
+        {t('tl.delete')}
       </button>
     </span>
   )
