@@ -137,7 +137,23 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.scale': 'Scale',
   'tl.extractAudioTitle': "Extract the video's audio as an audio track",
   'tl.extractAudio': 'Extract Audio',
-  'tl.delete': 'Delete'
+  'tl.delete': 'Delete',
+
+  // Timeline · main component
+  'tl.interlude': '(interlude)',
+  'tl.empty': 'After importing lyrics / video / audio, each becomes an editable clip on the timeline.',
+  'tl.addLyricTitle': 'Add a subtitle at the playhead (2s; double-click the left list to edit text)',
+  'tl.lyric': 'Subtitle',
+  'tl.addTextTitle': 'Add a standalone text block at the playhead (3s, optional effect, not part of the lyric flow)',
+  'tl.textBlock': 'Text',
+  'tl.deleteSelTitle': 'Delete selected subtitles/text (same as the Delete key)',
+  'tl.deleteSel': 'Delete Selected',
+  'tl.selSummary': 'Selected {n} — pick an effect on the right, drag on the canvas to reposition',
+  'tl.hint': 'Click a clip to select · Ctrl+click for multi-select · drag to move · drag edges to trim',
+  'tl.end': 'End',
+  'tl.zoomOut': 'Zoom out timeline',
+  'tl.zoomIn': 'Zoom in timeline',
+  'tl.layerDropHint': ' (drop video here to stack)'
 }
 
 

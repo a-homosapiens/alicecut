@@ -495,6 +495,10 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
 }
 
 export function Timeline(): React.JSX.Element {
+  const t = useT()
+  // 内置特效名按语言翻译；插件特效回退自带 name
+  const effName = (id: string): string =>
+    hasMsg(`effect.${id}`) ? t(`effect.${id}` as Parameters<typeof t>[0]) : getEffect(id).name
   const lines = useProject((s) => s.lines)
   const clips = useProject((s) => s.clips)
   const selectedIds = useProject((s) => s.selectedIds)
@@ -700,15 +704,15 @@ export function Timeline(): React.JSX.Element {
           borderColor: color,
           background: `${color}2e`
         }}
-        title={`${line.text}\n${getEffect(effId).name}${line.effectId ? '' : '（全局默认）'}`}
+        title={`${line.text}\n${effName(effId)}${line.effectId ? '' : t('style.effectsGlobal')}`}
         onMouseDown={(e) => onSegmentMouseDown(e, line, 'move')}
       >
         <div className="tl-handle l" onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-l')} />
         <span className="tl-seg-text">
-          {isText ? `📝 ${line.text}` : line.text || '（间奏）'}
+          {isText ? `📝 ${line.text}` : line.text || t('tl.interlude')}
         </span>
         <span className="tl-seg-fx" style={{ color }}>
-          {getEffect(effId).name}
+          {effName(effId)}
         </span>
         <div className="tl-handle r" onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-r')} />
       </div>
@@ -721,7 +725,7 @@ export function Timeline(): React.JSX.Element {
   if (lines.length === 0 && clips.length === 0) {
     return (
       <div className="timeline empty">
-        导入歌词 / 视频 / 音频后，每个素材会成为时间轴上的可编辑线段
+        {t('tl.empty')}
       </div>
     )
   }
@@ -729,33 +733,33 @@ export function Timeline(): React.JSX.Element {
   return (
     <div className="timeline">
       <div className="tl-toolbar">
-        <button className="btn btn-sm" onClick={() => addAtPlayhead('lyric')} title="在播放头处加一句字幕（2 秒，双击左侧列表改文字）">
-          + 字幕
+        <button className="btn btn-sm" onClick={() => addAtPlayhead('lyric')} title={t('tl.addLyricTitle')}>
+          + {t('tl.lyric')}
         </button>
-        <button className="btn btn-sm" onClick={() => addAtPlayhead('text')} title="在播放头处加一块独立文字（3 秒，可选特效，不参与歌词流）">
-          + 文字
+        <button className="btn btn-sm" onClick={() => addAtPlayhead('text')} title={t('tl.addTextTitle')}>
+          + {t('tl.textBlock')}
         </button>
         {selectedIds.length > 0 && (
           <button
             className="btn btn-sm"
             onClick={() => useProject.getState().removeLines(useProject.getState().selectedIds)}
-            title="删除选中的字幕/文字（Delete 键同效）"
+            title={t('tl.deleteSelTitle')}
           >
-            删除选中
+            {t('tl.deleteSel')}
           </button>
         )}
         <span className="hint">
           {selectedClip
-            ? `${selectedClip.kind === 'video' ? '背景视频' : '音轨'} · ${selectedClip.name}`
+            ? `${selectedClip.kind === 'video' ? t('tl.bgVideo') : t('tl.audioTrack')} · ${selectedClip.name}`
             : selectedIds.length > 0
-              ? `已选 ${selectedIds.length} 条 — 可在右侧选择特效，画面中拖动调整位置`
-              : '点击线段选中 · Ctrl+点击多选 · 拖动挪时间 · 拖边缘微调'}
+              ? t('tl.selSummary', { n: selectedIds.length })
+              : t('tl.hint')}
         </span>
         {selectedClip && <ClipControls clip={selectedClip} />}
         {selectedLine && !selectedClip && (
           <span className="tl-times">
             <label>
-              开始
+              {t('tl.start')}
               <input
                 type="number"
                 step={0.01}
@@ -769,7 +773,7 @@ export function Timeline(): React.JSX.Element {
               />
             </label>
             <label>
-              结束
+              {t('tl.end')}
               <input
                 type="number"
                 step={0.01}
@@ -785,10 +789,10 @@ export function Timeline(): React.JSX.Element {
           </span>
         )}
         <div className="spacer" />
-        <button className="btn btn-sm" onClick={() => zoom(1 / 1.3)} title="缩小时间轴">
+        <button className="btn btn-sm" onClick={() => zoom(1 / 1.3)} title={t('tl.zoomOut')}>
           −
         </button>
-        <button className="btn btn-sm" onClick={() => zoom(1.3)} title="放大时间轴">
+        <button className="btn btn-sm" onClick={() => zoom(1.3)} title={t('tl.zoomIn')}>
           +
         </button>
       </div>
@@ -808,7 +812,8 @@ export function Timeline(): React.JSX.Element {
               key={`v${row.layer}`}
             >
               <span className="tl-layer-label">
-                {row.clips.length === 0 ? `图层 ${row.layer + 1}（拖视频到此叠加）` : `图层 ${row.layer + 1}`}
+                {t('tl.layer')} {row.layer + 1}
+                {row.clips.length === 0 ? t('tl.layerDropHint') : ''}
               </span>
               {row.clips.map((c) => (
                 <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />

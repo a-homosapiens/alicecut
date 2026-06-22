@@ -139,5 +139,21 @@ export const zh = {
   'tl.scale': '缩放',
   'tl.extractAudioTitle': '把视频的音频抽取成一条音轨线段',
   'tl.extractAudio': '提取音频',
-  'tl.delete': '删除'
+  'tl.delete': '删除',
+
+  // 时间轴 · 主组件（工具条 / 空状态 / 线段 / 轨道）
+  'tl.interlude': '（间奏）',
+  'tl.empty': '导入歌词 / 视频 / 音频后，每个素材会成为时间轴上的可编辑线段',
+  'tl.addLyricTitle': '在播放头处加一句字幕（2 秒，双击左侧列表改文字）',
+  'tl.lyric': '字幕',
+  'tl.addTextTitle': '在播放头处加一块独立文字（3 秒，可选特效，不参与歌词流）',
+  'tl.textBlock': '文字',
+  'tl.deleteSelTitle': '删除选中的字幕/文字（Delete 键同效）',
+  'tl.deleteSel': '删除选中',
+  'tl.selSummary': '已选 {n} 条 — 可在右侧选择特效，画面中拖动调整位置',
+  'tl.hint': '点击线段选中 · Ctrl+点击多选 · 拖动挪时间 · 拖边缘微调',
+  'tl.end': '结束',
+  'tl.zoomOut': '缩小时间轴',
+  'tl.zoomIn': '放大时间轴',
+  'tl.layerDropHint': '（拖视频到此叠加）'
 } as const
