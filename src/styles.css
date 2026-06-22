@@ -664,6 +664,18 @@ body,
   border-bottom: 1px dashed rgba(249, 115, 22, 0.4);
 }
 
+/* 音频空层轨：绿色拖放目标 */
+.tl-audiotrack.empty {
+  background: rgba(34, 197, 94, 0.06);
+  border-bottom: 1px dashed rgba(34, 197, 94, 0.4);
+}
+
+/* 文字空层轨：蓝色拖放目标 */
+.tl-texttrack.empty {
+  background: rgba(96, 165, 250, 0.06);
+  border-bottom: 1px dashed rgba(96, 165, 250, 0.4);
+}
+
 .tl-layer-label {
   position: absolute;
   left: 4px;

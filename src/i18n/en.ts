@@ -154,6 +154,10 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.zoomOut': 'Zoom out timeline',
   'tl.zoomIn': 'Zoom in timeline',
   'tl.layerDropHint': ' (drop video here to stack)',
+  'tl.audioLayer': 'Track',
+  'tl.audioDropHint': ' (drop audio here to stack)',
+  'tl.textLayer': 'Text',
+  'tl.textDropHint': ' (drop text here to stack)',
 
   // Lyrics panel
   'lyrics.empty1': 'No lyrics imported yet',

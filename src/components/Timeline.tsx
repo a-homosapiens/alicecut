@@ -6,6 +6,7 @@ import {
   clipSegmentMs,
   clipSourceTime,
   videoTransitionList,
+  MAX_LAYER,
   MAX_SPEED,
   MIN_SPEED,
   type MediaClip,
@@ -37,7 +38,6 @@ const TEXT_COLOR = '#eab308'
 
 /** 媒体轨一行的高度（含 4px 间距），竖向拖动换层按它换算 */
 const MEDIA_ROW_H = 34
-const MAX_LAYER = 4
 /** 选中音轨展开后的波形高度（与 CSS .tl-clip-wave 高度保持一致） */
 const WAVE_H = 54
 
@@ -180,13 +180,11 @@ function ClipSegment({
       if (Math.abs(deltaPx) > 3 || Math.abs(deltaPy) > 3) moved = true
       if (!moved) return
       useProject.getState().moveClipFrom(original, (deltaPx / pxPerSec) * 1000)
-      // 视频竖向拖换层：界面上层在上方，往上拖 = 层序加大
-      if (clip.kind === 'video') {
-        const layerDelta = -Math.round(deltaPy / MEDIA_ROW_H)
-        const layer = Math.min(MAX_LAYER, Math.max(0, original.layer + layerDelta))
-        if (layer !== useProject.getState().clips.find((c) => c.id === clip.id)?.layer) {
-          useProject.getState().setClipLayer(clip.id, layer)
-        }
+      // 竖向拖换层（视频与音频均支持）：界面上层在上方，往上拖 = 层序加大
+      const layerDelta = -Math.round(deltaPy / MEDIA_ROW_H)
+      const layer = Math.min(MAX_LAYER, Math.max(0, original.layer + layerDelta))
+      if (layer !== useProject.getState().clips.find((c) => c.id === clip.id)?.layer) {
+        useProject.getState().setClipLayer(clip.id, layer)
       }
     }
     const onUp = (): void => {
@@ -215,7 +213,7 @@ function ClipSegment({
         clip.kind === 'video' ? `${t('tl.bgVideo')} · ${t('tl.layerN', { n: clip.layer + 1 })}` : t('tl.audioTrack')
       } · ${clip.loop === 'infinite' ? t('tl.loopInfinite') : t('tl.loopN', { n: clip.loop })}${
         clip.speed !== 1 ? ` ${t('tl.speedSuffix', { x: clip.speed })}` : ''
-      }${clip.kind === 'video' ? `\n${t('tl.dragVertical')}` : ''}`}
+      }\n${t('tl.dragVertical')}`}
       onMouseDown={onMouseDown}
     >
       {showWave && (
@@ -589,17 +587,18 @@ export function Timeline(): React.JSX.Element {
   const ticks: number[] = []
   for (let s = 0; s <= duration; s += step) ticks.push(s)
 
-  // 视频按层分行（高层在上），最上方再留一条空图层轨作为「叠加新层」的拖放目标
+  // 视频/音频按层分行（高层在上），最上方再留一条空层轨作为「叠加新层」的拖放目标
   const videoClips = clips.filter((c) => c.kind === 'video')
   const audioClips = clips.filter((c) => c.kind === 'audio')
-  const maxVideoLayer = videoClips.reduce((m, c) => Math.max(m, c.layer), 0)
-  const videoRows: { layer: number; clips: MediaClip[] }[] = []
-  if (videoClips.length > 0) {
-    const top = Math.min(MAX_LAYER, maxVideoLayer + 1) // 顶部空轨
-    for (let l = top; l >= 0; l--) {
-      videoRows.push({ layer: l, clips: videoClips.filter((c) => c.layer === l) })
-    }
+  const layerRows = (cs: MediaClip[]): { layer: number; clips: MediaClip[] }[] => {
+    if (cs.length === 0) return []
+    const top = Math.min(MAX_LAYER, cs.reduce((m, c) => Math.max(m, c.layer), 0) + 1) // 顶部空轨
+    const rows: { layer: number; clips: MediaClip[] }[] = []
+    for (let l = top; l >= 0; l--) rows.push({ layer: l, clips: cs.filter((c) => c.layer === l) })
+    return rows
   }
+  const videoRows = layerRows(videoClips)
+  const audioRows = layerRows(audioClips)
   const lyricLines = lines.filter((l) => l.kind !== 'text')
   const textBlocks = lines.filter((l) => l.kind === 'text')
 
@@ -820,13 +819,22 @@ export function Timeline(): React.JSX.Element {
               ))}
             </div>
           ))}
-          {audioClips.length > 0 && (
-            <div className={`tl-mediatrack tl-audiotrack${selectedClip?.kind === 'audio' ? ' expanded' : ''}`}>
-              {audioClips.map((c) => (
+          {audioRows.map((row) => (
+            <div
+              className={`tl-mediatrack tl-audiotrack${
+                row.clips.some((c) => c.id === selectedClipId) ? ' expanded' : ''
+              }${row.clips.length === 0 ? ' empty' : ''}`}
+              key={`a${row.layer}`}
+            >
+              <span className="tl-layer-label">
+                {t('tl.audioLayer')} {row.layer + 1}
+                {row.clips.length === 0 ? t('tl.audioDropHint') : ''}
+              </span>
+              {row.clips.map((c) => (
                 <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
               ))}
             </div>
-          )}
+          ))}
           {textBlocks.length > 0 && (
             <div className="tl-texttrack">{textBlocks.map(renderLineSegment)}</div>
           )}

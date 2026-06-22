@@ -65,6 +65,9 @@ export interface MediaClip {
   transOut?: VideoTransition | null
 }
 
+/** 媒体线段最大层序（视频/音频共用）；层 0 为最底 */
+export const MAX_LAYER = 4
+
 export const MIN_SPEED = 0.25
 export const MAX_SPEED = 4
 

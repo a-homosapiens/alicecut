@@ -3,7 +3,7 @@ import { useProject } from './store/project'
 import { serializeSrt } from './core/subtitles'
 import { loadPluginSource, installPlugin } from './plugins'
 import { validatePlugin } from './core/effects/validator'
-import { clipEnd, type MediaClip } from './core/media'
+import { clipEnd, MAX_LAYER, type MediaClip } from './core/media'
 import { probeMediaDuration } from './mediaPool'
 import { toggle } from './playback'
 import { PreviewCanvas } from './components/PreviewCanvas'
@@ -54,11 +54,28 @@ export function App(): React.JSX.Element {
     }
   }
 
-  /** 把一批文件追加为媒体线段：同类线段依次首尾相接排在时间轴上 */
+  /**
+   * 把一批文件追加为媒体线段。
+   * 音频默认分层导入：已有音频时，整批放到新的一层、从红色播放头处首尾相接；
+   * 没有音频（或视频）时沿用旧行为——同类线段在第 0 层依次首尾相接。
+   */
   const addMediaClips = async (
     kind: 'video' | 'audio',
     files: { path: string; name: string }[]
   ): Promise<void> => {
+    const st0 = useProject.getState()
+    const existingAudio = st0.clips.filter((c) => c.kind === 'audio')
+    const audioToNewLayer = kind === 'audio' && existingAudio.length > 0
+    const targetLayer = audioToNewLayer
+      ? Math.min(MAX_LAYER, existingAudio.reduce((m, c) => Math.max(m, c.layer), 0) + 1)
+      : 0
+    // 新层从播放头开始；否则接在同类线段末尾（旧行为）
+    let cursor = audioToNewLayer
+      ? Math.round(st0.currentTime * 1000)
+      : st0.clips
+          .filter((c) => c.kind === kind && c.loop !== 'infinite')
+          .reduce((acc, c) => Math.max(acc, clipEnd(c, 0)), 0)
+
     for (const file of files) {
       let sourceDuration: number
       try {
@@ -68,10 +85,17 @@ export function App(): React.JSX.Element {
         continue
       }
       const st = useProject.getState()
-      const sameKind = st.clips.filter((c) => c.kind === kind && c.loop !== 'infinite')
-      const start = sameKind.reduce((acc, c) => Math.max(acc, clipEnd(c, 0)), 0)
-      const clip = st.addClip({ kind, path: file.path, name: file.name, start, sourceDuration, loop: 1 })
+      const clip = st.addClip({
+        kind,
+        path: file.path,
+        name: file.name,
+        start: cursor,
+        sourceDuration,
+        loop: 1,
+        layer: targetLayer
+      })
       st.setSelectedClip(clip.id)
+      cursor = clipEnd(clip, 0) // 同批次首尾相接
     }
   }
 

@@ -156,6 +156,10 @@ export const zh = {
   'tl.zoomOut': '缩小时间轴',
   'tl.zoomIn': '放大时间轴',
   'tl.layerDropHint': '（拖视频到此叠加）',
+  'tl.audioLayer': '音轨',
+  'tl.audioDropHint': '（拖音频到此叠加）',
+  'tl.textLayer': '文字层',
+  'tl.textDropHint': '（拖文字到此叠加）',
 
   // 歌词面板（LyricsPanel）
   'lyrics.empty1': '尚未导入歌词',
