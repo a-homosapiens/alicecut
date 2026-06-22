@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { translate, detectLocale } from './index'
+import { translate, detectLocale, hasMsg } from './index'
 import { zh } from './zh'
 import { en } from './en'
 
@@ -22,6 +22,20 @@ describe('detectLocale', () => {
     expect(detectLocale('en-US')).toBe('en')
     expect(detectLocale(undefined)).toBe('en')
     expect(detectLocale('fr')).toBe('en')
+  })
+})
+
+describe('hasMsg（区分内置/插件名）', () => {
+  it('内置特效/转场键存在，未知键不存在', () => {
+    expect(hasMsg('effect.karaoke')).toBe(true)
+    expect(hasMsg('effect.flip-bottom')).toBe(true)
+    expect(hasMsg('vtrans.fade')).toBe(true)
+    expect(hasMsg('effect.someThirdPartyPlugin')).toBe(false)
+  })
+
+  it('内置特效/转场名按语言翻译', () => {
+    expect(translate('en', 'effect.karaoke')).toBe('Karaoke')
+    expect(translate('zh', 'vtrans.wipeL')).toBe('左擦')
   })
 })
 

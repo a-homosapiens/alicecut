@@ -14,6 +14,11 @@ export const LOCALES: { id: Locale; label: string }[] = [
 
 const dicts: Record<Locale, Record<string, string>> = { zh, en }
 
+/** 该键是否存在（区分内置——有键、可翻译——与插件——无键、回退自带 name） */
+export function hasMsg(key: string): key is MsgKey {
+  return Object.prototype.hasOwnProperty.call(zh, key)
+}
+
 /** 从语言标签（如 navigator.language / app.getLocale()）推断我们的 Locale */
 export function detectLocale(tag: string | undefined | null): Locale {
   return tag && tag.toLowerCase().startsWith('zh') ? 'zh' : 'en'

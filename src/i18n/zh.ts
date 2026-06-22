@@ -14,5 +14,33 @@ export const zh = {
   'topbar.exportSrt': '导出字幕',
   'topbar.exportVideo': '导出视频',
   'topbar.videoSuffix': '· {n} 段',
-  'topbar.audioSuffix': '· {n} 条'
+  'topbar.audioSuffix': '· {n} 条',
+
+  // 内置文字特效显示名（键 = effect.<id>；插件特效无键，回退其自带 name）
+  'effect.pop': '逐字弹出',
+  'effect.punch': '缩放冲击',
+  'effect.slide': '滑动错落',
+  'effect.typewriter': '打字机',
+  'effect.glow': '发光渐显',
+  'effect.karaoke': '卡拉OK高亮',
+  'effect.highlightBox': '跳动高亮块',
+  'effect.bounce': '弹跳',
+  'effect.streak': '残影滑入',
+  'effect.wobble': '飘摆',
+  'effect.wipe': '横向擦入',
+  'effect.iris': '圆形展开',
+  'effect.clockWipe': '钟摆扫入',
+  'effect.flip': '翻转切换',
+  'effect.flip-bottom': '翻转·底对齐',
+  'effect.rise': '上移切换',
+
+  // 内置视频转场显示名（键 = vtrans.<id>）
+  'vtrans.fade': '淡入淡出',
+  'vtrans.slideL': '左滑',
+  'vtrans.slideR': '右滑',
+  'vtrans.slideU': '上滑',
+  'vtrans.slideD': '下滑',
+  'vtrans.zoom': '缩放',
+  'vtrans.wipeL': '左擦',
+  'vtrans.wipeR': '右擦'
 } as const

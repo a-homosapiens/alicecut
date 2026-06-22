@@ -13,6 +13,7 @@ import {
 } from '../core/media'
 import { seek } from '../playback'
 import { useWaveform } from '../waveform'
+import { useT, hasMsg } from '../i18n'
 import type { LrcLine } from '../core/types'
 
 /** 每种特效的线段配色，便于一眼区分 */
@@ -230,11 +231,16 @@ function ClipSegment({
 
 /** 视频转场：进场(transIn)/退场(transOut)。从菜单添加后可选类型与秒数 */
 function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const t = useT()
   const st = useProject.getState
   const [menuOpen, setMenuOpen] = useState(false)
   // 订阅插件视频转场以触发重渲染；选项来自注册表（内置 + 插件）
   useProject((s) => s.pluginVideoTransitions)
-  const options = videoTransitionList()
+  // 内置转场名按语言翻译（vtrans.<id>）；插件转场回退自带 name
+  const options = videoTransitionList().map((o) => ({
+    id: o.id,
+    name: hasMsg(`vtrans.${o.id}`) ? t(`vtrans.${o.id}` as Parameters<typeof t>[0]) : o.name
+  }))
 
   const add = (which: 'in' | 'out'): void => {
     st().setClipTransition(clip.id, which, { type: 'fade', durationMs: 1000 })

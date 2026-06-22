@@ -3,6 +3,7 @@ import { useProject, RESOLUTIONS, type AspectId } from '../store/project'
 import { EFFECTS } from '../core/effects'
 import { SYSTEM_FONTS, loadBuiltinFonts, registerImportedFont, type FontOption } from '../fonts'
 import { invalidateLayoutCache } from '../core/render'
+import { useT, hasMsg } from '../i18n'
 
 /** 内联 style 用的 font-family（含空格/中文名加引号） */
 const cssFamily = (family: string): string => `"${family}"`
@@ -78,6 +79,7 @@ function FontPicker({
 }
 
 export function StylePanel(): React.JSX.Element {
+  const t = useT()
   const style = useProject((s) => s.style)
   const patchStyle = useProject((s) => s.patchStyle)
   const selectedIds = useProject((s) => s.selectedIds)
@@ -85,10 +87,14 @@ export function StylePanel(): React.JSX.Element {
   const pluginEffects = useProject((s) => s.pluginEffects)
   const [fonts, setFonts] = useState<FontOption[]>(SYSTEM_FONTS)
 
+  // 内置特效名按语言翻译（有 effect.<id> 键）；插件特效无键，回退自带 name
+  const effectLabel = (id: string, name: string): string =>
+    hasMsg(`effect.${id}`) ? t(`effect.${id}` as Parameters<typeof t>[0]) : name
+
   // 内置 + 插件特效合并展示（插件项带标记）
   const effectChips = [
-    ...EFFECTS.map((e) => ({ id: e.id, name: e.name, plugin: false })),
-    ...pluginEffects.map((e) => ({ id: e.id, name: e.name, plugin: true }))
+    ...EFFECTS.map((e) => ({ id: e.id, name: effectLabel(e.id, e.name), plugin: false })),
+    ...pluginEffects.map((e) => ({ id: e.id, name: effectLabel(e.id, e.name), plugin: true }))
   ]
 
   const selectedEffects = new Set(
