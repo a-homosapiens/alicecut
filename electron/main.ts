@@ -8,6 +8,40 @@ import { parseExportArg, prepareJob, registerHeadlessHandlers } from './headless
 import { readLrcText } from './lrcFile'
 import { buildMenu, loadLocale, saveLocale, type Locale } from './menu'
 
+/** 当前界面语言（registerLocaleHandlers 维护）；文件对话框文案据此本地化 */
+let currentLocale: Locale = 'zh'
+
+/** 主进程文件对话框文案（与渲染进程 i18n 分开，主进程自包含） */
+const DIALOG: Record<Locale, Record<string, string>> = {
+  zh: {
+    openLrcTitle: '导入歌词/字幕文件', lyricFilter: '歌词/字幕',
+    openAudioTitle: '导入音频文件', audioFilter: '音频',
+    openVideoTitle: '导入视频文件', videoFilter: '视频',
+    openImageTitle: '选择背景图片', imageFilter: '图片',
+    openFontTitle: '导入字体文件', fontFilter: '字体',
+    saveProjectTitle: '保存工程', projectFilter: '动态歌词工程',
+    saveSrtTitle: '导出字幕', srtFilter: 'SRT 字幕',
+    openPluginTitle: '导入特效插件', pluginFilter: '特效插件',
+    openProjectTitle: '打开工程',
+    saveVideoTitle: '导出视频', mp4Filter: 'MP4 视频',
+    windowTitle: '动态歌词视频生成器'
+  },
+  en: {
+    openLrcTitle: 'Import lyrics / subtitles', lyricFilter: 'Lyrics / Subtitles',
+    openAudioTitle: 'Import audio', audioFilter: 'Audio',
+    openVideoTitle: 'Import video', videoFilter: 'Video',
+    openImageTitle: 'Choose background image', imageFilter: 'Images',
+    openFontTitle: 'Import font', fontFilter: 'Fonts',
+    saveProjectTitle: 'Save project', projectFilter: 'Dynamic Lyrics Project',
+    saveSrtTitle: 'Export subtitles', srtFilter: 'SRT Subtitles',
+    openPluginTitle: 'Import effect plugin', pluginFilter: 'Effect Plugin',
+    openProjectTitle: 'Open project',
+    saveVideoTitle: 'Export video', mp4Filter: 'MP4 Video',
+    windowTitle: 'Dynamic Lyrics — Video Maker'
+  }
+}
+const dlg = (k: string): string => DIALOG[currentLocale][k] ?? k
+
 const exportJobPath = parseExportArg(process.argv)
 // 无头导出走软件渲染，CI/无 GPU 环境也能跑
 if (exportJobPath) app.disableHardwareAcceleration()
@@ -100,8 +134,8 @@ function createWindow(headless: boolean): BrowserWindow {
 function registerFileHandlers(): void {
   ipcMain.handle('file:openLrc', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入歌词/字幕文件',
-      filters: [{ name: '歌词/字幕', extensions: ['lrc', 'srt', 'vtt', 'txt'] }],
+      title: dlg('openLrcTitle'),
+      filters: [{ name: dlg('lyricFilter'), extensions: ['lrc', 'srt', 'vtt', 'txt'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
@@ -112,8 +146,8 @@ function registerFileHandlers(): void {
   // 音/视频只返回路径，渲染进程经 media:// 协议流式读取
   ipcMain.handle('file:openAudio', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入音频文件',
-      filters: [{ name: '音频', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
+      title: dlg('openAudioTitle'),
+      filters: [{ name: dlg('audioFilter'), extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
       properties: ['openFile', 'multiSelections']
     })
     if (canceled || filePaths.length === 0) return null
@@ -122,8 +156,8 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:openVideo', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入视频文件',
-      filters: [{ name: '视频', extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi'] }],
+      title: dlg('openVideoTitle'),
+      filters: [{ name: dlg('videoFilter'), extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi'] }],
       properties: ['openFile', 'multiSelections']
     })
     if (canceled || filePaths.length === 0) return null
@@ -132,8 +166,8 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:openImage', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '选择背景图片',
-      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+      title: dlg('openImageTitle'),
+      filters: [{ name: dlg('imageFilter'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
@@ -142,8 +176,8 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:openFont', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入字体文件',
-      filters: [{ name: '字体', extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
+      title: dlg('openFontTitle'),
+      filters: [{ name: dlg('fontFilter'), extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
@@ -154,9 +188,9 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:saveProject', async (_e, json: string, defaultName: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '保存工程',
+      title: dlg('saveProjectTitle'),
       defaultPath: defaultName,
-      filters: [{ name: '动态歌词工程', extensions: ['dlv.json'] }]
+      filters: [{ name: dlg('projectFilter'), extensions: ['dlv.json'] }]
     })
     if (canceled || !filePath) return null
     await writeFile(filePath, json, 'utf-8')
@@ -165,9 +199,9 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:saveSrt', async (_e, text: string, defaultName: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '导出字幕',
+      title: dlg('saveSrtTitle'),
       defaultPath: defaultName,
-      filters: [{ name: 'SRT 字幕', extensions: ['srt'] }]
+      filters: [{ name: dlg('srtFilter'), extensions: ['srt'] }]
     })
     if (canceled || !filePath) return null
     await writeFile(filePath, text, 'utf-8')
@@ -176,8 +210,8 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:openPlugin', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '导入特效插件',
-      filters: [{ name: '特效插件', extensions: ['mjs', 'js'] }],
+      title: dlg('openPluginTitle'),
+      filters: [{ name: dlg('pluginFilter'), extensions: ['mjs', 'js'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
@@ -190,8 +224,8 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:openProject', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: '打开工程',
-      filters: [{ name: '动态歌词工程', extensions: ['json'] }],
+      title: dlg('openProjectTitle'),
+      filters: [{ name: dlg('projectFilter'), extensions: ['json'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
@@ -214,9 +248,9 @@ function registerFileHandlers(): void {
 
   ipcMain.handle('file:saveVideoPath', async (_e, defaultName: string) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '导出视频',
+      title: dlg('saveVideoTitle'),
       defaultPath: defaultName,
-      filters: [{ name: 'MP4 视频', extensions: ['mp4'] }]
+      filters: [{ name: dlg('mp4Filter'), extensions: ['mp4'] }]
     })
     return canceled ? null : filePath
   })
@@ -252,14 +286,18 @@ app.whenReady().then(async () => {
 
 /** 语言：主进程持有持久化值与原生菜单；切换时重建菜单（更新选中态与菜单文案）并通知渲染进程 */
 function registerLocaleHandlers(win: BrowserWindow): void {
-  let currentLocale = loadLocale()
+  currentLocale = loadLocale()
   const apply = (locale: Locale): void => {
     currentLocale = locale
     saveLocale(locale)
     buildMenu(locale, apply)
-    if (!win.isDestroyed()) win.webContents.send('app:locale-changed', locale)
+    if (!win.isDestroyed()) {
+      win.setTitle(dlg('windowTitle'))
+      win.webContents.send('app:locale-changed', locale)
+    }
   }
   buildMenu(currentLocale, apply)
+  if (!win.isDestroyed()) win.setTitle(dlg('windowTitle'))
   // 页面加载后把当前语言推给渲染进程，使 UI 与持久化值一致
   win.webContents.on('did-finish-load', () => win.webContents.send('app:locale-changed', currentLocale))
   ipcMain.handle('app:get-locale', () => currentLocale)
