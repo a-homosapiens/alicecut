@@ -32,13 +32,12 @@ const api = {
     ipcRenderer.invoke('file:saveSrt', text, defaultName),
   openProject: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openProject'),
   openPlugin: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openPlugin'),
+  openLanguage: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openLanguage'),
+  saveLanguageTemplate: (text: string, defaultName: string): Promise<string | null> =>
+    ipcRenderer.invoke('file:saveLanguageTemplate', text, defaultName),
 
-  /** 界面语言：主进程持久化 + 原生菜单切换 */
-  getLocale: (): Promise<'zh' | 'en'> => ipcRenderer.invoke('app:get-locale'),
-  setLocale: (locale: 'zh' | 'en'): Promise<void> => ipcRenderer.invoke('app:set-locale', locale),
-  onLocaleChanged: (cb: (locale: 'zh' | 'en') => void): void => {
-    ipcRenderer.on('app:locale-changed', (_e, locale: 'zh' | 'en') => cb(locale))
-  },
+  /** 界面语言：渲染进程切换后告知主进程，使其菜单/对话框/窗口标题随之本地化 */
+  setLocale: (locale: string): Promise<void> => ipcRenderer.invoke('app:set-locale', locale),
   fileExists: (path: string): Promise<boolean> => ipcRenderer.invoke('file:exists', path),
   mediaHasAudio: (path: string): Promise<boolean> => ipcRenderer.invoke('media:hasAudio', path),
 

@@ -209,7 +209,14 @@ export const en: Record<keyof typeof zh, string> = {
   'app.pluginImportFail': 'Plugin import failed: ',
   'app.mediaMissing': 'These media files are no longer at their original path and were skipped:\n{list}',
   'app.projectParseFail': 'Could not parse the project file.',
-  'app.importPluginTitle': 'Import a third-party effect plugin (.mjs/.js)'
+  'app.importPluginTitle': 'Import a third-party effect plugin (.mjs/.js)',
+
+  // Language menu
+  'lang.title': 'Language',
+  'lang.install': 'Install language…',
+  'lang.exportTemplate': 'Export template…',
+  'lang.installed': 'Installed language "{name}"',
+  'lang.installFail': 'Language pack import failed: '
 }
 
 

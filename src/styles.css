@@ -702,6 +702,57 @@ body,
   line-height: 1.2;
 }
 
+/* ---- 语言选择器 ---- */
+.lang-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.lang-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  z-index: 30;
+}
+
+.lang-dropdown button {
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 7px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.lang-dropdown button:hover {
+  background: var(--accent);
+}
+
+.lang-dropdown button.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.lang-dropdown button.active:hover {
+  color: #fff;
+}
+
+.lang-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
 /* ---- 音轨特效（淡入/淡出）---- */
 .clip-fx {
   display: inline-flex;

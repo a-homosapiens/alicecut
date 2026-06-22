@@ -12,6 +12,7 @@ import { Timeline } from './components/Timeline'
 import { LyricsPanel } from './components/LyricsPanel'
 import { StylePanel } from './components/StylePanel'
 import { ExportDialog } from './components/ExportDialog'
+import { LanguageMenu } from './components/LanguageMenu'
 import { useT } from './i18n'
 
 export function App(): React.JSX.Element {
@@ -239,6 +240,7 @@ export function App(): React.JSX.Element {
         <button className="btn btn-primary" disabled={!hasLines} onClick={() => setShowExport(true)}>
           {t('topbar.exportVideo')}
         </button>
+        <LanguageMenu />
       </header>
 
       <main className="layout">

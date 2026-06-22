@@ -41,8 +41,8 @@ export function saveLocale(locale: Locale): void {
   }
 }
 
-/** 用给定语言构建并设置应用菜单；语言子菜单为单选，点击回调 onPick */
-export function buildMenu(locale: Locale, onPick: (l: Locale) => void): void {
+/** 用给定语言构建并设置应用菜单（语言切换改在应用内，菜单不含语言项） */
+export function buildMenu(locale: Locale): void {
   const t = (k: string): string => M[locale][k] ?? k
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = []
@@ -76,13 +76,6 @@ export function buildMenu(locale: Locale, onPick: (l: Locale) => void): void {
       { role: 'zoomOut', label: t('zoomOut') },
       { type: 'separator' },
       { role: 'togglefullscreen', label: t('fullscreen') }
-    ]
-  })
-  template.push({
-    label: t('language'),
-    submenu: [
-      { label: '中文', type: 'radio', checked: locale === 'zh', click: () => onPick('zh') },
-      { label: 'English', type: 'radio', checked: locale === 'en', click: () => onPick('en') }
     ]
   })
   template.push({

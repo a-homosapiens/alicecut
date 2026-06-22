@@ -83,10 +83,13 @@ interface ProjectState {
   /** 时间轴上选中的媒体线段 id */
   selectedClipId: number | null
 
-  /** 界面语言（应用级偏好，不写入工程文件；持久化在主进程 settings.json） */
+  /** 界面语言（应用级偏好，不写入工程文件；持久化在 localStorage） */
   locale: Locale
-  /** 仅更新界面语言状态（持久化与原生菜单由主进程负责） */
+  /** 更新界面语言状态（持久化与告知主进程由调用方负责） */
   setLocale(locale: Locale): void
+  /** 可用语言（内置 + 已安装语言包），驱动语言选择器刷新 */
+  languages: { id: string; name: string }[]
+  setLanguages(list: { id: string; name: string }[]): void
   /** 已导入的插件文字/整行特效（仅 id/name，函数体在 effects 注册表里） */
   pluginEffects: { id: string; name: string }[]
   /** 登记新导入的插件特效（去重） */
@@ -201,6 +204,13 @@ export const useProject = create<ProjectState>((set, get) => ({
   locale: initialLocale,
   setLocale(locale) {
     set({ locale })
+  },
+  languages: [
+    { id: 'zh', name: '中文' },
+    { id: 'en', name: 'English' }
+  ],
+  setLanguages(list) {
+    set({ languages: list })
   },
   pluginEffects: [],
   pluginVideoTransitions: [],

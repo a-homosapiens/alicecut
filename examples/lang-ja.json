@@ -1,0 +1,22 @@
+{
+  "id": "ja",
+  "name": "日本語",
+  "strings": {
+    "topbar.title": "動的歌詞",
+    "topbar.importLyrics": "歌詞を読み込む",
+    "topbar.importVideo": "動画を読み込む",
+    "topbar.importAudio": "音声を読み込む",
+    "topbar.importPlugin": "プラグインを読み込む",
+    "topbar.openProject": "プロジェクトを開く",
+    "topbar.saveProject": "プロジェクトを保存",
+    "topbar.exportSrt": "字幕を書き出す",
+    "topbar.exportVideo": "動画を書き出す",
+    "export.title": "動画を書き出す",
+    "export.fps": "フレームレート",
+    "export.cancel": "キャンセル",
+    "export.close": "閉じる",
+    "lang.title": "言語",
+    "lang.install": "言語をインストール…",
+    "lang.exportTemplate": "テンプレートを書き出す…"
+  }
+}

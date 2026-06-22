@@ -211,5 +211,12 @@ export const zh = {
   'app.pluginImportFail': '插件导入失败：',
   'app.mediaMissing': '以下媒体文件不在原路径，已跳过：\n{list}',
   'app.projectParseFail': '工程文件无法解析',
-  'app.importPluginTitle': '导入第三方特效插件（.mjs/.js）'
+  'app.importPluginTitle': '导入第三方特效插件（.mjs/.js）',
+
+  // 语言菜单（LanguageMenu）
+  'lang.title': '界面语言',
+  'lang.install': '安装语言…',
+  'lang.exportTemplate': '导出语言模板…',
+  'lang.installed': '已安装语言包「{name}」',
+  'lang.installFail': '语言包导入失败：'
 } as const

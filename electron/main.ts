@@ -24,6 +24,7 @@ const DIALOG: Record<Locale, Record<string, string>> = {
     openPluginTitle: '导入特效插件', pluginFilter: '特效插件',
     openProjectTitle: '打开工程',
     saveVideoTitle: '导出视频', mp4Filter: 'MP4 视频',
+    openLanguageTitle: '安装语言包', saveLanguageTitle: '导出语言模板', languageFilter: '语言包',
     windowTitle: '动态歌词视频生成器'
   },
   en: {
@@ -37,6 +38,7 @@ const DIALOG: Record<Locale, Record<string, string>> = {
     openPluginTitle: 'Import effect plugin', pluginFilter: 'Effect Plugin',
     openProjectTitle: 'Open project',
     saveVideoTitle: 'Export video', mp4Filter: 'MP4 Video',
+    openLanguageTitle: 'Install language pack', saveLanguageTitle: 'Export language template', languageFilter: 'Language pack',
     windowTitle: 'Dynamic Lyrics — Video Maker'
   }
 }
@@ -222,6 +224,27 @@ function registerFileHandlers(): void {
     }
   })
 
+  ipcMain.handle('file:openLanguage', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: dlg('openLanguageTitle'),
+      filters: [{ name: dlg('languageFilter'), extensions: ['json'] }],
+      properties: ['openFile']
+    })
+    if (canceled || filePaths.length === 0) return null
+    return { path: filePaths[0], name: basename(filePaths[0]), text: await readFile(filePaths[0], 'utf-8') }
+  })
+
+  ipcMain.handle('file:saveLanguageTemplate', async (_e, text: string, defaultName: string) => {
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      title: dlg('saveLanguageTitle'),
+      defaultPath: defaultName,
+      filters: [{ name: dlg('languageFilter'), extensions: ['json'] }]
+    })
+    if (canceled || !filePath) return null
+    await writeFile(filePath, text, 'utf-8')
+    return filePath
+  })
+
   ipcMain.handle('file:openProject', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: dlg('openProjectTitle'),
@@ -284,25 +307,22 @@ app.whenReady().then(async () => {
   })
 })
 
-/** 语言：主进程持有持久化值与原生菜单；切换时重建菜单（更新选中态与菜单文案）并通知渲染进程 */
+/**
+ * 语言切换改在应用内（渲染进程为权威源）。主进程只用 currentLocale 本地化自己的
+ * 菜单文案/文件对话框/窗口标题；渲染进程切换时经 app:set-locale 告知，插件语言
+ * （非内置 zh/en）则主进程文案回退英文。
+ */
 function registerLocaleHandlers(win: BrowserWindow): void {
   currentLocale = loadLocale()
   const apply = (locale: Locale): void => {
     currentLocale = locale
     saveLocale(locale)
-    buildMenu(locale, apply)
-    if (!win.isDestroyed()) {
-      win.setTitle(dlg('windowTitle'))
-      win.webContents.send('app:locale-changed', locale)
-    }
+    buildMenu(locale)
+    if (!win.isDestroyed()) win.setTitle(dlg('windowTitle'))
   }
-  buildMenu(currentLocale, apply)
-  if (!win.isDestroyed()) win.setTitle(dlg('windowTitle'))
-  // 页面加载后把当前语言推给渲染进程，使 UI 与持久化值一致
-  win.webContents.on('did-finish-load', () => win.webContents.send('app:locale-changed', currentLocale))
+  apply(currentLocale)
   ipcMain.handle('app:get-locale', () => currentLocale)
-  // 供未来应用内切换器使用（菜单切换走 click→apply，不经此处）
-  ipcMain.handle('app:set-locale', (_e, locale: Locale) => apply(locale))
+  ipcMain.handle('app:set-locale', (_e, locale: string) => apply(locale === 'zh' || locale === 'en' ? locale : 'en'))
 }
 
 app.on('window-all-closed', () => {
