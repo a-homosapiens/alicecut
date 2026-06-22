@@ -92,6 +92,7 @@ type DragMode = 'move' | (typeof TRIM_MODES)[number]
 interface DragState {
   mode: DragMode
   startClientX: number
+  startClientY: number
   /** 拖拽起始时刻的行快照（深拷贝），位移始终相对快照计算 */
   originals: LrcLine[]
   moved: boolean
@@ -601,6 +602,12 @@ export function Timeline(): React.JSX.Element {
   const audioRows = layerRows(audioClips)
   const lyricLines = lines.filter((l) => l.kind !== 'text')
   const textBlocks = lines.filter((l) => l.kind === 'text')
+  // 文字块按 layer 分行（高层在上），顶部留空层作拖放目标
+  const textRows: { layer: number; lines: LrcLine[] }[] = []
+  if (textBlocks.length > 0) {
+    const top = Math.min(MAX_LAYER, textBlocks.reduce((m, l) => Math.max(m, l.layer ?? 0), 0) + 1)
+    for (let l = top; l >= 0; l--) textRows.push({ layer: l, lines: textBlocks.filter((b) => (b.layer ?? 0) === l) })
+  }
 
   const zoom = (factor: number): void => {
     setPxPerSec((v) => clampZoom(v * factor))
@@ -627,18 +634,29 @@ export function Timeline(): React.JSX.Element {
     const afterSel = useProject.getState()
     const dragIds = new Set(mode === 'move' ? afterSel.selectedIds : [line.id])
     const originals = afterSel.lines.filter((l) => dragIds.has(l.id)).map((l) => structuredClone(l))
-    dragRef.current = { mode, startClientX: e.clientX, originals, moved: false, clickedId: line.id }
+    dragRef.current = { mode, startClientX: e.clientX, startClientY: e.clientY, originals, moved: false, clickedId: line.id }
+    // 文字块的移动支持竖向换层（歌词行只走水平）
+    const textMove = line.kind === 'text' && mode === 'move'
 
     const onMove = (ev: MouseEvent): void => {
       const drag = dragRef.current
       if (!drag) return
       const deltaPx = ev.clientX - drag.startClientX
-      if (Math.abs(deltaPx) > 3) drag.moved = true
+      const deltaPy = ev.clientY - drag.startClientY
+      if (Math.abs(deltaPx) > 3 || (textMove && Math.abs(deltaPy) > 3)) drag.moved = true
       if (!drag.moved) return
       const deltaMs = (deltaPx / pxPerSec) * 1000
       const s = useProject.getState()
       if (drag.mode === 'move') {
         s.moveLinesFrom(drag.originals, deltaMs)
+        if (textMove) {
+          const layerDelta = -Math.round(deltaPy / MEDIA_ROW_H)
+          for (const o of drag.originals) {
+            if (o.kind !== 'text') continue
+            const layer = Math.min(MAX_LAYER, Math.max(0, (o.layer ?? 0) + layerDelta))
+            if (layer !== s.lines.find((l) => l.id === o.id)?.layer) s.setLineLayer(o.id, layer)
+          }
+        }
       } else {
         const o = drag.originals[0]
         if (drag.mode === 'trim-l') s.retimeLineFrom(o, o.start + deltaMs, o.end)
@@ -835,9 +853,15 @@ export function Timeline(): React.JSX.Element {
               ))}
             </div>
           ))}
-          {textBlocks.length > 0 && (
-            <div className="tl-texttrack">{textBlocks.map(renderLineSegment)}</div>
-          )}
+          {textRows.map((row) => (
+            <div className={`tl-texttrack${row.lines.length === 0 ? ' empty' : ''}`} key={`t${row.layer}`}>
+              <span className="tl-layer-label">
+                {t('tl.textLayer')} {row.layer + 1}
+                {row.lines.length === 0 ? t('tl.textDropHint') : ''}
+              </span>
+              {row.lines.map(renderLineSegment)}
+            </div>
+          ))}
           <div className="tl-track">{lyricLines.map(renderLineSegment)}</div>
           <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} />
         </div>

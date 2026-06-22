@@ -9,6 +9,7 @@ import {
   shiftClip,
   splitClipAt,
   withClipDefaults,
+  MAX_LAYER,
   type LoopSpec,
   type MediaClip,
   type VideoTransition
@@ -131,6 +132,8 @@ interface ProjectState {
   clearSelection(): void
   /** 给选中行设置特效；null = 恢复跟随全局默认 */
   setLineEffect(ids: number[], effectId: string | null): void
+  /** 设置独立文字块的层序（时间轴堆叠与绘制 z 序） */
+  setLineLayer(id: number, layer: number): void
   /** 线段整体左右挪动：从拖拽起始快照 originals 平移 deltaMs */
   moveLinesFrom(originals: LrcLine[], deltaMs: number): void
   /** 线段边缘微调：从拖拽起始快照重设起止时间 */
@@ -236,7 +239,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     invalidateLayoutCache()
     // 兼容旧版工程文件：补齐行级字段默认值
     const lines = sortLines(
-      data.lines.map((l) => ({ ...l, effectId: l.effectId ?? null, dx: l.dx ?? 0, dy: l.dy ?? 0 }))
+      data.lines.map((l) => ({ ...l, effectId: l.effectId ?? null, dx: l.dx ?? 0, dy: l.dy ?? 0, layer: l.layer ?? 0 }))
     )
     set({
       meta: data.meta,
@@ -358,6 +361,7 @@ export const useProject = create<ProjectState>((set, get) => ({
       effectId: null,
       dx: 0,
       dy: 0,
+      layer: 0,
       ...(kind === 'text' ? { kind: 'text' as const } : {})
     }
     const line = rebuildLineText(bare, content)
@@ -415,6 +419,11 @@ export const useProject = create<ProjectState>((set, get) => ({
   setLineEffect(ids, effectId) {
     const idSet = new Set(ids)
     set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectId } : l)) })
+  },
+
+  setLineLayer(id, layer) {
+    const l = Math.min(MAX_LAYER, Math.max(0, Math.round(layer)))
+    set({ lines: get().lines.map((ln) => (ln.id === id ? { ...ln, layer: l } : ln)) })
   },
 
   moveLinesFrom(originals, deltaMs) {

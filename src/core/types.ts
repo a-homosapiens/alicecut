@@ -28,6 +28,8 @@ export interface LrcLine {
   /** 本行画面位置偏移（画布像素），画布内拖拽设置 */
   dx: number
   dy: number
+  /** 层序（仅独立文字块用于时间轴堆叠与绘制 z 序；0 最底）；歌词行忽略 */
+  layer?: number
   /**
    * 'text' = 独立文字块：不参与歌词流（当前行/停靠转场历史），
    * 只在自己的起止区间内独立进场显示。缺省/undefined 为普通歌词行。

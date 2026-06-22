@@ -759,9 +759,9 @@ export function renderFrame(
     }
   }
 
-  // 独立文字块画在最上层
-  for (const line of lines) {
-    if (line.kind !== 'text') continue
+  // 独立文字块画在最上层；按 layer 升序，高层后画（盖在上面）
+  const textBlocks = lines.filter((l) => l.kind === 'text').sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0))
+  for (const line of textBlocks) {
     if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
     drawTextBlock(ctx, line, style, tMs)
   }
