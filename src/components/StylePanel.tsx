@@ -45,6 +45,7 @@ function FontPicker({
   onPick: (family: string) => void
   onImport: () => void
 }): React.JSX.Element {
+  const t = useT()
   const [open, setOpen] = useState(false)
   const current = fonts.find((f) => f.family === value)
   return (
@@ -72,7 +73,7 @@ function FontPicker({
         </div>
       )}
       <button className="btn btn-sm" onClick={onImport}>
-        导入字体文件…
+        {t('style.importFont')}
       </button>
     </div>
   )
@@ -129,7 +130,7 @@ export function StylePanel(): React.JSX.Element {
       setFonts((prev) => [opt, ...prev.filter((f) => f.family !== opt.family)])
       patchStyle({ fontFamily: opt.family })
     } catch {
-      alert('字体加载失败，请确认文件是有效的 ttf/otf 字体')
+      alert(t('style.fontLoadFail'))
     }
   }
 
@@ -140,11 +141,15 @@ export function StylePanel(): React.JSX.Element {
 
   const bgName = style.bgImage ? style.bgImage.split(/[\\/]/).pop() : null
   const bgSummary =
-    style.bgType === 'image' ? `图片：${bgName ?? '未选'}` : style.bgType === 'gradient' ? '渐变' : '纯色'
+    style.bgType === 'image'
+      ? t('style.bgSummaryImage', { name: bgName ?? t('style.bgNone') })
+      : style.bgType === 'gradient'
+        ? t('style.bgGradient')
+        : t('style.bgSolid')
 
   return (
     <div className="style-panel">
-      <Section title="画面尺寸">
+      <Section title={t('style.sizeSection')}>
         <label>
           <select value={style.aspect} onChange={(e) => patchStyle({ aspect: e.target.value as AspectId })}>
             {(Object.keys(RESOLUTIONS) as AspectId[]).map((id) => (
@@ -156,15 +161,15 @@ export function StylePanel(): React.JSX.Element {
         </label>
       </Section>
 
-      <Section title="背景" summary={bgSummary} defaultOpen={false}>
+      <Section title={t('style.bgSection')} summary={bgSummary} defaultOpen={false}>
         <div className="bg-types">
-          {(['image', 'gradient', 'solid'] as const).map((t) => (
+          {(['image', 'gradient', 'solid'] as const).map((bt) => (
             <button
-              key={t}
-              className={`effect-chip${style.bgType === t ? ' active' : ''}`}
-              onClick={() => patchStyle({ bgType: t })}
+              key={bt}
+              className={`effect-chip${style.bgType === bt ? ' active' : ''}`}
+              onClick={() => patchStyle({ bgType: bt })}
             >
-              {t === 'image' ? '图片' : t === 'gradient' ? '渐变' : '纯色'}
+              {bt === 'image' ? t('style.bgImage') : bt === 'gradient' ? t('style.bgGradient') : t('style.bgSolid')}
             </button>
           ))}
         </div>
@@ -172,16 +177,16 @@ export function StylePanel(): React.JSX.Element {
         {style.bgType === 'image' && (
           <div className="bg-image">
             <button className="btn btn-primary btn-sm" onClick={() => void chooseBgImage()}>
-              {style.bgImage ? '更换图片…' : '选择图片…'}
+              {style.bgImage ? t('style.changeImage') : t('style.chooseImage')}
             </button>
             {bgName && <div className="bg-image-name">{bgName}</div>}
-            <p className="hint">图片按 cover 铺满画面（保持比例裁切）</p>
+            <p className="hint">{t('style.bgImageHint')}</p>
           </div>
         )}
 
         {style.bgType === 'solid' && (
           <label className="row">
-            颜色
+            {t('style.color')}
             <input type="color" value={style.bgFrom} onChange={(e) => patchStyle({ bgFrom: e.target.value })} />
           </label>
         )}
@@ -189,15 +194,15 @@ export function StylePanel(): React.JSX.Element {
         {style.bgType === 'gradient' && (
           <>
             <label className="row">
-              渐变起点
+              {t('style.gradFrom')}
               <input type="color" value={style.bgFrom} onChange={(e) => patchStyle({ bgFrom: e.target.value })} />
             </label>
             <label className="row">
-              渐变终点
+              {t('style.gradTo')}
               <input type="color" value={style.bgTo} onChange={(e) => patchStyle({ bgTo: e.target.value })} />
             </label>
             <label>
-              角度 {style.bgAngle}°
+              {t('style.angle')} {style.bgAngle}°
               <input
                 type="range"
                 min={0}
@@ -210,7 +215,7 @@ export function StylePanel(): React.JSX.Element {
         )}
       </Section>
 
-      <Section title="文字">
+      <Section title={t('style.textSection')}>
         <FontPicker
           fonts={fonts}
           value={style.fontFamily}
@@ -218,7 +223,7 @@ export function StylePanel(): React.JSX.Element {
           onImport={importFont}
         />
         <label>
-          字号 {style.fontSize}px
+          {t('style.fontSize')} {style.fontSize}px
           <input
             type="range"
             min={40}
@@ -228,7 +233,7 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label className="row">
-          粗体
+          {t('style.bold')}
           <input
             type="checkbox"
             checked={style.fontWeight >= 600}
@@ -236,15 +241,15 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label className="row">
-          斜体
+          {t('style.italic')}
           <input type="checkbox" checked={style.italic} onChange={(e) => patchStyle({ italic: e.target.checked })} />
         </label>
         <label className="row">
-          文字颜色
+          {t('style.textColor')}
           <input type="color" value={style.textColor} onChange={(e) => patchStyle({ textColor: e.target.value })} />
         </label>
         <label>
-          文字不透明度 {Math.round(style.textAlpha * 100)}%
+          {t('style.textAlpha')} {Math.round(style.textAlpha * 100)}%
           <input
             type="range"
             min={10}
@@ -254,15 +259,15 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label className="row">
-          片头显示歌名
+          {t('style.showMeta')}
           <input type="checkbox" checked={style.showMeta} onChange={(e) => patchStyle({ showMeta: e.target.checked })} />
         </label>
       </Section>
 
-      <Section title="文字整体变换" summary={`X${style.globalDx} Y${style.globalDy} ${style.globalRotate}°`} defaultOpen={false}>
-        <p className="hint">所有文字（歌词与文字块）一起平移、旋转</p>
+      <Section title={t('style.transformSection')} summary={`X${style.globalDx} Y${style.globalDy} ${style.globalRotate}°`} defaultOpen={false}>
+        <p className="hint">{t('style.transformHint')}</p>
         <label>
-          水平 X {style.globalDx}px
+          {t('style.transformX')} {style.globalDx}px
           <input
             type="range"
             min={-800}
@@ -272,7 +277,7 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label>
-          垂直 Y {style.globalDy}px
+          {t('style.transformY')} {style.globalDy}px
           <input
             type="range"
             min={-800}
@@ -282,7 +287,7 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label>
-          旋转 {style.globalRotate}°
+          {t('style.rotate')} {style.globalRotate}°
           <input
             type="range"
             min={-180}
@@ -295,13 +300,13 @@ export function StylePanel(): React.JSX.Element {
           className="btn btn-sm"
           onClick={() => patchStyle({ globalDx: 0, globalDy: 0, globalRotate: 0 })}
         >
-          重置
+          {t('style.reset')}
         </button>
       </Section>
 
-      <Section title="字幕底色与描影" defaultOpen={false}>
+      <Section title={t('style.decorSection')} defaultOpen={false}>
         <label>
-          底色不透明度 {Math.round(style.textBgAlpha * 100)}%{style.textBgAlpha === 0 ? '（无底色）' : ''}
+          {t('style.bgBoxAlpha')} {Math.round(style.textBgAlpha * 100)}%{style.textBgAlpha === 0 ? t('style.noBgBox') : ''}
           <input
             type="range"
             min={0}
@@ -312,12 +317,12 @@ export function StylePanel(): React.JSX.Element {
         </label>
         {style.textBgAlpha > 0 && (
           <label className="row">
-            底色颜色
+            {t('style.bgBoxColor')}
             <input type="color" value={style.textBgColor} onChange={(e) => patchStyle({ textBgColor: e.target.value })} />
           </label>
         )}
         <label>
-          光晕强度 {style.halo}px{style.halo === 0 ? '（关）' : ''}
+          {t('style.halo')} {style.halo}px{style.halo === 0 ? t('style.off') : ''}
           <input
             type="range"
             min={0}
@@ -327,11 +332,11 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label className="row">
-          光晕/辉光颜色
+          {t('style.glowColor')}
           <input type="color" value={style.glowColor} onChange={(e) => patchStyle({ glowColor: e.target.value })} />
         </label>
         <label>
-          阴影不透明度 {Math.round(style.shadowAlpha * 100)}%{style.shadowAlpha === 0 ? '（关）' : ''}
+          {t('style.shadowAlpha')} {Math.round(style.shadowAlpha * 100)}%{style.shadowAlpha === 0 ? t('style.off') : ''}
           <input
             type="range"
             min={0}
@@ -343,11 +348,11 @@ export function StylePanel(): React.JSX.Element {
         {style.shadowAlpha > 0 && (
           <>
             <label className="row">
-              阴影颜色
+              {t('style.shadowColor')}
               <input type="color" value={style.shadowColor} onChange={(e) => patchStyle({ shadowColor: e.target.value })} />
             </label>
             <label>
-              阴影偏移 {style.shadowOffset}px
+              {t('style.shadowOffset')} {style.shadowOffset}px
               <input
                 type="range"
                 min={0}
@@ -357,7 +362,7 @@ export function StylePanel(): React.JSX.Element {
               />
             </label>
             <label>
-              阴影模糊 {style.shadowBlur}px
+              {t('style.shadowBlur')} {style.shadowBlur}px
               <input
                 type="range"
                 min={0}
@@ -370,27 +375,31 @@ export function StylePanel(): React.JSX.Element {
         )}
       </Section>
 
-      <Section title={`特效${selectedIds.length > 0 ? `（选中 ${selectedIds.length} 条）` : '（全局默认）'}`}>
+      <Section
+        title={`${t('style.effects')}${
+          selectedIds.length > 0 ? t('style.effectsSelected', { n: selectedIds.length }) : t('style.effectsGlobal')
+        }`}
+      >
         <div className="effect-list">
           {effectChips.map((fx) => (
             <button
               key={fx.id}
               className={`effect-chip${activeEffectId === fx.id ? ' active' : ''}${fx.plugin ? ' plugin' : ''}`}
               onClick={() => chooseEffect(fx.id)}
-              title={fx.plugin ? '插件特效' : undefined}
+              title={fx.plugin ? t('style.pluginEffectTitle') : undefined}
             >
               {fx.name}
-              {fx.plugin && <span className="effect-chip-tag">插件</span>}
+              {fx.plugin && <span className="effect-chip-tag">{t('style.pluginTag')}</span>}
             </button>
           ))}
         </div>
         {selectedIds.length > 0 && (
           <button className="btn btn-sm" onClick={() => useProject.getState().setLineEffect(selectedIds, null)}>
-            恢复跟随全局默认
+            {t('style.restoreDefault')}
           </button>
         )}
         <label className="row">
-          卡拉OK高亮色
+          {t('style.highlightColor')}
           <input
             type="color"
             value={style.highlightColor}
@@ -398,7 +407,7 @@ export function StylePanel(): React.JSX.Element {
           />
         </label>
         <label>
-          强度 {style.intensity.toFixed(1)}
+          {t('style.intensity')} {style.intensity.toFixed(1)}
           <input
             type="range"
             min={0.2}
