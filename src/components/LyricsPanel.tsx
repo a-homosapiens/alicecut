@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useProject } from '../store/project'
 import { repaginateLines } from '../core/subtitles'
 import { seek } from '../playback'
+import { useT } from '../i18n'
 
 function fmt(ms: number): string {
   const m = Math.floor(ms / 60000)
@@ -11,6 +12,7 @@ function fmt(ms: number): string {
 
 /** 歌词行列表：点击跳转、双击编辑文本；顶部可按粒度重新分页 */
 export function LyricsPanel(): React.JSX.Element {
+  const t = useT()
   const lines = useProject((s) => s.lines)
   const currentTime = useProject((s) => s.currentTime)
   const updateLineText = useProject((s) => s.updateLineText)
@@ -34,9 +36,9 @@ export function LyricsPanel(): React.JSX.Element {
     return (
       <div className="lyrics-panel empty">
         <p>
-          尚未导入歌词
+          {t('lyrics.empty1')}
           <br />
-          点击上方「导入歌词」选择 .lrc 文件
+          {t('lyrics.empty2')}
         </p>
       </div>
     )
@@ -47,8 +49,8 @@ export function LyricsPanel(): React.JSX.Element {
       {lyricLines.length > 0 && (
         <div className="repaginate">
           <div className="repaginate-row">
-            <span className="repaginate-label">分页粒度</span>
-            <span className="repaginate-count">≈ {previewPages} 页</span>
+            <span className="repaginate-label">{t('lyrics.granularity')}</span>
+            <span className="repaginate-count">{t('lyrics.pages', { n: previewPages })}</span>
           </div>
           <input
             type="range"
@@ -59,11 +61,11 @@ export function LyricsPanel(): React.JSX.Element {
             onChange={(e) => setGran(Number(e.target.value))}
           />
           <div className="repaginate-row repaginate-ends">
-            <span>逐词</span>
+            <span>{t('lyrics.perWord')}</span>
             <button className="btn btn-sm" onClick={() => useProject.getState().repaginate(gran)}>
-              应用分页
+              {t('lyrics.applyPaging')}
             </button>
-            <span>整句</span>
+            <span>{t('lyrics.perLine')}</span>
           </div>
         </div>
       )}
@@ -94,7 +96,7 @@ export function LyricsPanel(): React.JSX.Element {
               onClick={(e) => e.stopPropagation()}
             />
           ) : (
-            <span className="txt">{line.text || '（间奏）'}</span>
+            <span className="txt">{line.text || t('tl.interlude')}</span>
           )}
         </div>
       ))}

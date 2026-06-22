@@ -153,7 +153,41 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.end': 'End',
   'tl.zoomOut': 'Zoom out timeline',
   'tl.zoomIn': 'Zoom in timeline',
-  'tl.layerDropHint': ' (drop video here to stack)'
+  'tl.layerDropHint': ' (drop video here to stack)',
+
+  // Lyrics panel
+  'lyrics.empty1': 'No lyrics imported yet',
+  'lyrics.empty2': 'Click "Import Lyrics" above to choose a .lrc file',
+  'lyrics.granularity': 'Paging granularity',
+  'lyrics.pages': '≈ {n} pages',
+  'lyrics.perWord': 'Per word',
+  'lyrics.applyPaging': 'Apply paging',
+  'lyrics.perLine': 'Per line',
+
+  // Transport bar
+  'transport.playPause': 'Space to play/pause',
+
+  // Preview canvas
+  'preview.zoomHint': 'Zoom: Ctrl+wheel / trackpad pinch · Pan: wheel, middle-drag, or drag empty space',
+  'preview.fitTitle': 'Fit selected video / fill canvas',
+  'preview.fit': 'Fit',
+
+  // Export dialog
+  'export.title': 'Export Video',
+  'export.fps': 'Frame rate',
+  'export.fps30': '30 fps (recommended)',
+  'export.duration': '~{n}s · H.264 MP4',
+  'export.withVideo': ' · with background video',
+  'export.withAudio': ' · with audio',
+  'export.noAudio': ' · no audio (none imported)',
+  'export.cancel': 'Cancel',
+  'export.chooseAndExport': 'Choose location & export',
+  'export.encoding': 'rendering & encoding…',
+  'export.cancelExport': 'Cancel export',
+  'export.done': '✅ Export complete:',
+  'export.close': 'Close',
+  'export.failed': '❌ Export failed',
+  'export.ffmpegExit': 'FFmpeg exit code {code}'
 }
 
 

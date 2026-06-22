@@ -1,5 +1,6 @@
 import { useProject, getProjectDuration } from '../store/project'
 import { toggle, seek } from '../playback'
+import { useT } from '../i18n'
 
 function fmt(t: number): string {
   const m = Math.floor(t / 60)
@@ -8,6 +9,7 @@ function fmt(t: number): string {
 }
 
 export function TransportBar(): React.JSX.Element {
+  const t = useT()
   const playing = useProject((s) => s.playing)
   const currentTime = useProject((s) => s.currentTime)
   const lines = useProject((s) => s.lines)
@@ -17,7 +19,7 @@ export function TransportBar(): React.JSX.Element {
 
   return (
     <div className="transport">
-      <button className="btn btn-play" onClick={toggle} disabled={disabled} title="空格键播放/暂停">
+      <button className="btn btn-play" onClick={toggle} disabled={disabled} title={t('transport.playPause')}>
         {playing ? '⏸' : '▶'}
       </button>
       <span className="time">{fmt(currentTime)}</span>

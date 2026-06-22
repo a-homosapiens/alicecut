@@ -3,6 +3,7 @@ import { useProject, toRenderStyle, getProjectDuration } from '../store/project'
 import { renderFrame, getLineBlockRect, applyGlobalTextTransform } from '../core/render'
 import { drawBackgroundImage, drawVideoBackdrop, getClipDrawRect, type ClipRect } from '../mediaPool'
 import { getTime, tick } from '../playback'
+import { useT } from '../i18n'
 
 /**
  * 视图模型（仿 Photoshop / Inkscape）：
@@ -80,6 +81,7 @@ function drawTextSelection(ctx: CanvasRenderingContext2D, view: View, tMs: numbe
 
 /** 预览：视口铺满面板，文档(artboard)按视图变换绘制，周围是灰色画板(pasteboard) */
 export function PreviewCanvas(): React.JSX.Element {
+  const t = useT()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const aspect = useProject((s) => s.style.aspect)
   const hasSelection = useProject(
@@ -385,7 +387,7 @@ export function PreviewCanvas(): React.JSX.Element {
         style={{ cursor: hasSelection ? 'move' : 'default' }}
         onMouseDown={onMouseDown}
       />
-      <div className="preview-zoom" title="缩放：Ctrl+滚轮 / 触控板捏合；平移：滚轮、中键或空白处拖动">
+      <div className="preview-zoom" title={t('preview.zoomHint')}>
         <button className="btn btn-sm" onClick={() => zoomButton(1 / 1.2)}>
           −
         </button>
@@ -393,8 +395,8 @@ export function PreviewCanvas(): React.JSX.Element {
         <button className="btn btn-sm" onClick={() => zoomButton(1.2)}>
           +
         </button>
-        <button className="btn btn-sm" onClick={fitToContent} title="适配选中视频 / 铺满画面">
-          适配
+        <button className="btn btn-sm" onClick={fitToContent} title={t('preview.fitTitle')}>
+          {t('preview.fit')}
         </button>
       </div>
     </div>

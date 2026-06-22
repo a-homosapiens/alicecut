@@ -155,5 +155,39 @@ export const zh = {
   'tl.end': '结束',
   'tl.zoomOut': '缩小时间轴',
   'tl.zoomIn': '放大时间轴',
-  'tl.layerDropHint': '（拖视频到此叠加）'
+  'tl.layerDropHint': '（拖视频到此叠加）',
+
+  // 歌词面板（LyricsPanel）
+  'lyrics.empty1': '尚未导入歌词',
+  'lyrics.empty2': '点击上方「导入歌词」选择 .lrc 文件',
+  'lyrics.granularity': '分页粒度',
+  'lyrics.pages': '≈ {n} 页',
+  'lyrics.perWord': '逐词',
+  'lyrics.applyPaging': '应用分页',
+  'lyrics.perLine': '整句',
+
+  // 播放条（TransportBar）
+  'transport.playPause': '空格键播放/暂停',
+
+  // 预览画布（PreviewCanvas）
+  'preview.zoomHint': '缩放：Ctrl+滚轮 / 触控板捏合；平移：滚轮、中键或空白处拖动',
+  'preview.fitTitle': '适配选中视频 / 铺满画面',
+  'preview.fit': '适配',
+
+  // 导出对话框（ExportDialog）
+  'export.title': '导出视频',
+  'export.fps': '帧率',
+  'export.fps30': '30 fps（推荐）',
+  'export.duration': '时长约 {n} 秒 · H.264 MP4',
+  'export.withVideo': ' · 含背景视频',
+  'export.withAudio': ' · 含音轨',
+  'export.noAudio': ' · 无音频（未导入音频文件）',
+  'export.cancel': '取消',
+  'export.chooseAndExport': '选择保存位置并导出',
+  'export.encoding': '逐帧渲染编码中…',
+  'export.cancelExport': '取消导出',
+  'export.done': '✅ 导出完成：',
+  'export.close': '关闭',
+  'export.failed': '❌ 导出失败',
+  'export.ffmpegExit': 'FFmpeg 退出码 {code}'
 } as const
