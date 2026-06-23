@@ -212,6 +212,9 @@ export const zh = {
   'app.mediaMissing': '以下媒体文件不在原路径，已跳过：\n{list}',
   'app.projectParseFail': '工程文件无法解析',
   'app.importPluginTitle': '导入第三方特效插件（.mjs/.js）',
+  'app.convertFail': '视频转换失败：',
+  'convert.title': '正在转换视频…',
+  'convert.hint': '该格式需转成 H.264，已缓存，下次导入直接使用',
 
   // 语言菜单（LanguageMenu）
   'lang.title': '界面语言',

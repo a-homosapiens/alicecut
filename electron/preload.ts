@@ -41,6 +41,15 @@ const api = {
   fileExists: (path: string): Promise<boolean> => ipcRenderer.invoke('file:exists', path),
   mediaHasAudio: (path: string): Promise<boolean> => ipcRenderer.invoke('media:hasAudio', path),
 
+  /** 导入归一化：返回可播放路径（不支持的视频会被转成 H.264 MP4 并缓存） */
+  ensurePlayable: (path: string): Promise<{ path: string; converted: boolean }> =>
+    ipcRenderer.invoke('media:ensurePlayable', path),
+  onConvertProgress: (cb: (p: { name: string; frac: number }) => void): (() => void) => {
+    const h = (_e: unknown, p: { name: string; frac: number }): void => cb(p)
+    ipcRenderer.on('media:convertProgress', h)
+    return () => ipcRenderer.removeListener('media:convertProgress', h)
+  },
+
   exportStart: (opts: {
     width: number
     height: number

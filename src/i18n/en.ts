@@ -210,6 +210,9 @@ export const en: Record<keyof typeof zh, string> = {
   'app.mediaMissing': 'These media files are no longer at their original path and were skipped:\n{list}',
   'app.projectParseFail': 'Could not parse the project file.',
   'app.importPluginTitle': 'Import a third-party effect plugin (.mjs/.js)',
+  'app.convertFail': 'Video conversion failed: ',
+  'convert.title': 'Converting video…',
+  'convert.hint': 'This format is converted to H.264 and cached for next time.',
 
   // Language menu
   'lang.title': 'Language',

@@ -7,6 +7,7 @@ import { registerExportHandlers } from './exporter'
 import { parseExportArg, prepareJob, registerHeadlessHandlers } from './headless'
 import { readLrcText } from './lrcFile'
 import { buildMenu, loadLocale, saveLocale, type Locale } from './menu'
+import { registerConvertHandlers } from './convert'
 
 /** 当前界面语言（registerLocaleHandlers 维护）；文件对话框文案据此本地化 */
 let currentLocale: Locale = 'zh'
@@ -159,7 +160,9 @@ function registerFileHandlers(): void {
   ipcMain.handle('file:openVideo', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       title: dlg('openVideoTitle'),
-      filters: [{ name: dlg('videoFilter'), extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi'] }],
+      filters: [
+        { name: dlg('videoFilter'), extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'flv', 'wmv', 'ts', 'mpg', 'mpeg', '3gp'] }
+      ],
       properties: ['openFile', 'multiSelections']
     })
     if (canceled || filePaths.length === 0) return null
@@ -299,6 +302,7 @@ app.whenReady().then(async () => {
 
   registerHeadlessHandlers(null)
   registerFileHandlers()
+  registerConvertHandlers()
   const win = createWindow(false)
   registerLocaleHandlers(win)
 

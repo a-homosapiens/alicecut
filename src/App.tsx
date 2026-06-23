@@ -23,6 +23,10 @@ export function App(): React.JSX.Element {
   const videoCount = clips.filter((c) => c.kind === 'video').length
   const audioCount = clips.filter((c) => c.kind === 'audio').length
   const [showExport, setShowExport] = useState(false)
+  const [convertStatus, setConvertStatus] = useState<{ name: string; frac: number } | null>(null)
+
+  // 导入归一化进度（主进程转视频时推送）
+  useEffect(() => window.desktop.onConvertProgress((p) => setConvertStatus(p)), [])
 
   // 快捷键：空格播放/暂停，Ctrl+A 全选线段，Esc 取消选择
   useEffect(() => {
@@ -77,26 +81,40 @@ export function App(): React.JSX.Element {
           .filter((c) => c.kind === kind && c.loop !== 'infinite')
           .reduce((acc, c) => Math.max(acc, clipEnd(c, 0)), 0)
 
-    for (const file of files) {
-      let sourceDuration: number
-      try {
-        sourceDuration = await probeMediaDuration(file.path, kind)
-      } catch (err) {
-        alert(String(err instanceof Error ? err.message : err))
-        continue
+    try {
+      for (const file of files) {
+        // 视频：先归一化为 Chromium 可播放格式（不支持的转成 H.264 MP4）
+        let mediaPath = file.path
+        if (kind === 'video') {
+          try {
+            mediaPath = (await window.desktop.ensurePlayable(file.path)).path
+          } catch (err) {
+            alert(t('app.convertFail') + (err instanceof Error ? err.message : String(err)))
+            continue
+          }
+        }
+        let sourceDuration: number
+        try {
+          sourceDuration = await probeMediaDuration(mediaPath, kind)
+        } catch (err) {
+          alert(String(err instanceof Error ? err.message : err))
+          continue
+        }
+        const st = useProject.getState()
+        const clip = st.addClip({
+          kind,
+          path: mediaPath,
+          name: file.name,
+          start: cursor,
+          sourceDuration,
+          loop: 1,
+          layer: targetLayer
+        })
+        st.setSelectedClip(clip.id)
+        cursor = clipEnd(clip, 0) // 同批次首尾相接
       }
-      const st = useProject.getState()
-      const clip = st.addClip({
-        kind,
-        path: file.path,
-        name: file.name,
-        start: cursor,
-        sourceDuration,
-        loop: 1,
-        layer: targetLayer
-      })
-      st.setSelectedClip(clip.id)
-      cursor = clipEnd(clip, 0) // 同批次首尾相接
+    } finally {
+      setConvertStatus(null)
     }
   }
 
@@ -258,6 +276,20 @@ export function App(): React.JSX.Element {
       </main>
 
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+
+      {convertStatus && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h2>{t('convert.title')}</h2>
+            <p className="hint path">{convertStatus.name}</p>
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${(convertStatus.frac * 100).toFixed(1)}%` }} />
+            </div>
+            <p className="hint">{(convertStatus.frac * 100).toFixed(0)}%</p>
+            <p className="hint">{t('convert.hint')}</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
