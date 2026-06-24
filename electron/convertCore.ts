@@ -38,6 +38,24 @@ export function convertArgs(input: string, outPath: string, action: ConvertActio
   return [...base, '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', ...tail]
 }
 
+/**
+ * 缓存超容时挑选要删除的文件（LRU）：按 mtime 新→旧保留，累计超过 capBytes 后的旧文件删除。
+ * 永远保留最新的一个（哪怕它单个就超容，因为那是刚转换、正要用的）。
+ */
+export function planEviction(
+  entries: { path: string; size: number; mtimeMs: number }[],
+  capBytes: number
+): string[] {
+  const sorted = [...entries].sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const del: string[] = []
+  let total = 0
+  for (let i = 0; i < sorted.length; i++) {
+    total += sorted[i].size
+    if (i > 0 && total > capBytes) del.push(sorted[i].path)
+  }
+  return del
+}
+
 /** 从 ffmpeg stderr 的 time= 推算进度 0..1（无总时长返回 null） */
 export function parseProgress(text: string, durationMs: number): number | null {
   if (durationMs <= 0) return null
