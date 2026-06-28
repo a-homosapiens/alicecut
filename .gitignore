@@ -7,6 +7,11 @@ dist/
 public/fonts/*.ttf
 public/fonts/*.otf
 
+# Large local sample media belongs outside git history.
+samples/*.mp4
+samples/*.wav
+samples/*.zip
+
 # 系统与编辑器
 .DS_Store
 Thumbs.db

@@ -94,6 +94,30 @@ export async function runHeadlessJob(job: HeadlessJobPayload): Promise<void> {
         ` · ${videoCount} 段背景视频 · ${audioCount} 条音轨`
     )
 
+    // Save GUI-compatible project file if requested
+    if (job.projectOutPath) {
+      const projectJson = JSON.stringify(
+        {
+          version: 2,
+          meta: state.meta,
+          lines: state.lines,
+          style: state.style,
+          lrcName: state.lrcName,
+          clips: state.clips.map(({ id: _id, ...rest }) => rest)
+        },
+        null,
+        2
+      )
+      await window.desktop.saveProjectHeadless(projectJson, job.projectOutPath)
+      log(`项目已保存: ${job.projectOutPath}`)
+    }
+
+    // Skip video render if only saving project
+    if (!job.renderVideo) {
+      await window.desktop.headlessDone({ code: 0, log: '' })
+      return
+    }
+
     const result = await runExport({
       lines: state.lines,
       meta: state.meta,

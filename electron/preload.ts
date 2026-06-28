@@ -75,6 +75,9 @@ const api = {
   getHeadlessJob: (): Promise<HeadlessJobPayload | null> => ipcRenderer.invoke('headless:job'),
   headlessProgress: (frac: number): void => ipcRenderer.send('headless:progress', frac),
   headlessLog: (msg: string): void => ipcRenderer.send('headless:log', msg),
+  /** 无头模式：直接写 .dlv.json 到指定路径（不弹保存对话框） */
+  saveProjectHeadless: (json: string, path: string): Promise<void> =>
+    ipcRenderer.invoke('file:saveProjectHeadless', json, path),
   headlessDone: (r: { code: number; log: string }): Promise<void> =>
     ipcRenderer.invoke('headless:done', r)
 }

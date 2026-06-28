@@ -1,10 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
 import { createReadStream } from 'fs'
 import { access, readFile, stat, writeFile } from 'fs/promises'
-import { basename, extname, join } from 'path'
+import { basename, dirname, extname, join, resolve } from 'path'
 import { Readable } from 'stream'
 import { registerExportHandlers } from './exporter'
-import { parseExportArg, prepareJob, registerHeadlessHandlers } from './headless'
+import {
+  hasExportArg,
+  hasSaveProjectArg,
+  parseExportArg,
+  parseSaveProjectArg,
+  prepareJob,
+  registerHeadlessHandlers
+} from './headless'
 import { readLrcText } from './lrcFile'
 import { buildMenu, loadLocale, saveLocale, type Locale } from './menu'
 import { registerConvertHandlers } from './convert'
@@ -45,9 +52,14 @@ const DIALOG: Record<Locale, Record<string, string>> = {
 }
 const dlg = (k: string): string => DIALOG[currentLocale][k] ?? k
 
+const exportRequested = hasExportArg(process.argv)
 const exportJobPath = parseExportArg(process.argv)
+const saveProjectRequested = hasSaveProjectArg(process.argv)
+const saveProjectJobPath = parseSaveProjectArg(process.argv)
+const headlessJobPath = exportJobPath ?? saveProjectJobPath
+const headlessRequested = exportRequested || saveProjectRequested
 // 无头导出走软件渲染，CI/无 GPU 环境也能跑
-if (exportJobPath) app.disableHardwareAcceleration()
+if (headlessRequested) app.disableHardwareAcceleration()
 
 // media:// 自定义协议：渲染进程用它流式读取本地音视频（支持 seek），无需把大文件读进内存
 protocol.registerSchemesAsPrivileged([
@@ -286,15 +298,33 @@ app.whenReady().then(async () => {
   registerMediaProtocol()
   registerExportHandlers()
 
-  if (exportJobPath) {
-    // 无头导出：准备任务 → 隐藏窗口跑渲染 → headless:done 里退出
+  if (headlessRequested) {
+    // 无头模式（导出视频 / 保存工程 / 两者兼得）
     try {
-      const payload = await prepareJob(exportJobPath)
+      if (saveProjectRequested && !saveProjectJobPath) {
+        throw new Error('--save-project requires a job.json path')
+      }
+      if (exportRequested && !exportJobPath) {
+        throw new Error('--export requires a job.json path')
+      }
+      const jobPath = headlessJobPath
+      if (!jobPath) throw new Error('headless mode requires --export job.json or --save-project job.json')
+      const payload = await prepareJob(jobPath)
+      // 根据命令行参数决定行为
+      payload.renderVideo = !!exportJobPath
+      if (saveProjectJobPath) {
+        // .dlv.json 输出到 job 文件同目录，文件名取自 LRC
+        const base = payload.lrcName.replace(/\.[^.]+$/, '')
+        payload.projectOutPath = resolve(dirname(resolve(jobPath)), `${base}.dlv.json`)
+      }
+      if (payload.renderVideo && !payload.outPath) {
+        throw new Error('job.out 缺失：--export 模式必须指定输出 mp4 路径')
+      }
       registerHeadlessHandlers(payload)
-      console.log(`[export] job: ${exportJobPath}`)
+      console.log(`[headless] job: ${jobPath}`)
       createWindow(true)
     } catch (err) {
-      console.error(`[export] 任务文件无效: ${err instanceof Error ? err.message : err}`)
+      console.error(`[headless] 任务文件无效: ${err instanceof Error ? err.message : err}`)
       app.exit(1)
     }
     return

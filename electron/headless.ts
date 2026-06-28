@@ -1,5 +1,5 @@
 import { app, ipcMain } from 'electron'
-import { access, readFile, mkdir } from 'fs/promises'
+import { access, readFile, mkdir, writeFile } from 'fs/promises'
 import { basename, dirname, isAbsolute, resolve } from 'path'
 import { readLrcText } from './lrcFile'
 import type { VideoTransition } from '../src/core/media'
@@ -76,7 +76,7 @@ export interface ExportJobFile {
   video?: string | JobClipSpec | (string | JobClipSpec)[] | null
   /** 独立文字块（不参与歌词流，可选特效与字幕相同） */
   texts?: JobTextSpec[]
-  out: string
+  out?: string
   fps?: number
   /** 成片总时长（秒）；缺省 = max(歌词结尾, 有限媒体线段结尾) */
   duration?: number
@@ -118,11 +118,28 @@ export interface HeadlessJobPayload {
   durationSec: number | null
   style: Record<string, unknown>
   lineEffects: Record<string, string>
+  /** Path to write .dlv.json (null = don't save project) */
+  projectOutPath: string | null
+  /** Whether to also render video (false = project-only mode) */
+  renderVideo: boolean
+}
+
+export function hasExportArg(argv: string[]): boolean {
+  return argv.includes('--export')
 }
 
 export function parseExportArg(argv: string[]): string | null {
   const i = argv.indexOf('--export')
-  return i >= 0 && argv[i + 1] ? argv[i + 1] : null
+  return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : null
+}
+
+export function hasSaveProjectArg(argv: string[]): boolean {
+  return argv.includes('--save-project')
+}
+
+export function parseSaveProjectArg(argv: string[]): string | null {
+  const i = argv.indexOf('--save-project')
+  return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : null
 }
 
 export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
@@ -134,7 +151,6 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
   const rel = (p: string): string => (isAbsolute(p) ? p : resolve(jobDir, p))
 
   if (!job.lrc) throw new Error('job.lrc 缺失：必须指定歌词文件路径')
-  if (!job.out) throw new Error('job.out 缺失：必须指定输出 mp4 路径')
 
   const lrcPath = rel(job.lrc)
   const lrcText = await readLrcText(lrcPath)
@@ -144,8 +160,8 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
     ...(await normalizeClips('audio', job.audio, rel))
   ]
 
-  const outPath = rel(job.out)
-  await mkdir(dirname(outPath), { recursive: true })
+  const outPath = job.out ? rel(job.out) : ''
+  if (outPath) await mkdir(dirname(outPath), { recursive: true })
 
   const fps = Math.min(60, Math.max(10, Math.round(job.fps ?? 30)))
   const durationSec = typeof job.duration === 'number' && job.duration > 0 ? job.duration : null
@@ -170,7 +186,9 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
     fps,
     durationSec,
     style,
-    lineEffects: job.lineEffects ?? {}
+    lineEffects: job.lineEffects ?? {},
+    projectOutPath: null,
+    renderVideo: true
   }
 }
 
@@ -221,6 +239,12 @@ async function normalizeClips(
 export function registerHeadlessHandlers(payload: HeadlessJobPayload | null): void {
   ipcMain.handle('headless:job', () => payload)
 
+  // 无头模式直接写文件（不弹保存对话框）
+  ipcMain.handle('file:saveProjectHeadless', async (_e, json: string, path: string) => {
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, json, 'utf-8')
+  })
+
   let lastPct = -1
   ipcMain.on('headless:progress', (_e, frac: number) => {
     const pct = Math.floor(frac * 100)
@@ -237,7 +261,8 @@ export function registerHeadlessHandlers(payload: HeadlessJobPayload | null): vo
   ipcMain.handle('headless:done', (_e, r: { code: number; log: string }) => {
     if (!payload) return
     if (r.code === 0) {
-      console.log(`[export] done: ${payload.outPath}`)
+      if (payload.renderVideo) console.log(`[export] done: ${payload.outPath}`)
+      if (payload.projectOutPath) console.log(`[save-project] done: ${payload.projectOutPath}`)
     } else {
       console.error(`[export] failed (code ${r.code})\n${r.log}`)
     }
