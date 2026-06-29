@@ -68,6 +68,15 @@ export interface StyleState {
   shadowOffset: number
 }
 
+/** 撤销/重做的文档快照（只含可编辑文档字段；播放/选区/历史本身不计入） */
+interface DocSnapshot {
+  lines: LrcLine[]
+  clips: MediaClip[]
+  style: StyleState
+  meta: LrcMeta
+  lrcName: string | null
+}
+
 interface ProjectState {
   meta: LrcMeta
   lines: LrcLine[]
@@ -83,6 +92,12 @@ interface ProjectState {
   selectedIds: number[]
   /** 时间轴上选中的媒体线段 id */
   selectedClipId: number | null
+
+  /** 撤销/重做历史栈（文档快照：lines/clips/style/meta/lrcName） */
+  past: DocSnapshot[]
+  future: DocSnapshot[]
+  undo(): void
+  redo(): void
 
   /** 界面语言（应用级偏好，不写入工程文件；持久化在 localStorage） */
   locale: Locale
@@ -208,6 +223,26 @@ export const useProject = create<ProjectState>((set, get) => ({
   exporting: false,
   selectedIds: [],
   selectedClipId: null,
+  past: [],
+  future: [],
+  undo() {
+    const { past } = get()
+    if (past.length === 0) return
+    const prev = past[past.length - 1]
+    historySuspend = true
+    invalidateLayoutCache()
+    set({ ...prev, past: past.slice(0, -1), future: [snapshotDoc(get()), ...get().future], selectedIds: [], selectedClipId: null })
+    historySuspend = false
+  },
+  redo() {
+    const { future } = get()
+    if (future.length === 0) return
+    const next = future[0]
+    historySuspend = true
+    invalidateLayoutCache()
+    set({ ...next, future: future.slice(1), past: [...get().past, snapshotDoc(get())], selectedIds: [], selectedClipId: null })
+    historySuspend = false
+  },
   locale: initialLocale,
   setLocale(locale) {
     set({ locale })
@@ -237,7 +272,9 @@ export const useProject = create<ProjectState>((set, get) => ({
   loadLrc(text, name) {
     const parsed = parseCaptions(text, name)
     invalidateLayoutCache()
-    set({ meta: parsed.meta, lines: parsed.lines, lrcName: name, currentTime: 0, selectedIds: [] })
+    historySuspend = true // 载入是全新文档，清空历史
+    set({ meta: parsed.meta, lines: parsed.lines, lrcName: name, currentTime: 0, selectedIds: [], past: [], future: [] })
+    historySuspend = false
   },
 
   repaginate(combineWithinMs) {
@@ -258,6 +295,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const lines = sortLines(
       data.lines.map((l) => ({ ...l, effectId: l.effectId ?? null, dx: l.dx ?? 0, dy: l.dy ?? 0, layer: l.layer ?? 0 }))
     )
+    historySuspend = true // 打开工程是全新文档，清空历史
     set({
       meta: data.meta,
       lines,
@@ -267,8 +305,11 @@ export const useProject = create<ProjectState>((set, get) => ({
       currentTime: 0,
       playing: false,
       selectedIds: [],
-      selectedClipId: null
+      selectedClipId: null,
+      past: [],
+      future: []
     })
+    historySuspend = false
   },
 
   addClip(clip) {
@@ -503,6 +544,35 @@ export const useProject = create<ProjectState>((set, get) => ({
     })
   }
 }))
+
+/* ---- 撤销/重做：订阅文档字段变化，按时间窗口把连续拖动/滑杆合并为一次编辑 ---- */
+let historySuspend = false
+let historyLastTime = 0
+const HISTORY_CAP = 50
+const HISTORY_COALESCE_MS = 500
+
+function snapshotDoc(s: ProjectState): DocSnapshot {
+  return { lines: s.lines, clips: s.clips, style: s.style, meta: s.meta, lrcName: s.lrcName }
+}
+function docChanged(a: ProjectState, b: ProjectState): boolean {
+  return (
+    a.lines !== b.lines || a.clips !== b.clips || a.style !== b.style || a.meta !== b.meta || a.lrcName !== b.lrcName
+  )
+}
+
+useProject.subscribe((state, prev) => {
+  if (historySuspend || !docChanged(state, prev)) return
+  const now = Date.now()
+  historySuspend = true
+  // 新的编辑手势（与上次变更间隔够久，或栈为空）才新增一项；同一手势内的连续变更合并
+  if (now - historyLastTime >= HISTORY_COALESCE_MS || state.past.length === 0) {
+    useProject.setState({ past: [...state.past, snapshotDoc(prev)].slice(-HISTORY_CAP), future: [] })
+  } else {
+    useProject.setState({ future: [] }) // 同一手势内的后续编辑仍需作废 redo
+  }
+  historyLastTime = now
+  historySuspend = false
+})
 
 /** 项目总时长（秒）：歌词结尾与有限媒体线段结尾取较大者（无限循环线段不计入） */
 export function getProjectDuration(s: { lines: LrcLine[]; clips: MediaClip[] }): number {

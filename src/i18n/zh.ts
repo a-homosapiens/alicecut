@@ -163,6 +163,8 @@ export const zh = {
   'tl.newText': '文字',
   'tl.newLyric': '新字幕',
   'tl.duplicate': '复制',
+  'tl.undo': '撤销',
+  'tl.redo': '重做',
 
   // 歌词面板（LyricsPanel）
   'lyrics.empty1': '尚未导入歌词',

@@ -506,6 +506,8 @@ export function Timeline(): React.JSX.Element {
   const selectedIds = useProject((s) => s.selectedIds)
   const selectedClipId = useProject((s) => s.selectedClipId)
   const globalEffectId = useProject((s) => s.style.effectId)
+  const canUndo = useProject((s) => s.past.length > 0)
+  const canRedo = useProject((s) => s.future.length > 0)
   const [pxPerSec, setPxPerSec] = useState(60)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -753,6 +755,12 @@ export function Timeline(): React.JSX.Element {
   return (
     <div className="timeline">
       <div className="tl-toolbar">
+        <button className="btn btn-sm" disabled={!canUndo} onClick={() => useProject.getState().undo()} title={`${t('tl.undo')} (Ctrl+Z)`}>
+          ↶ {t('tl.undo')}
+        </button>
+        <button className="btn btn-sm" disabled={!canRedo} onClick={() => useProject.getState().redo()} title={`${t('tl.redo')} (Ctrl+Shift+Z)`}>
+          ↷ {t('tl.redo')}
+        </button>
         <button className="btn btn-sm" onClick={() => addAtPlayhead('lyric')} title={t('tl.addLyricTitle')}>
           + {t('tl.lyric')}
         </button>

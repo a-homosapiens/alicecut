@@ -161,6 +161,8 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.newText': 'Text',
   'tl.newLyric': 'New subtitle',
   'tl.duplicate': 'Duplicate',
+  'tl.undo': 'Undo',
+  'tl.redo': 'Redo',
 
   // Lyrics panel
   'lyrics.empty1': 'No lyrics imported yet',

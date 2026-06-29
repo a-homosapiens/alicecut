@@ -38,6 +38,13 @@ export function App(): React.JSX.Element {
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') {
         e.preventDefault()
         useProject.getState().selectAll()
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        e.preventDefault()
+        if (e.shiftKey) useProject.getState().redo()
+        else useProject.getState().undo()
+      } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyY') {
+        e.preventDefault()
+        useProject.getState().redo()
       } else if (e.code === 'Escape') {
         useProject.getState().clearSelection()
       } else if (e.code === 'Delete' || e.code === 'Backspace') {
