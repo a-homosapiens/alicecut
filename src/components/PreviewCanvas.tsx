@@ -93,6 +93,12 @@ export function PreviewCanvas(): React.JSX.Element {
   const [zoomPct, setZoomPct] = useState(100)
   const viewRef = useRef<View>({ zoom: 1, panX: 0, panY: 0 })
   const selRectRef = useRef<ClipRect | null>(null)
+  // 拖动文字时的画面中心参考线 + 是否已吸附
+  const centerGuideRef = useRef<{ active: boolean; snapX: boolean; snapY: boolean }>({
+    active: false,
+    snapX: false,
+    snapY: false
+  })
   // 视口 CSS 尺寸（每帧刷新，供交互换算）
   const sizeRef = useRef({ w: 0, h: 0 })
   // 需要重新适配（首帧 / 切换比例）
@@ -202,6 +208,25 @@ export function PreviewCanvas(): React.JSX.Element {
           drawFrame(ctx, { x: vx, y: vy, w: r.w * view.zoom, h: r.h * view.zoom }, '#f97316')
         } else if (!editVideo) {
           drawTextSelection(ctx, view, tMs)
+        }
+
+        // 拖动文字时的画面中心参考线（吸附时高亮）
+        const g = centerGuideRef.current
+        if (g.active) {
+          const [gcx, gcy] = toView(view, W / 2, H / 2)
+          ctx.save()
+          ctx.lineWidth = 1
+          ctx.strokeStyle = g.snapX ? '#22d3ee' : 'rgba(34,211,238,0.4)'
+          ctx.beginPath()
+          ctx.moveTo(gcx, ay)
+          ctx.lineTo(gcx, ay + ah)
+          ctx.stroke()
+          ctx.strokeStyle = g.snapY ? '#22d3ee' : 'rgba(34,211,238,0.4)'
+          ctx.beginPath()
+          ctx.moveTo(ax, gcy)
+          ctx.lineTo(ax + aw, gcy)
+          ctx.stroke()
+          ctx.restore()
         }
       }
       raf = requestAnimationFrame(loop)
@@ -343,12 +368,37 @@ export function PreviewCanvas(): React.JSX.Element {
       .map((l) => ({ id: l.id, dx: l.dx, dy: l.dy }))
     const sx = e.clientX
     const sy = e.clientY
+
+    // 以首个选中行为吸附基准：算出它在偏移=0 时的块中心（中心+偏移 = 画面中心 → 居中）
+    const style = toRenderStyle(st.style)
+    const ctx = canvasRef.current?.getContext('2d')
+    const primary = st.lines.find((l) => sel.has(l.id))
+    const rect = ctx && primary ? getLineBlockRect(ctx, primary, style) : null
+    const baseCx = rect && primary ? rect.x + rect.w / 2 - primary.dx : null
+    const baseCy = rect && primary ? rect.y + rect.h / 2 - primary.dy : null
+    const snapDoc = 8 / view.zoom // 屏幕约 8px 内吸附
+    const p0dx = primary?.dx ?? 0
+    const p0dy = primary?.dy ?? 0
+    centerGuideRef.current = { active: true, snapX: false, snapY: false }
+
     const onMove = (ev: MouseEvent): void => {
-      useProject
-        .getState()
-        .setLineOffsetsFrom(originals, (ev.clientX - sx) / view.zoom, (ev.clientY - sy) / view.zoom)
+      let ddx = (ev.clientX - sx) / view.zoom
+      let ddy = (ev.clientY - sy) / view.zoom
+      let snapX = false
+      let snapY = false
+      if (baseCx !== null && Math.abs(baseCx + p0dx + ddx - style.width / 2) < snapDoc) {
+        ddx = style.width / 2 - baseCx - p0dx // 让首行中心吸到画面中心
+        snapX = true
+      }
+      if (baseCy !== null && Math.abs(baseCy + p0dy + ddy - style.height / 2) < snapDoc) {
+        ddy = style.height / 2 - baseCy - p0dy
+        snapY = true
+      }
+      centerGuideRef.current = { active: true, snapX, snapY }
+      useProject.getState().setLineOffsetsFrom(originals, ddx, ddy)
     }
     const onUp = (): void => {
+      centerGuideRef.current = { active: false, snapX: false, snapY: false }
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
