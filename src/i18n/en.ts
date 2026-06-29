@@ -160,6 +160,7 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.textDropHint': ' (drop text here to stack)',
   'tl.newText': 'Text',
   'tl.newLyric': 'New subtitle',
+  'tl.duplicate': 'Duplicate',
 
   // Lyrics panel
   'lyrics.empty1': 'No lyrics imported yet',

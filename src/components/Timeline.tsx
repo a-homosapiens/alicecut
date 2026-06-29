@@ -486,6 +486,9 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
         </>
       )}
       {clip.kind === 'audio' && <ClipAudioFx clip={clip} />}
+      <button className="btn btn-sm" onClick={() => st().duplicateClip(clip.id)}>
+        {t('tl.duplicate')}
+      </button>
       <button className="btn btn-sm" onClick={() => st().removeClip(clip.id)}>
         {t('tl.delete')}
       </button>
@@ -665,10 +668,10 @@ export function Timeline(): React.JSX.Element {
     }
     const onUp = (): void => {
       const drag = dragRef.current
-      // 纯点击（没拖动）：把播放头跳进该行，画面里能看到并编辑它
+      // 纯点击（没拖动）：把红色播放头移到该线段起点
       if (drag && !drag.moved) {
         const l = useProject.getState().lines.find((x) => x.id === drag.clickedId)
-        if (l) seek((l.start + Math.min(800, (l.end - l.start) / 2)) / 1000)
+        if (l) seek(l.start / 1000)
       }
       dragRef.current = null
       window.removeEventListener('mousemove', onMove)
@@ -803,6 +806,22 @@ export function Timeline(): React.JSX.Element {
                 }
               />
             </label>
+            <button
+              className="btn btn-sm"
+              title={t('tl.splitTitle')}
+              onClick={() => {
+                const ok =
+                  useProject.getState().currentTime * 1000 > selectedLine.start &&
+                  useProject.getState().currentTime * 1000 < selectedLine.end
+                if (ok) useProject.getState().splitLineAt(selectedLine.id, useProject.getState().currentTime * 1000)
+                else alert(t('tl.cantSplit'))
+              }}
+            >
+              ✂ {t('tl.splitWord')}
+            </button>
+            <button className="btn btn-sm" onClick={() => useProject.getState().duplicateLine(selectedLine.id)}>
+              {t('tl.duplicate')}
+            </button>
           </span>
         )}
         <div className="spacer" />

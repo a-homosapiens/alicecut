@@ -162,6 +162,7 @@ export const zh = {
   'tl.textDropHint': '（拖文字到此叠加）',
   'tl.newText': '文字',
   'tl.newLyric': '新字幕',
+  'tl.duplicate': '复制',
 
   // 歌词面板（LyricsPanel）
   'lyrics.empty1': '尚未导入歌词',

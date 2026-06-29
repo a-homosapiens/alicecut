@@ -20,11 +20,12 @@ export function LyricsPanel(): React.JSX.Element {
   const [draft, setDraft] = useState('')
   const [gran, setGran] = useState(1200)
 
+  // 只列字幕（captions）；独立文字块是另一类对象，不在此面板
+  const lyricLines = lines.filter((l) => l.kind !== 'text')
   const tMs = currentTime * 1000
-  const activeId = lines.findLast((l) => l.start <= tMs)?.id
+  const activeId = lyricLines.findLast((l) => l.start <= tMs)?.id
 
   // 应用前预览：当前粒度会切成多少页（不改动状态）
-  const lyricLines = lines.filter((l) => l.kind !== 'text')
   const previewPages = repaginateLines(lyricLines, gran).length
 
   const commit = (id: number): void => {
@@ -69,7 +70,7 @@ export function LyricsPanel(): React.JSX.Element {
           </div>
         </div>
       )}
-      {lines.map((line) => (
+      {lyricLines.map((line) => (
         <div
           key={line.id}
           className={`lyric-row${line.id === activeId ? ' active' : ''}`}

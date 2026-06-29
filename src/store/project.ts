@@ -4,6 +4,7 @@ import { parseCaptions, repaginateLines } from '../core/subtitles'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
 import {
   clampSpeed,
+  clipEnd,
   clipsDuration,
   normalizeLoop,
   shiftClip,
@@ -137,6 +138,12 @@ interface ProjectState {
   setLineEffect(ids: number[], effectId: string | null): void
   /** 设置独立文字块的层序（时间轴堆叠与绘制 z 序） */
   setLineLayer(id: number, layer: number): void
+  /** 在 tMs 处把字幕/文字行切成两段（两段保留相同文本）；tMs 在区间外则不动 */
+  splitLineAt(id: number, tMs: number): void
+  /** 复制字幕/文字行：放到原行之后；文字块进新的文字层 */
+  duplicateLine(id: number): void
+  /** 复制媒体线段：放到同类新层、紧接原线段之后 */
+  duplicateClip(id: number): void
   /** 线段整体左右挪动：从拖拽起始快照 originals 平移 deltaMs */
   moveLinesFrom(originals: LrcLine[], deltaMs: number): void
   /** 线段边缘微调：从拖拽起始快照重设起止时间 */
@@ -434,6 +441,45 @@ export const useProject = create<ProjectState>((set, get) => ({
   setLineLayer(id, layer) {
     const l = Math.min(MAX_LAYER, Math.max(0, Math.round(layer)))
     set({ lines: get().lines.map((ln) => (ln.id === id ? { ...ln, layer: l } : ln)) })
+  },
+
+  splitLineAt(id, tMs) {
+    const lines = get().lines
+    const line = lines.find((l) => l.id === id)
+    if (!line) return
+    const t = Math.round(tMs)
+    if (t <= line.start || t >= line.end) return // 切点在区间外
+    const newId = lines.reduce((m, l) => Math.max(m, l.id), -1) + 1
+    const left = retimeLine(line, line.start, t)
+    const right = { ...retimeLine(line, t, line.end), id: newId }
+    invalidateLayoutCache()
+    set({ lines: sortLines([...lines.filter((l) => l.id !== id), left, right]), selectedIds: [newId], selectedClipId: null })
+  },
+
+  duplicateLine(id) {
+    const lines = get().lines
+    const line = lines.find((l) => l.id === id)
+    if (!line) return
+    const newId = lines.reduce((m, l) => Math.max(m, l.id), -1) + 1
+    // 紧接原行之后：整体右移一个时长
+    let dup = { ...shiftLine(line, line.end - line.start), id: newId }
+    if (line.kind === 'text') {
+      const maxLayer = lines.filter((l) => l.kind === 'text').reduce((m, l) => Math.max(m, l.layer ?? 0), 0)
+      dup = { ...dup, layer: Math.min(MAX_LAYER, maxLayer + 1) }
+    }
+    invalidateLayoutCache()
+    set({ lines: sortLines([...lines, dup]), selectedIds: [newId], selectedClipId: null })
+  },
+
+  duplicateClip(id) {
+    const clip = get().clips.find((c) => c.id === id)
+    if (!clip) return
+    const maxLayer = get()
+      .clips.filter((c) => c.kind === clip.kind)
+      .reduce((m, c) => Math.max(m, c.layer), 0)
+    const { id: _id, ...rest } = clip
+    const dup = get().addClip({ ...rest, start: clipEnd(clip, 0), layer: Math.min(MAX_LAYER, maxLayer + 1) })
+    get().setSelectedClip(dup.id)
   },
 
   moveLinesFrom(originals, deltaMs) {
