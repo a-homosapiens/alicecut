@@ -61,6 +61,21 @@ export function effectOutFor(line: LrcLine): EffectPreset | null {
   return line.effectOutId ? getEffect(line.effectOutId) : null
 }
 
+/** 把行级文字覆盖（line.over）叠加到全局样式，得到该行实际渲染样式；无覆盖返回原样式 */
+export function resolveLineStyle(line: LrcLine, style: RenderStyle): RenderStyle {
+  const o = line.over
+  if (!o) return style
+  return {
+    ...style,
+    fontFamily: o.fontFamily ?? style.fontFamily,
+    fontSize: o.fontSize ?? style.fontSize,
+    fontWeight: o.fontWeight ?? style.fontWeight,
+    italic: o.italic ?? style.italic,
+    textColor: o.textColor ?? style.textColor,
+    textAlpha: o.textAlpha ?? style.textAlpha
+  }
+}
+
 /* ---- 布局缓存：同一行同一样式只排版一次 ---- */
 const layoutCache = new Map<string, PlacedChar[]>()
 
@@ -379,8 +394,9 @@ function measureBlock(placed: PlacedChar[], fontSize: number): BlockRect {
 export function getLineBlockRect(
   ctx: CanvasRenderingContext2D,
   line: LrcLine,
-  style: RenderStyle
+  styleIn: RenderStyle
 ): BlockRect | null {
+  const style = resolveLineStyle(line, styleIn) // 选择框/吸附按该行实际字号
   const placed = getLayout(ctx, line, style, effectFor(line, style).layoutVariant)
   if (placed.length === 0) return null
   const b = measureBlock(placed, style.fontSize)
@@ -678,7 +694,8 @@ function drawLineReveal(
 }
 
 /** 独立文字块：不参与歌词流，自己的起止区间内独立进退场 */
-function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, style: RenderStyle, tMs: number): void {
+function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: RenderStyle, tMs: number): void {
+  const style = resolveLineStyle(line, styleIn) // 行级文字覆盖
   const effect = effectFor(line, style)
   const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
 
@@ -766,15 +783,16 @@ export function renderFrame(
       const line = lyric[i]
       if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
       const effect = effectFor(line, style)
+      const ls = resolveLineStyle(line, style) // 行级文字覆盖
       if (tMs < line.end) {
-        if (effect.reveal) drawLineReveal(ctx, effect, line, style, tMs)
-        else drawLine(ctx, effect, line, style, tMs, 1, 0)
+        if (effect.reveal) drawLineReveal(ctx, effect, line, ls, tMs)
+        else drawLine(ctx, effect, line, ls, tMs, 1, 0)
       } else {
         // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
         const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
         const out = effectOutFor(line)
-        if (out) drawLine(ctx, out, line, style, tMs, 1, 0, exitP)
-        else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+        if (out) drawLine(ctx, out, line, ls, tMs, 1, 0, exitP)
+        else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, -exitP * ls.fontSize * 0.5)
       }
     }
   }

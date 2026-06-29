@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { LrcLine, LrcMeta } from '../core/types'
+import type { LrcLine, LrcMeta, LineTextOverride } from '../core/types'
 import { parseCaptions, repaginateLines } from '../core/subtitles'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
 import {
@@ -157,6 +157,10 @@ interface ProjectState {
   setLineEffect(ids: number[], effectId: string | null): void
   /** 给选中行设置退场特效；null = 默认淡出 */
   setLineEffectOut(ids: number[], effectOutId: string | null): void
+  /** 给选中行叠加文字属性覆盖（字体/字号/颜色…）；patch 中值为 undefined 的键表示清除该项覆盖 */
+  patchLineOver(ids: number[], patch: Partial<LineTextOverride>): void
+  /** 清除选中行的全部文字覆盖（恢复跟随全局样式） */
+  clearLineOver(ids: number[]): void
   /** 设置独立文字块的层序（时间轴堆叠与绘制 z 序） */
   setLineLayer(id: number, layer: number): void
   /** 在 tMs 处把字幕/文字行切成两段（两段保留相同文本）；tMs 在区间外则不动 */
@@ -491,6 +495,27 @@ export const useProject = create<ProjectState>((set, get) => ({
   setLineEffectOut(ids, effectOutId) {
     const idSet = new Set(ids)
     set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectOutId } : l)) })
+  },
+
+  patchLineOver(ids, patch) {
+    const idSet = new Set(ids)
+    invalidateLayoutCache()
+    set({
+      lines: get().lines.map((l) => {
+        if (!idSet.has(l.id)) return l
+        const over: LineTextOverride = { ...l.over, ...patch }
+        for (const k of Object.keys(over) as (keyof LineTextOverride)[]) {
+          if (over[k] === undefined) delete over[k]
+        }
+        return { ...l, over: Object.keys(over).length > 0 ? over : undefined }
+      })
+    })
+  },
+
+  clearLineOver(ids) {
+    const idSet = new Set(ids)
+    invalidateLayoutCache()
+    set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, over: undefined } : l)) })
   },
 
   setLineLayer(id, layer) {

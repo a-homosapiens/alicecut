@@ -3,6 +3,7 @@ import { useProject, RESOLUTIONS, type AspectId } from '../store/project'
 import { EFFECTS } from '../core/effects'
 import { SYSTEM_FONTS, loadBuiltinFonts, registerImportedFont, type FontOption } from '../fonts'
 import { invalidateLayoutCache } from '../core/render'
+import type { LineTextOverride } from '../core/types'
 import { useT, hasMsg } from '../i18n'
 
 /** 内联 style 用的 font-family（含空格/中文名加引号） */
@@ -116,6 +117,20 @@ export function StylePanel(): React.JSX.Element {
   // 退场特效（仅对选中行，按行设置；'' = 默认淡出）
   const selectedOut = new Set(lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectOutId ?? ''))
   const activeOutId = selectedOut.size === 1 ? [...selectedOut][0] : ''
+
+  // 文字属性：有选中行则改这些行的覆盖，否则改全局；显示值取首个选中行的有效值
+  const textSel = selectedIds.length > 0
+  const ov = textSel ? lines.find((l) => selectedIds.includes(l.id))?.over : undefined
+  const effFamily = ov?.fontFamily ?? style.fontFamily
+  const effSize = ov?.fontSize ?? style.fontSize
+  const effWeight = ov?.fontWeight ?? style.fontWeight
+  const effItalic = ov?.italic ?? style.italic
+  const effColor = ov?.textColor ?? style.textColor
+  const effAlpha = ov?.textAlpha ?? style.textAlpha
+  const applyText = (patch: Partial<LineTextOverride>): void => {
+    if (textSel) useProject.getState().patchLineOver(selectedIds, patch)
+    else patchStyle(patch)
+  }
 
   useEffect(() => {
     void loadBuiltinFonts().then((builtin) => {
@@ -263,49 +278,58 @@ export function StylePanel(): React.JSX.Element {
         )}
       </Section>
 
-      <Section title={t('style.textSection')}>
+      <Section
+        title={`${t('style.textSection')}${
+          textSel ? t('style.effectsSelected', { n: selectedIds.length }) : t('style.effectsGlobal')
+        }`}
+      >
         <FontPicker
           fonts={fonts}
-          value={style.fontFamily}
-          onPick={(family) => patchStyle({ fontFamily: family })}
+          value={effFamily}
+          onPick={(family) => applyText({ fontFamily: family })}
           onImport={importFont}
         />
         <label>
-          {t('style.fontSize')} {style.fontSize}px
+          {t('style.fontSize')} {effSize}px
           <input
             type="range"
             min={40}
             max={180}
-            value={style.fontSize}
-            onChange={(e) => patchStyle({ fontSize: Number(e.target.value) })}
+            value={effSize}
+            onChange={(e) => applyText({ fontSize: Number(e.target.value) })}
           />
         </label>
         <label className="row">
           {t('style.bold')}
           <input
             type="checkbox"
-            checked={style.fontWeight >= 600}
-            onChange={(e) => patchStyle({ fontWeight: e.target.checked ? 700 : 400 })}
+            checked={effWeight >= 600}
+            onChange={(e) => applyText({ fontWeight: e.target.checked ? 700 : 400 })}
           />
         </label>
         <label className="row">
           {t('style.italic')}
-          <input type="checkbox" checked={style.italic} onChange={(e) => patchStyle({ italic: e.target.checked })} />
+          <input type="checkbox" checked={effItalic} onChange={(e) => applyText({ italic: e.target.checked })} />
         </label>
         <label className="row">
           {t('style.textColor')}
-          <input type="color" value={style.textColor} onChange={(e) => patchStyle({ textColor: e.target.value })} />
+          <input type="color" value={effColor} onChange={(e) => applyText({ textColor: e.target.value })} />
         </label>
         <label>
-          {t('style.textAlpha')} {Math.round(style.textAlpha * 100)}%
+          {t('style.textAlpha')} {Math.round(effAlpha * 100)}%
           <input
             type="range"
             min={10}
             max={100}
-            value={Math.round(style.textAlpha * 100)}
-            onChange={(e) => patchStyle({ textAlpha: Number(e.target.value) / 100 })}
+            value={Math.round(effAlpha * 100)}
+            onChange={(e) => applyText({ textAlpha: Number(e.target.value) / 100 })}
           />
         </label>
+        {textSel && (
+          <button className="btn btn-sm" onClick={() => useProject.getState().clearLineOver(selectedIds)}>
+            {t('style.restoreDefault')}
+          </button>
+        )}
         <label className="row">
           {t('style.showMeta')}
           <input type="checkbox" checked={style.showMeta} onChange={(e) => patchStyle({ showMeta: e.target.checked })} />

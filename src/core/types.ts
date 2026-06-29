@@ -15,6 +15,16 @@ export interface LrcWord {
   chars: LrcChar[]
 }
 
+/** 行级文字属性覆盖：缺省字段跟随全局样式 */
+export interface LineTextOverride {
+  fontFamily?: string
+  fontSize?: number
+  fontWeight?: number
+  italic?: boolean
+  textColor?: string
+  textAlpha?: number
+}
+
 export interface LrcLine {
   id: number
   /** 行开始 ms */
@@ -30,6 +40,8 @@ export interface LrcLine {
   /** 本行画面位置偏移（画布像素），画布内拖拽设置 */
   dx: number
   dy: number
+  /** 本行文字属性覆盖（字体/字号/颜色…）；缺省字段跟随全局样式 */
+  over?: LineTextOverride
   /** 层序（仅独立文字块用于时间轴堆叠与绘制 z 序；0 最底）；歌词行忽略 */
   layer?: number
   /**

@@ -37,3 +37,28 @@ describe('撤销 / 重做', () => {
     expect(useProject.getState().future.length).toBe(0) // 新编辑清空 redo
   })
 })
+
+describe('行级文字覆盖', () => {
+  beforeEach(() => useProject.getState().loadLrc(LRC, 'x.lrc'))
+
+  it('patchLineOver 合并、清键、clearLineOver 复位', () => {
+    const id = useProject.getState().lines[0].id
+    useProject.getState().patchLineOver([id], { fontSize: 120 })
+    expect(useProject.getState().lines[0].over).toEqual({ fontSize: 120 })
+
+    useProject.getState().patchLineOver([id], { textColor: '#ff0000' })
+    expect(useProject.getState().lines[0].over).toEqual({ fontSize: 120, textColor: '#ff0000' })
+
+    useProject.getState().patchLineOver([id], { fontSize: undefined })
+    expect(useProject.getState().lines[0].over).toEqual({ textColor: '#ff0000' })
+
+    useProject.getState().clearLineOver([id])
+    expect(useProject.getState().lines[0].over).toBeUndefined()
+  })
+
+  it('只影响选中行', () => {
+    const [a, b] = useProject.getState().lines
+    useProject.getState().patchLineOver([a.id], { fontSize: 90 })
+    expect(useProject.getState().lines.find((l) => l.id === b.id)?.over).toBeUndefined()
+  })
+})
