@@ -16,8 +16,12 @@ export interface RenderStyle {
   bgTo: string
   /** 渐变角度，度 */
   bgAngle: number
-  /** 背景图片路径；图片本身由调用方（drawBackdrop）按 cover 绘制 */
+  /** 背景图片路径；图片本身由调用方（drawBackdrop）绘制 */
   bgImage: string | null
+  /** 背景图片缩放（1 = cover 铺满基准）、画布像素偏移 */
+  bgImageScale: number
+  bgImageX: number
+  bgImageY: number
   /** 全局默认特效；行可用 line.effectId 覆盖 */
   effectId: string
   intensity: number

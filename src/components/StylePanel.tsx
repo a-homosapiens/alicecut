@@ -185,6 +185,50 @@ export function StylePanel(): React.JSX.Element {
             </button>
             {bgName && <div className="bg-image-name">{bgName}</div>}
             <p className="hint">{t('style.bgImageHint')}</p>
+            {style.bgImage && (
+              <>
+                <label className="row">
+                  {t('style.bgImageScale')}
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={3}
+                    step={0.01}
+                    value={style.bgImageScale}
+                    onChange={(e) => patchStyle({ bgImageScale: Number(e.target.value) })}
+                  />
+                  <span className="val">{style.bgImageScale.toFixed(2)}×</span>
+                </label>
+                <label className="row">
+                  {t('style.bgImageX')}
+                  <input
+                    type="range"
+                    min={-RESOLUTIONS[style.aspect].width / 2}
+                    max={RESOLUTIONS[style.aspect].width / 2}
+                    step={1}
+                    value={style.bgImageX}
+                    onChange={(e) => patchStyle({ bgImageX: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="row">
+                  {t('style.bgImageY')}
+                  <input
+                    type="range"
+                    min={-RESOLUTIONS[style.aspect].height / 2}
+                    max={RESOLUTIONS[style.aspect].height / 2}
+                    step={1}
+                    value={style.bgImageY}
+                    onChange={(e) => patchStyle({ bgImageY: Number(e.target.value) })}
+                  />
+                </label>
+                <button
+                  className="btn btn-sm"
+                  onClick={() => patchStyle({ bgImageScale: 1, bgImageX: 0, bgImageY: 0 })}
+                >
+                  {t('style.bgImageReset')}
+                </button>
+              </>
+            )}
           </div>
         )}
 

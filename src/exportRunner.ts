@@ -89,7 +89,7 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
       }
       renderFrame(ctx, o.lines, o.meta, o.style, tMs, (c) => {
         if (o.style.bgType === 'image' && o.style.bgImage) {
-          drawBackgroundImage(c, o.style.bgImage, o.style.width, o.style.height)
+          drawBackgroundImage(c, o.style.bgImage, o.style.width, o.style.height, o.style.bgImageScale, o.style.bgImageX, o.style.bgImageY)
         }
         drawVideoBackdrop(c, videoClips, tMs, durationMs, o.style.width, o.style.height)
       })

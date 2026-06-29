@@ -36,16 +36,20 @@ export function drawBackgroundImage(
   ctx: CanvasRenderingContext2D,
   path: string,
   w: number,
-  h: number
+  h: number,
+  userScale = 1,
+  offsetX = 0,
+  offsetY = 0
 ): void {
   const img = getBgImage(path)
   const iw = img.naturalWidth
   const ih = img.naturalHeight
   if (iw === 0 || ih === 0) return
-  const scale = Math.max(w / iw, h / ih)
+  // cover 基准 × 用户缩放，居中后再按用户偏移平移
+  const scale = Math.max(w / iw, h / ih) * (userScale > 0 ? userScale : 1)
   const dw = iw * scale
   const dh = ih * scale
-  ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh)
+  ctx.drawImage(img, (w - dw) / 2 + offsetX, (h - dh) / 2 + offsetY, dw, dh)
 }
 
 const pool = new Map<number, HTMLVideoElement | HTMLAudioElement>()

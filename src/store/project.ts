@@ -46,6 +46,10 @@ export interface StyleState {
   bgAngle: number
   /** 背景图片绝对路径（bgType='image' 时使用）；null = 未选 */
   bgImage: string | null
+  /** 背景图片缩放（1 = cover 铺满）与画布像素偏移（可拖动/调节） */
+  bgImageScale: number
+  bgImageX: number
+  bgImageY: number
   effectId: string
   intensity: number
   showMeta: boolean
@@ -204,6 +208,9 @@ export const useProject = create<ProjectState>((set, get) => ({
     bgTo: '#24243e',
     bgAngle: 160,
     bgImage: null,
+    bgImageScale: 1,
+    bgImageX: 0,
+    bgImageY: 0,
     effectId: 'pop',
     intensity: 1,
     showMeta: true,
@@ -603,6 +610,9 @@ export function toRenderStyle(style: StyleState): RenderStyle {
     bgTo: style.bgTo,
     bgAngle: style.bgAngle,
     bgImage: style.bgImage,
+    bgImageScale: style.bgImageScale,
+    bgImageX: style.bgImageX,
+    bgImageY: style.bgImageY,
     effectId: style.effectId,
     intensity: style.intensity,
     showMeta: style.showMeta,

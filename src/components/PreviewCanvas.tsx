@@ -137,7 +137,8 @@ export function PreviewCanvas(): React.JSX.Element {
         const tMs = getTime() * 1000
         const endMs = getProjectDuration(st) * 1000
         const drawBackdrop = (c: CanvasRenderingContext2D): void => {
-          if (style.bgType === 'image' && style.bgImage) drawBackgroundImage(c, style.bgImage, W, H)
+          if (style.bgType === 'image' && style.bgImage)
+            drawBackgroundImage(c, style.bgImage, W, H, style.bgImageScale, style.bgImageX, style.bgImageY)
           drawVideoBackdrop(c, st.clips, tMs, endMs, W, H)
         }
 
