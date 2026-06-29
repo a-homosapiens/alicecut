@@ -149,8 +149,10 @@ interface ProjectState {
   toggleSelected(id: number): void
   selectAll(): void
   clearSelection(): void
-  /** 给选中行设置特效；null = 恢复跟随全局默认 */
+  /** 给选中行设置进场特效；null = 恢复跟随全局默认 */
   setLineEffect(ids: number[], effectId: string | null): void
+  /** 给选中行设置退场特效；null = 默认淡出 */
+  setLineEffectOut(ids: number[], effectOutId: string | null): void
   /** 设置独立文字块的层序（时间轴堆叠与绘制 z 序） */
   setLineLayer(id: number, layer: number): void
   /** 在 tMs 处把字幕/文字行切成两段（两段保留相同文本）；tMs 在区间外则不动 */
@@ -477,6 +479,11 @@ export const useProject = create<ProjectState>((set, get) => ({
   setLineEffect(ids, effectId) {
     const idSet = new Set(ids)
     set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectId } : l)) })
+  },
+
+  setLineEffectOut(ids, effectOutId) {
+    const idSet = new Set(ids)
+    set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectOutId } : l)) })
   },
 
   setLineLayer(id, layer) {

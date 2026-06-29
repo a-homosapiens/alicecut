@@ -52,6 +52,11 @@ export function effectFor(line: LrcLine, style: RenderStyle): EffectPreset {
   return getEffect(line.effectId ?? style.effectId)
 }
 
+/** 该行的退场特效（反向播放其进场）；line.effectOutId 为空则 null = 走默认淡出上浮 */
+export function effectOutFor(line: LrcLine): EffectPreset | null {
+  return line.effectOutId ? getEffect(line.effectOutId) : null
+}
+
 /* ---- 布局缓存：同一行同一样式只排版一次 ---- */
 const layoutCache = new Map<string, PlacedChar[]>()
 
@@ -467,7 +472,10 @@ function drawLineStack(
   }
 }
 
-/** 计算某字符在指定时刻的 CharFx；时刻早于其出场门限则返回 null（残影/主体共用） */
+/**
+ * 计算某字符在指定时刻的 CharFx；时刻早于其出场门限则返回 null（残影/主体共用）。
+ * enterTOverride 给定时跳过门限、用该进场进度（退场反向播放：传 1−exitT）。
+ */
 function charFxAt(
   effect: EffectPreset,
   p: PlacedChar,
@@ -475,12 +483,13 @@ function charFxAt(
   tMs: number,
   intensity: number,
   rand: (key: number) => number,
-  unitCount: number
+  unitCount: number,
+  enterTOverride?: number
 ): CharFx | null {
   const [uStart, uEnd] = effect.unit === 'word' ? [p.word.start, p.word.end] : [p.char.start, p.char.end]
   const gateStart = effect.appearAtLineStart ? line.start : uStart
-  if (tMs < gateStart) return null
-  const enterT = clamp01((tMs - gateStart) / effect.enterDuration)
+  if (enterTOverride == null && tMs < gateStart) return null
+  const enterT = enterTOverride ?? clamp01((tMs - gateStart) / effect.enterDuration)
   return effect.apply({
     unitIndex: p.unitIndex,
     unitCount,
@@ -537,13 +546,16 @@ function drawLine(
   style: RenderStyle,
   tMs: number,
   lineAlpha: number,
-  lineDy: number
+  lineDy: number,
+  exitT?: number
 ): void {
   const placed = getLayout(ctx, line, style, effect.layoutVariant)
   if (placed.length === 0) return
   const rand = seededRand(line.id + 1)
   const unitCount = line.words.length
   const timeInLine = tMs - line.start
+  // 退场：反向播放 effect 的进场（enterT 1→0），所有字一起退；进场用逐字门限
+  const enterOverride = exitT != null ? 1 - clamp01(exitT) : undefined
 
   ctx.save()
   ctx.textAlign = 'center'
@@ -552,8 +564,8 @@ function drawLine(
   drawTextBg(ctx, placed, style, lineAlpha, line.dx, line.dy + lineDy)
   ctx.fillStyle = style.textColor
 
-  // 跳动高亮块：在当前朗读词背后画圆角块，块内词用对比色保证可读
-  const box = effect.wordBox ? resolveWordBox(placed, tMs, style.fontSize) : null
+  // 跳动高亮块/残影/光标只用于进场，退场不画
+  const box = effect.wordBox && exitT == null ? resolveWordBox(placed, tMs, style.fontSize) : null
   const boxTextColor = box ? contrastColor(style.highlightColor) : style.textColor
   if (box && box.alpha > 0.003) {
     drawWordBox(ctx, box.rect, style, lineAlpha * box.alpha, line.dx, line.dy + lineDy)
@@ -561,14 +573,14 @@ function drawLine(
 
   let lastVisible: PlacedChar | null = null
   for (const p of placed) {
-    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount)
+    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount, enterOverride)
     if (!fx) continue
     const alpha = fx.alpha * lineAlpha
     if (alpha <= 0.003 || fx.scale <= 0.003) continue
     lastVisible = p
 
     // 运动残影画在主体之下
-    if (effect.trail) drawCharTrail(ctx, effect, p, line, style, tMs, lineAlpha, lineDy, fx, rand, unitCount)
+    if (effect.trail && exitT == null) drawCharTrail(ctx, effect, p, line, style, tMs, lineAlpha, lineDy, fx, rand, unitCount)
 
     ctx.save()
     ctx.translate(p.x + fx.dx + line.dx, p.y + fx.dy + lineDy + line.dy)
@@ -667,7 +679,9 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, style: Rend
   const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
 
   if (!effect.lineTransition) {
+    const out = exitP > 0 ? effectOutFor(line) : null
     if (effect.reveal && exitP === 0) drawLineReveal(ctx, effect, line, style, tMs)
+    else if (out) drawLine(ctx, out, line, style, tMs, 1, 0, exitP)
     else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
     return
   }
@@ -752,9 +766,11 @@ export function renderFrame(
         if (effect.reveal) drawLineReveal(ctx, effect, line, style, tMs)
         else drawLine(ctx, effect, line, style, tMs, 1, 0)
       } else {
-        // 默认退场：淡出 + 上浮（停靠式特效的行离开堆叠后也走这里收尾）
+        // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
         const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
-        drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+        const out = effectOutFor(line)
+        if (out) drawLine(ctx, out, line, style, tMs, 1, 0, exitP)
+        else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
       }
     }
   }

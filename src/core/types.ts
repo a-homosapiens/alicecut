@@ -23,8 +23,10 @@ export interface LrcLine {
   end: number
   text: string
   words: LrcWord[]
-  /** 本行特效；null = 跟随全局默认特效 */
+  /** 本行进场特效；null = 跟随全局默认特效 */
   effectId: string | null
+  /** 本行退场特效（反向播放该特效的进场）；缺省/null = 默认淡出上浮 */
+  effectOutId?: string | null
   /** 本行画面位置偏移（画布像素），画布内拖拽设置 */
   dx: number
   dy: number

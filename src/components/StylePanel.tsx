@@ -113,6 +113,10 @@ export function StylePanel(): React.JSX.Element {
     else patchStyle({ effectId: id })
   }
 
+  // 退场特效（仅对选中行，按行设置；'' = 默认淡出）
+  const selectedOut = new Set(lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectOutId ?? ''))
+  const activeOutId = selectedOut.size === 1 ? [...selectedOut][0] : ''
+
   useEffect(() => {
     void loadBuiltinFonts().then((builtin) => {
       if (builtin.length > 0) {
@@ -397,6 +401,22 @@ export function StylePanel(): React.JSX.Element {
           <button className="btn btn-sm" onClick={() => useProject.getState().setLineEffect(selectedIds, null)}>
             {t('style.restoreDefault')}
           </button>
+        )}
+        {selectedIds.length > 0 && (
+          <label className="row" title={t('style.effectOutTitle')}>
+            {t('style.effectOut')}
+            <select
+              value={activeOutId ?? ''}
+              onChange={(e) => useProject.getState().setLineEffectOut(selectedIds, e.target.value || null)}
+            >
+              <option value="">{t('style.effectOutDefault')}</option>
+              {effectChips.map((fx) => (
+                <option key={fx.id} value={fx.id}>
+                  {fx.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         <label className="row">
           {t('style.highlightColor')}
