@@ -5,6 +5,7 @@ import { loadPluginSource, installPlugin } from './plugins'
 import { validatePlugin } from './core/effects/validator'
 import { clipEnd, MAX_LAYER, type MediaClip } from './core/media'
 import { probeMediaDuration } from './mediaPool'
+import { serializeProject, loadSession, enableSessionAutosave } from './session'
 import { toggle } from './playback'
 import { PreviewCanvas } from './components/PreviewCanvas'
 import { TransportBar } from './components/TransportBar'
@@ -27,6 +28,21 @@ export function App(): React.JSX.Element {
 
   // 导入归一化进度（主进程转视频时推送）
   useEffect(() => window.desktop.onConvertProgress((p) => setConvertStatus(p)), [])
+
+  // 会话自动恢复：刷新/热重载/崩溃后恢复上次工程（工程仅存内存，重载会丢失），随后开启自动保存
+  useEffect(() => {
+    const data = loadSession()
+    const st = useProject.getState()
+    if (data && st.lines.length === 0 && st.clips.length === 0) {
+      void loadProjectData(data, true)
+        .catch(() => {})
+        .finally(enableSessionAutosave)
+    } else {
+      enableSessionAutosave()
+    }
+    // 仅挂载时运行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 快捷键：空格播放/暂停，Ctrl+A 全选线段，Esc 取消选择
   useEffect(() => {
@@ -137,18 +153,7 @@ export function App(): React.JSX.Element {
 
   const saveProject = async (): Promise<void> => {
     const st = useProject.getState()
-    const json = JSON.stringify(
-      {
-        version: 2,
-        meta: st.meta,
-        lines: st.lines,
-        style: st.style,
-        lrcName: st.lrcName,
-        clips: st.clips.map(({ id: _id, ...rest }) => rest)
-      },
-      null,
-      2
-    )
+    const json = JSON.stringify(serializeProject(st), null, 2)
     const base = (st.lrcName ?? t('app.untitled')).replace(/\.[^.]+$/, '')
     await window.desktop.saveProject(json, `${base}.dlv.json`)
   }
@@ -202,35 +207,40 @@ export function App(): React.JSX.Element {
     }
   }
 
+  // 把工程数据（v2 / v1）加载进 store；silent=true 时不弹缺失媒体提示（用于会话自动恢复）
+  const loadProjectData = async (data: unknown, silent = false): Promise<void> => {
+    const d = data as { lines?: unknown; clips?: unknown; audioPath?: unknown }
+    if (!Array.isArray(d.lines)) throw new Error('bad project')
+    useProject.getState().hydrate(data as Parameters<ReturnType<typeof useProject.getState>['hydrate']>[0])
+
+    // v1 工程的 audioPath → 一条 0 起点的音轨线段；旧版缺的字段由 addClip 补默认值
+    type SavedClip = Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>
+    const saved: SavedClip[] = Array.isArray(d.clips)
+      ? (d.clips as SavedClip[])
+      : typeof d.audioPath === 'string'
+        ? [{ kind: 'audio' as const, path: d.audioPath, name: d.audioPath, start: 0, sourceDuration: 0 }]
+        : []
+
+    const missing: string[] = []
+    for (const c of saved) {
+      if (!(await window.desktop.fileExists(c.path))) {
+        missing.push(c.path)
+        continue
+      }
+      // 重新探测时长，文件被替换过也能保持一致
+      const sourceDuration = await probeMediaDuration(c.path, c.kind).catch(() => c.sourceDuration)
+      useProject.getState().addClip({ ...c, sourceDuration })
+    }
+    if (missing.length > 0 && !silent) {
+      alert(t('app.mediaMissing', { list: missing.join('\n') }))
+    }
+  }
+
   const openProject = async (): Promise<void> => {
     const file = await window.desktop.openProject()
     if (!file) return
     try {
-      const data = JSON.parse(file.text)
-      if (!Array.isArray(data.lines)) throw new Error('bad project')
-      useProject.getState().hydrate(data)
-
-      // v1 工程的 audioPath → 一条 0 起点的音轨线段；旧版缺的字段由 addClip 补默认值
-      type SavedClip = Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>
-      const saved: SavedClip[] = Array.isArray(data.clips)
-        ? data.clips
-        : typeof data.audioPath === 'string'
-          ? [{ kind: 'audio' as const, path: data.audioPath, name: data.audioPath, start: 0, sourceDuration: 0 }]
-          : []
-
-      const missing: string[] = []
-      for (const c of saved) {
-        if (!(await window.desktop.fileExists(c.path))) {
-          missing.push(c.path)
-          continue
-        }
-        // 重新探测时长，文件被替换过也能保持一致
-        const sourceDuration = await probeMediaDuration(c.path, c.kind).catch(() => c.sourceDuration)
-        useProject.getState().addClip({ ...c, sourceDuration })
-      }
-      if (missing.length > 0) {
-        alert(t('app.mediaMissing', { list: missing.join('\n') }))
-      }
+      await loadProjectData(JSON.parse(file.text))
     } catch {
       alert(t('app.projectParseFail'))
     }
