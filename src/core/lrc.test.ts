@@ -157,6 +157,13 @@ describe('线段时间编辑', () => {
 
 describe('layoutLine', () => {
   const measure = (text: string, fontSize: number): number => [...text].length * fontSize
+  const layoutDefaults = {
+    letterSpacing: 4,
+    wordSpacing: 12,
+    lineSpacing: 1,
+    align: 'center' as const,
+    orientation: 'horizontal' as const
+  }
 
   it('center：所有字符水平居中且不越界', () => {
     const r = parseLrc(STANDARD)
@@ -164,6 +171,7 @@ describe('layoutLine', () => {
       width: 1080,
       height: 1920,
       fontSize: 88,
+      ...layoutDefaults,
       variant: 'center',
       measure
     })
@@ -180,7 +188,7 @@ describe('layoutLine', () => {
 
   it('staggered：确定性（两次布局结果一致）', () => {
     const r = parseLrc(STANDARD)
-    const opts = { width: 1080, height: 1920, fontSize: 88, variant: 'staggered' as const, measure }
+    const opts = { width: 1080, height: 1920, fontSize: 88, ...layoutDefaults, variant: 'staggered' as const, measure }
     const a = layoutLine(r.lines[1], opts)
     const b = layoutLine(r.lines[1], opts)
     expect(a).toEqual(b)
@@ -192,6 +200,7 @@ describe('layoutLine', () => {
       width: 1080,
       height: 1920,
       fontSize: 100,
+      ...layoutDefaults,
       variant: 'center',
       measure
     })

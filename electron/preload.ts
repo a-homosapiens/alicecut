@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { HeadlessJobPayload } from './headless'
+import type { HeadlessClip, HeadlessJobPayload, JobClipSpec } from './headless'
+import type { EncodeSettings, VideoInputKind } from './exporterCore'
 
 export interface OpenedTextFile {
   path: string
@@ -24,8 +25,8 @@ const api = {
   openVideo: (): Promise<PickedMediaFile[] | null> => ipcRenderer.invoke('file:openVideo'),
   openImage: (): Promise<PickedMediaFile | null> => ipcRenderer.invoke('file:openImage'),
   openFont: (): Promise<OpenedBinaryFile | null> => ipcRenderer.invoke('file:openFont'),
-  saveVideoPath: (defaultName: string): Promise<string | null> =>
-    ipcRenderer.invoke('file:saveVideoPath', defaultName),
+  saveVideoPath: (defaultName: string, ext: 'mp4' | 'mov'): Promise<string | null> =>
+    ipcRenderer.invoke('file:saveVideoPath', defaultName, ext),
   saveProject: (json: string, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveProject', json, defaultName),
   saveSrt: (text: string, defaultName: string): Promise<string | null> =>
@@ -39,6 +40,13 @@ const api = {
   /** 界面语言：渲染进程切换后告知主进程，使其菜单/对话框/窗口标题随之本地化 */
   setLocale: (locale: string): Promise<void> => ipcRenderer.invoke('app:set-locale', locale),
   fileExists: (path: string): Promise<boolean> => ipcRenderer.invoke('file:exists', path),
+  /** 命令控制台专用：按绝对路径读文本文件；路径非绝对/读取失败均返回 null */
+  readText: (path: string): Promise<string | null> => ipcRenderer.invoke('file:readText', path),
+  /** 命令控制台专用：把 audio/video 字段归一成可直接 addClip 的线段列表（复用 job.json 的解析逻辑） */
+  normalizeClips: (
+    kind: 'video' | 'audio',
+    spec: string | JobClipSpec | (string | JobClipSpec)[]
+  ): Promise<HeadlessClip[]> => ipcRenderer.invoke('job:normalizeClips', kind, spec),
   mediaHasAudio: (path: string): Promise<boolean> => ipcRenderer.invoke('media:hasAudio', path),
 
   /** 导入归一化：返回可播放路径（不支持的视频会被转成 H.264 MP4 并缓存） */
@@ -66,8 +74,11 @@ const api = {
     }[]
     durationSec: number
     outPath: string
+    encode: EncodeSettings
+    videoInput?: VideoInputKind
+    staticBackgroundPng?: Uint8Array
   }): Promise<void> => ipcRenderer.invoke('export:start', opts),
-  exportFrame: (frame: Uint8Array): Promise<void> => ipcRenderer.invoke('export:frame', frame),
+  exportFrame: (frame: Uint8Array, repeat = 1): Promise<void> => ipcRenderer.invoke('export:frame', frame, repeat),
   exportEnd: (): Promise<{ code: number; log: string }> => ipcRenderer.invoke('export:end'),
   exportCancel: (): Promise<void> => ipcRenderer.invoke('export:cancel'),
 
@@ -75,7 +86,7 @@ const api = {
   getHeadlessJob: (): Promise<HeadlessJobPayload | null> => ipcRenderer.invoke('headless:job'),
   headlessProgress: (frac: number): void => ipcRenderer.send('headless:progress', frac),
   headlessLog: (msg: string): void => ipcRenderer.send('headless:log', msg),
-  /** 无头模式：直接写 .dlv.json 到指定路径（不弹保存对话框） */
+  /** 无头模式：直接写 .alicecut.json 到指定路径（不弹保存对话框） */
   saveProjectHeadless: (json: string, path: string): Promise<void> =>
     ipcRenderer.invoke('file:saveProjectHeadless', json, path),
   headlessDone: (r: { code: number; log: string }): Promise<void> =>

@@ -1,6 +1,6 @@
 /**
- * Dynamic Caption — Effect Plugin SDK (api = 1)
- * 动态歌词 · 特效插件公开契约
+ * AliceCut — Effect Plugin SDK (api = 1)
+ * AliceCut · 特效插件公开契约
  *
  * Standalone, dependency-free type declarations for authoring third-party
  * text-effect plugins. A plugin is an ES module whose `default` export is a

@@ -2,7 +2,7 @@ import type { zh } from './zh'
 
 /** English strings. Keys must match zh exactly (type-checked below). */
 export const en: Record<keyof typeof zh, string> = {
-  'topbar.title': 'Dynamic Lyrics',
+  'topbar.title': 'AliceCut',
   'topbar.importLyrics': 'Import Lyrics',
   'topbar.importVideo': 'Import Video',
   'topbar.importAudio': 'Import Audio',
@@ -72,6 +72,19 @@ export const en: Record<keyof typeof zh, string> = {
   'style.italic': 'Italic',
   'style.textColor': 'Text color',
   'style.textAlpha': 'Text opacity',
+  'style.letterSpacing': 'Letter spacing',
+  'style.wordSpacing': 'Word spacing',
+  'style.lineSpacing': 'Line spacing',
+  'style.textAlign': 'Alignment',
+  'style.alignLeft': 'Left',
+  'style.alignCenter': 'Center',
+  'style.alignRight': 'Right',
+  'style.textOrientation': 'Orientation',
+  'style.orientationHorizontal': 'Horizontal',
+  'style.orientationVertical': 'Vertical',
+  'style.strokeWidth': 'Stroke width',
+  'style.strokeColor': 'Stroke color',
+  'style.strokeAlpha': 'Stroke opacity',
   'style.showMeta': 'Show title intro',
   'style.transformHint': 'Move & rotate all text (lyrics + text blocks) together.',
   'style.transformX': 'Horizontal X',
@@ -148,7 +161,6 @@ export const en: Record<keyof typeof zh, string> = {
 
   // Timeline · main component
   'tl.interlude': '(interlude)',
-  'tl.empty': 'After importing lyrics / video / audio, each becomes an editable clip on the timeline.',
   'tl.addLyricTitle': 'Add a subtitle at the playhead (2s; double-click the left list to edit text)',
   'tl.lyric': 'Subtitle',
   'tl.addTextTitle': 'Add a standalone text block at the playhead (3s, optional effect, not part of the lyric flow)',
@@ -173,12 +185,62 @@ export const en: Record<keyof typeof zh, string> = {
 
   // Lyrics panel
   'lyrics.empty1': 'No lyrics imported yet',
-  'lyrics.empty2': 'Click "Import Lyrics" above to choose a .lrc file',
   'lyrics.granularity': 'Paging granularity',
   'lyrics.pages': '≈ {n} pages',
   'lyrics.perWord': 'Per word',
   'lyrics.applyPaging': 'Apply paging',
   'lyrics.perLine': 'Per line',
+
+  // Caption tracks (TrackList / CaptionTrackPanel): multi-language captions, each an independent lyric flow
+  'tracks.sectionTitle': 'Caption Tracks',
+  'tracks.addTrack': '+ Add Caption Track',
+  'tracks.primary': 'Primary Track',
+  'tracks.untitled': 'Track {n}',
+  'tracks.lineCount': '{n} lines',
+  'tracks.showTrack': 'Show this track',
+  'tracks.hideTrack': 'Hide this track',
+  'tracks.openPanel': 'Open panel',
+  'tracks.float': 'Float',
+  'tracks.dock': 'Dock',
+  'tracks.close': 'Close panel',
+  'tracks.deleteTrack': 'Delete track',
+  'tracks.importInto': 'Import lyrics into this track…',
+  'tracks.selectAll': 'Select all lines in track',
+  'tracks.selectAllHint': 'Selecting lets you batch-edit this track’s text style in the panel on the right',
+  'tracks.renamePlaceholder': 'Track name',
+  'tracks.offsetY': 'Vertical position',
+  'tracks.offsetHint':
+    'Offsets this track from the others so they don’t overlap; increase it if using a docking transition (flip/rise) with a long history',
+  'tracks.visibleLabel': 'Visible',
+  'tracks.addLine': '+ Add line',
+  'tracks.emptyHint': 'Click "Import lyrics into this track" below to choose a .lrc / .srt / .vtt file',
+
+  // Resource Library: overview of imported videos/audio/caption tracks/images
+  'resourceLibrary.title': 'Resource Library',
+  'resourceLibrary.videosSection': 'Videos',
+  'resourceLibrary.audiosSection': 'Audio',
+  'resourceLibrary.captionsSection': 'Caption Tracks',
+  'resourceLibrary.imagesSection': 'Images',
+  'resourceLibrary.empty': '(none)',
+  'resourceLibrary.importImage': 'Import image…',
+  'resourceLibrary.remove': 'Remove',
+  'resourceLibrary.activeImage': 'Active background',
+
+  // Command Console: JSON commands, same fields as job.json
+  'console.title': 'Command Console',
+  'console.placeholder': '{"style": {"fontSize": 100}}',
+  'console.run': 'Run (Ctrl+Enter)',
+  'console.clear': 'Clear log',
+  'console.hint':
+    'Same fields as job.json: lrc / tracks / audio / video / texts / style / lineEffects / lineStyles. ' +
+    'Paths in lrc, tracks[].lrc, and audio/video must be absolute. lrc only replaces the primary track — ' +
+    'unlike the CLI, it does not wipe the whole project. tracks / audio / video / texts append on every ' +
+    'run rather than updating idempotently — re-running a command adds duplicates.',
+
+  // Windows menu: recover closed panels/sections
+  'windows.title': 'Windows',
+  'windows.close': 'Close this panel',
+  'windows.empty': '(everything is open)',
 
   // Transport bar
   'transport.playPause': 'Space to play/pause',
@@ -192,7 +254,20 @@ export const en: Record<keyof typeof zh, string> = {
   'export.title': 'Export Video',
   'export.fps': 'Frame rate',
   'export.fps30': '30 fps (recommended)',
-  'export.duration': '~{n}s · H.264 MP4',
+  'export.codec': 'Codec',
+  'export.codecH264': 'H.264 (most compatible)',
+  'export.codecHevc': 'H.265 / HEVC (smaller files)',
+  'export.codecProres': 'ProRes (preferred for Mac editing tools)',
+  'export.container': 'Container',
+  'export.speed': 'Speed / quality',
+  'export.speedFast': 'Fast',
+  'export.speedBalanced': 'Balanced (recommended)',
+  'export.speedQuality': 'High quality',
+  'export.hwAccel': 'Hardware acceleration (if available)',
+  'export.hwAccelHint': 'Recommended: H.264 uses the GPU-resident WebCodecs path when available; unsupported modes fall back automatically',
+  'export.videoFrameExact': 'Exact per-frame background video seeking (slower)',
+  'export.videoFrameModeHint': 'By default, background video plays forward continuously — much faster, with a tiny chance of a sub-frame difference if you re-export the exact same project (text/audio unaffected). Check this to fall back to exact per-frame seeking — slower, but byte-identical on every re-run',
+  'export.duration': '~{n}s',
   'export.withVideo': ' · with background video',
   'export.withAudio': ' · with audio',
   'export.noAudio': ' · no audio (none imported)',
@@ -231,5 +306,3 @@ export const en: Record<keyof typeof zh, string> = {
   'lang.installed': 'Installed language "{name}"',
   'lang.installFail': 'Language pack import failed: '
 }
-
-

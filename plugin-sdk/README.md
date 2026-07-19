@@ -1,4 +1,4 @@
-# Dynamic Caption — Effect Plugin SDK (api 1)
+# AliceCut — Effect Plugin SDK (api 1)
 
 Write a **text effect**, drop it into the app, use it. This document is the
 complete contract an author — human or agent — needs. Nothing else is required.

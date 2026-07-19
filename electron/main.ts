@@ -1,16 +1,19 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
 import { createReadStream } from 'fs'
 import { access, readFile, stat, writeFile } from 'fs/promises'
-import { basename, dirname, extname, join, resolve } from 'path'
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'path'
 import { Readable } from 'stream'
 import { registerExportHandlers } from './exporter'
 import {
   hasExportArg,
   hasSaveProjectArg,
+  jobRequestsGpu,
+  normalizeClips,
   parseExportArg,
   parseSaveProjectArg,
   prepareJob,
-  registerHeadlessHandlers
+  registerHeadlessHandlers,
+  type JobClipSpec
 } from './headless'
 import { readLrcText } from './lrcFile'
 import { buildMenu, loadLocale, saveLocale, type Locale } from './menu'
@@ -27,13 +30,13 @@ const DIALOG: Record<Locale, Record<string, string>> = {
     openVideoTitle: '导入视频文件', videoFilter: '视频',
     openImageTitle: '选择背景图片', imageFilter: '图片',
     openFontTitle: '导入字体文件', fontFilter: '字体',
-    saveProjectTitle: '保存工程', projectFilter: '动态歌词工程',
+    saveProjectTitle: '保存工程', projectFilter: 'AliceCut 工程',
     saveSrtTitle: '导出字幕', srtFilter: 'SRT 字幕',
     openPluginTitle: '导入特效插件', pluginFilter: '特效插件',
     openProjectTitle: '打开工程',
-    saveVideoTitle: '导出视频', mp4Filter: 'MP4 视频',
+    saveVideoTitle: '导出视频', mp4Filter: 'MP4 视频', movFilter: 'MOV 视频',
     openLanguageTitle: '安装语言包', saveLanguageTitle: '导出语言模板', languageFilter: '语言包',
-    windowTitle: '动态歌词视频生成器'
+    windowTitle: 'AliceCut'
   },
   en: {
     openLrcTitle: 'Import lyrics / subtitles', lyricFilter: 'Lyrics / Subtitles',
@@ -41,13 +44,13 @@ const DIALOG: Record<Locale, Record<string, string>> = {
     openVideoTitle: 'Import video', videoFilter: 'Video',
     openImageTitle: 'Choose background image', imageFilter: 'Images',
     openFontTitle: 'Import font', fontFilter: 'Fonts',
-    saveProjectTitle: 'Save project', projectFilter: 'Dynamic Lyrics Project',
+    saveProjectTitle: 'Save project', projectFilter: 'AliceCut Project',
     saveSrtTitle: 'Export subtitles', srtFilter: 'SRT Subtitles',
     openPluginTitle: 'Import effect plugin', pluginFilter: 'Effect Plugin',
     openProjectTitle: 'Open project',
-    saveVideoTitle: 'Export video', mp4Filter: 'MP4 Video',
+    saveVideoTitle: 'Export video', mp4Filter: 'MP4 Video', movFilter: 'MOV Video',
     openLanguageTitle: 'Install language pack', saveLanguageTitle: 'Export language template', languageFilter: 'Language pack',
-    windowTitle: 'Dynamic Lyrics — Video Maker'
+    windowTitle: 'AliceCut'
   }
 }
 const dlg = (k: string): string => DIALOG[currentLocale][k] ?? k
@@ -58,8 +61,9 @@ const saveProjectRequested = hasSaveProjectArg(process.argv)
 const saveProjectJobPath = parseSaveProjectArg(process.argv)
 const headlessJobPath = exportJobPath ?? saveProjectJobPath
 const headlessRequested = exportRequested || saveProjectRequested
-// 无头导出走软件渲染，CI/无 GPU 环境也能跑
-if (headlessRequested) app.disableHardwareAcceleration()
+// CI-friendly default stays software. A headless job can explicitly keep the
+// GPU enabled for WebCodecs/hardware export with { "gpu": true }.
+if (headlessRequested && !jobRequestsGpu(exportJobPath)) app.disableHardwareAcceleration()
 
 // media:// 自定义协议：渲染进程用它流式读取本地音视频（支持 seek），无需把大文件读进内存
 protocol.registerSchemesAsPrivileged([
@@ -126,7 +130,7 @@ function createWindow(headless: boolean): BrowserWindow {
     minWidth: 1100,
     minHeight: 700,
     show: !headless,
-    title: '动态歌词视频生成器',
+    title: 'AliceCut',
     backgroundColor: '#16161c',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -207,7 +211,7 @@ function registerFileHandlers(): void {
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: dlg('saveProjectTitle'),
       defaultPath: defaultName,
-      filters: [{ name: dlg('projectFilter'), extensions: ['dlv.json'] }]
+      filters: [{ name: dlg('projectFilter'), extensions: ['alicecut.json'] }]
     })
     if (canceled || !filePath) return null
     await writeFile(filePath, json, 'utf-8')
@@ -284,11 +288,36 @@ function registerFileHandlers(): void {
     }
   })
 
-  ipcMain.handle('file:saveVideoPath', async (_e, defaultName: string) => {
+  // 命令控制台专用：按绝对路径读取文本文件（歌词/字幕），路径不合法或读取失败一律返回 null，
+  // 由调用方（渲染进程）统一按"文件不存在"处理，不区分具体原因
+  ipcMain.handle('file:readText', async (_e, path: string) => {
+    if (!isAbsolute(path)) return null
+    try {
+      return await readLrcText(path)
+    } catch {
+      return null
+    }
+  })
+
+  // 命令控制台专用：把 audio/video 字段（字符串/对象/数组）归一成 HeadlessClip[]，
+  // 复用 job.json 的同一套字段默认值/转场解析（headless.ts 的 normalizeClips），
+  // 只是把"相对 job 目录解析"换成"必须已经是绝对路径"——控制台没有 job 目录的概念
+  ipcMain.handle(
+    'job:normalizeClips',
+    (_e, kind: 'video' | 'audio', spec: string | JobClipSpec | (string | JobClipSpec)[]) =>
+      normalizeClips(kind, spec, (p) => {
+        if (!isAbsolute(p)) throw new Error(`路径必须是绝对路径: ${p}`)
+        return p
+      })
+  )
+
+  ipcMain.handle('file:saveVideoPath', async (_e, defaultName: string, ext: 'mp4' | 'mov') => {
+    const filter =
+      ext === 'mov' ? { name: dlg('movFilter'), extensions: ['mov'] } : { name: dlg('mp4Filter'), extensions: ['mp4'] }
     const { canceled, filePath } = await dialog.showSaveDialog({
       title: dlg('saveVideoTitle'),
       defaultPath: defaultName,
-      filters: [{ name: dlg('mp4Filter'), extensions: ['mp4'] }]
+      filters: [filter]
     })
     return canceled ? null : filePath
   })
@@ -313,9 +342,9 @@ app.whenReady().then(async () => {
       // 根据命令行参数决定行为
       payload.renderVideo = !!exportJobPath
       if (saveProjectJobPath) {
-        // .dlv.json 输出到 job 文件同目录，文件名取自 LRC
+        // .alicecut.json 输出到 job 文件同目录，文件名取自 LRC
         const base = payload.lrcName.replace(/\.[^.]+$/, '')
-        payload.projectOutPath = resolve(dirname(resolve(jobPath)), `${base}.dlv.json`)
+        payload.projectOutPath = resolve(dirname(resolve(jobPath)), `${base}.alicecut.json`)
       }
       if (payload.renderVideo && !payload.outPath) {
         throw new Error('job.out 缺失：--export 模式必须指定输出 mp4 路径')

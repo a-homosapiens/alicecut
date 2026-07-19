@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useProject, toRenderStyle, getProjectDuration } from '../store/project'
+import { useProject, toRenderStyle, getProjectDuration, allCaptionTracks } from '../store/project'
 import { renderFrame, getLineBlockRect, applyGlobalTextTransform } from '../core/render'
 import { drawBackgroundImage, drawVideoBackdrop, getClipDrawRect, type ClipRect } from '../mediaPool'
 import { getTime, tick } from '../playback'
@@ -60,6 +60,7 @@ function drawTextSelection(ctx: CanvasRenderingContext2D, view: View, tMs: numbe
   if (st.selectedIds.length === 0) return
   const style = toRenderStyle(st.style)
   const sel = new Set(st.selectedIds)
+  const offsetById = new Map(allCaptionTracks(st).map((t) => [t.id, t.offsetY]))
   ctx.save()
   // 与文字同一坐标系（含视图变换 + 全局文字变换），框随旋转/平移一起动
   ctx.translate(view.panX, view.panY)
@@ -71,7 +72,7 @@ function drawTextSelection(ctx: CanvasRenderingContext2D, view: View, tMs: numbe
   for (const line of st.lines) {
     if (!sel.has(line.id)) continue
     if (tMs < line.start || tMs >= line.end) continue
-    const r = getLineBlockRect(ctx, line, style)
+    const r = getLineBlockRect(ctx, line, style, offsetById.get(line.trackId ?? 0) ?? 0)
     if (!r) continue
     const pad = style.fontSize * 0.25
     ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2)
@@ -125,6 +126,7 @@ export function PreviewCanvas(): React.JSX.Element {
       if (!st.exporting) {
         tick()
         const style = toRenderStyle(st.style)
+        const trackPlacements = allCaptionTracks(st)
         const W = style.width
         const H = style.height
         const dpr = window.devicePixelRatio || 1
@@ -181,7 +183,7 @@ export function PreviewCanvas(): React.JSX.Element {
           ctx.save()
           applyView()
           ctx.globalAlpha = 0.3
-          renderFrame(ctx, st.lines, st.meta, style, tMs, drawBackdrop)
+          renderFrame(ctx, st.lines, st.meta, style, tMs, drawBackdrop, { tracks: trackPlacements })
           ctx.restore()
         }
 
@@ -191,7 +193,7 @@ export function PreviewCanvas(): React.JSX.Element {
         ctx.rect(ax, ay, aw, ah)
         ctx.clip()
         applyView()
-        renderFrame(ctx, st.lines, st.meta, style, tMs, drawBackdrop)
+        renderFrame(ctx, st.lines, st.meta, style, tMs, drawBackdrop, { tracks: trackPlacements })
         ctx.restore()
 
         // artboard 边框
@@ -369,13 +371,17 @@ export function PreviewCanvas(): React.JSX.Element {
     const sx = e.clientX
     const sy = e.clientY
 
-    // 以首个选中行为吸附基准：算出它在偏移=0 时的块中心（中心+偏移 = 画面中心 → 居中）
+    // 以首个选中行为吸附基准：算出它在偏移=0 时的块中心（中心+偏移 = 该行所属字幕组的中心 → 居中）
     const style = toRenderStyle(st.style)
     const ctx = canvasRef.current?.getContext('2d')
     const primary = st.lines.find((l) => sel.has(l.id))
-    const rect = ctx && primary ? getLineBlockRect(ctx, primary, style) : null
+    const primaryOffsetY = primary
+      ? (allCaptionTracks(st).find((t) => t.id === (primary.trackId ?? 0))?.offsetY ?? 0)
+      : 0
+    const rect = ctx && primary ? getLineBlockRect(ctx, primary, style, primaryOffsetY) : null
     const baseCx = rect && primary ? rect.x + rect.w / 2 - primary.dx : null
     const baseCy = rect && primary ? rect.y + rect.h / 2 - primary.dy : null
+    const targetCy = style.height / 2 + primaryOffsetY
     const snapDoc = 8 / view.zoom // 屏幕约 8px 内吸附
     const p0dx = primary?.dx ?? 0
     const p0dy = primary?.dy ?? 0
@@ -390,8 +396,8 @@ export function PreviewCanvas(): React.JSX.Element {
         ddx = style.width / 2 - baseCx - p0dx // 让首行中心吸到画面中心
         snapX = true
       }
-      if (baseCy !== null && Math.abs(baseCy + p0dy + ddy - style.height / 2) < snapDoc) {
-        ddy = style.height / 2 - baseCy - p0dy
+      if (baseCy !== null && Math.abs(baseCy + p0dy + ddy - targetCy) < snapDoc) {
+        ddy = targetCy - baseCy - p0dy // 吸到该行所属字幕组的纵向中心（主字幕组即画面中心）
         snapY = true
       }
       centerGuideRef.current = { active: true, snapX, snapY }

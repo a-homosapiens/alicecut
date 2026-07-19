@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LrcLine, LrcMeta, LrcWord } from './types'
-import { renderFrame, type RenderStyle } from './render'
+import { renderFrame, renderFingerprint, getLineBlockRect, type RenderStyle } from './render'
 
 /** 记录 roundRect 调用的最小 Canvas 2D mock（高亮块就是唯一的圆角矩形来源） */
 class MockCtx {
@@ -15,8 +15,13 @@ class MockCtx {
   shadowBlur = 0
   shadowOffsetX = 0
   shadowOffsetY = 0
+  lineJoin = ''
+  miterLimit = 0
+  lineWidth = 0
   roundRects: { x: number; y: number; w: number; h: number }[] = []
   fillTextCount = 0
+  strokeTextCount = 0
+  fillRectCount = 0
   transformCount = 0
   clipCount = 0
   save(): void {}
@@ -37,10 +42,15 @@ class MockCtx {
   }
   fill(): void {}
   stroke(): void {}
-  fillRect(): void {}
+  fillRect(): void {
+    this.fillRectCount++
+  }
   strokeRect(): void {}
   fillText(): void {
     this.fillTextCount++
+  }
+  strokeText(): void {
+    this.strokeTextCount++
   }
   measureText(t: string): { width: number } {
     const px = Number(/(\d+(?:\.\d+)?)px/.exec(this.font)?.[1] ?? 16)
@@ -84,6 +94,14 @@ const baseStyle: RenderStyle = {
   fontWeight: 700,
   fontSize: 80,
   textColor: '#ffffff',
+  letterSpacing: 4,
+  wordSpacing: 12,
+  lineSpacing: 1,
+  textAlign: 'center',
+  textOrientation: 'horizontal',
+  strokeColor: '#000000',
+  strokeWidth: 0,
+  strokeAlpha: 1,
   glowColor: '#7dd3fc',
   bgType: 'solid',
   bgFrom: '#000000',
@@ -125,6 +143,25 @@ function render(tMs: number, style: RenderStyle, lines = [line]): MockCtx {
   renderFrame(ctx as unknown as CanvasRenderingContext2D, lines, meta, style, tMs)
   return ctx
 }
+
+describe('transparent overlay rendering', () => {
+  it('skipBackground draws text without painting the background or backdrop', () => {
+    const ctx = new MockCtx()
+    let backdropCalls = 0
+    renderFrame(
+      ctx as unknown as CanvasRenderingContext2D,
+      [line],
+      meta,
+      { ...baseStyle, effectId: 'pop' },
+      900,
+      () => { backdropCalls++ },
+      { skipBackground: true }
+    )
+    expect(ctx.fillRectCount).toBe(0)
+    expect(backdropCalls).toBe(0)
+    expect(ctx.fillTextCount).toBeGreaterThan(0)
+  })
+})
 
 const oneWordLine = (text: string, end: number): LrcLine => ({
   id: 0,
@@ -202,5 +239,123 @@ describe('遮罩式入场转场（reveal）', () => {
 
   it('普通特效不裁剪', () => {
     expect(render(200, { ...baseStyle, effectId: 'pop' }, lines).clipCount).toBe(0)
+  })
+})
+
+describe('多字幕组（trackId 分流渲染）', () => {
+  const trackA = oneWordLine('甲', 3000) // trackId 缺省 = 0（主字幕组）
+  const trackB: LrcLine = { ...oneWordLine('乙', 3000), id: 1, trackId: 2 } // 额外字幕组 id 2
+
+  it('两个字幕组的 highlightBox 各自独立判定当前行，互不影响', () => {
+    const ctx = new MockCtx()
+    renderFrame(ctx as unknown as CanvasRenderingContext2D, [trackA, trackB], meta, baseStyle, 900, undefined, {
+      tracks: [
+        { id: 0, offsetY: 0, visible: true },
+        { id: 2, offsetY: 300, visible: true }
+      ]
+    })
+    // 两组各画一个跳动高亮块（highlightBox 特效的圆角矩形就是高亮块本身）
+    expect(ctx.roundRects.length).toBe(2)
+  })
+
+  it('visible: false 的字幕组不绘制', () => {
+    const ctx = new MockCtx()
+    renderFrame(ctx as unknown as CanvasRenderingContext2D, [trackA, trackB], meta, baseStyle, 900, undefined, {
+      tracks: [
+        { id: 0, offsetY: 0, visible: true },
+        { id: 2, offsetY: 300, visible: false }
+      ]
+    })
+    expect(ctx.roundRects.length).toBe(1)
+  })
+
+  it('省略 opts.tracks 时仍按发现的 trackId 各自绘制，不会因为不认识 trackId 而丢内容', () => {
+    const ctx = render(900, baseStyle, [trackA, trackB])
+    expect(ctx.roundRects.length).toBe(2)
+  })
+
+  it('单字幕组（无 trackId）渲染结果与不传 opts 完全一致——多字幕组分流不改变既有行为', () => {
+    const a = render(900, baseStyle, [line]).fillTextCount
+    const ctx = new MockCtx()
+    renderFrame(ctx as unknown as CanvasRenderingContext2D, [line], meta, baseStyle, 900, undefined, {
+      tracks: [{ id: 0, offsetY: 0, visible: true }]
+    })
+    expect(ctx.fillTextCount).toBe(a)
+  })
+})
+
+describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
+  const fp = (tMs: number, style: RenderStyle, lines = [line]): string => {
+    const ctx = new MockCtx()
+    return renderFingerprint(ctx as unknown as CanvasRenderingContext2D, lines, meta, style, tMs)
+  }
+
+  it('静止段落指纹相同：pop 全部进场完成后（退场前）', () => {
+    const style = { ...baseStyle, effectId: 'pop' }
+    // 最后一个字符 2500 开始 + 400ms 进场 → 2900 后静止；行 3500 才退场
+    expect(fp(3000, style)).toBe(fp(3100, style))
+  })
+
+  it('进场动画期间指纹不同', () => {
+    const style = { ...baseStyle, effectId: 'pop' }
+    expect(fp(100, style)).not.toBe(fp(150, style))
+  })
+
+  it('退场期间指纹不同', () => {
+    const style = { ...baseStyle, effectId: 'pop' }
+    expect(fp(3550, style)).not.toBe(fp(3600, style))
+  })
+
+  it('持续动画特效（wobble 噪声漂移）指纹每帧不同', () => {
+    const style = { ...baseStyle, effectId: 'wobble' }
+    expect(fp(3000, style)).not.toBe(fp(3033, style))
+  })
+
+  it('持续动画特效（glow 辉光脉冲）指纹每帧不同', () => {
+    const style = { ...baseStyle, effectId: 'glow' }
+    expect(fp(3000, style)).not.toBe(fp(3033, style))
+  })
+
+  it('卡拉OK：同一词的稳定高亮区间内指纹相同，跨词推进时不同', () => {
+    const style = { ...baseStyle, effectId: 'karaoke' }
+    // 词1 = [1000,2000)：1500/1533 都在其稳定高亮区（RAMP=90 已过）
+    expect(fp(1500, style)).toBe(fp(1533, style))
+    // 1950 → 2050 跨过词1/词2 边界（高亮淡出+淡入）
+    expect(fp(1950, style)).not.toBe(fp(2050, style))
+  })
+
+  it('打字机光标：同一闪烁相位内指纹相同，相位翻转后不同', () => {
+    const style = { ...baseStyle, effectId: 'typewriter' }
+    // 全部字符 3000 前已瞬现；闪烁周期 530ms：[3180,3710) 亮、此前 [2650,3180) 灭
+    expect(fp(3200, style)).toBe(fp(3250, style))
+    expect(fp(3100, style)).not.toBe(fp(3200, style))
+  })
+
+  it('行结束后的空档期指纹相同', () => {
+    const style = { ...baseStyle, effectId: 'pop' }
+    // 3500 + 280ms 退场 = 3780 之后画面为空
+    expect(fp(4000, style)).toBe(fp(4500, style))
+  })
+
+  it('无歌词行时指纹恒为空串', () => {
+    expect(fp(0, baseStyle, [])).toBe('')
+    expect(fp(1000, baseStyle, [])).toBe('')
+  })
+
+  it('停靠式转场（rise）：进场完成后指纹相同，进场期间不同', () => {
+    const style = { ...baseStyle, effectId: 'rise' }
+    // enterDuration 480ms：600/700 已完成（eased 恒 1），100/200 进行中
+    expect(fp(600, style)).toBe(fp(700, style))
+    expect(fp(100, style)).not.toBe(fp(200, style))
+  })
+})
+
+describe('getLineBlockRect 的字幕组纵向偏移', () => {
+  it('trackOffsetY 参数原样叠加到返回的 y 上，不影响 x/w/h', () => {
+    const ctx = new MockCtx()
+    const r0 = getLineBlockRect(ctx as unknown as CanvasRenderingContext2D, line, baseStyle)
+    const r1 = getLineBlockRect(ctx as unknown as CanvasRenderingContext2D, line, baseStyle, 250)
+    expect(r0).not.toBeNull()
+    expect(r1).toEqual({ ...r0, y: r0!.y + 250 })
   })
 })

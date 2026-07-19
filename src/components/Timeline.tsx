@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useProject, getProjectDuration } from '../store/project'
+import { useProject, getProjectDuration, allCaptionTracks } from '../store/project'
 import { getEffect } from '../core/effects'
 import {
   clipEnd,
@@ -15,7 +15,7 @@ import {
 import { seek } from '../playback'
 import { useWaveform } from '../waveform'
 import { useT, hasMsg } from '../i18n'
-import type { LrcLine } from '../core/types'
+import type { LrcLine, CaptionTrack } from '../core/types'
 
 /** 每种特效的线段配色，便于一眼区分 */
 const EFFECT_COLORS: Record<string, string> = {
@@ -503,6 +503,9 @@ export function Timeline(): React.JSX.Element {
     hasMsg(`effect.${id}`) ? t(`effect.${id}` as Parameters<typeof t>[0]) : getEffect(id).name
   const lines = useProject((s) => s.lines)
   const clips = useProject((s) => s.clips)
+  const meta = useProject((s) => s.meta)
+  const lrcName = useProject((s) => s.lrcName)
+  const tracksArr = useProject((s) => s.tracks)
   const selectedIds = useProject((s) => s.selectedIds)
   const selectedClipId = useProject((s) => s.selectedClipId)
   const globalEffectId = useProject((s) => s.style.effectId)
@@ -583,8 +586,9 @@ export function Timeline(): React.JSX.Element {
       el.removeEventListener('touchend', onTouchEnd)
       el.removeEventListener('touchcancel', onTouchEnd)
     }
-    // 内容从无到有时时间轴才挂载 scrollRef，需在此时重挂监听
-  }, [lines.length === 0 && clips.length === 0])
+    // 时间轴现在始终挂载（空工程也显示工具栏），scrollRef 从首次渲染起就有效，只需挂载时接一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const duration = getProjectDuration({ lines, clips })
   const durationMs = duration * 1000
@@ -605,7 +609,10 @@ export function Timeline(): React.JSX.Element {
   }
   const videoRows = layerRows(videoClips)
   const audioRows = layerRows(audioClips)
-  const lyricLines = lines.filter((l) => l.kind !== 'text')
+  // 歌词按所属字幕组分行（一组一行，含空组），一眼区分多语言字幕；组内仍按 start 排好序
+  const trackRows: { track: CaptionTrack; lines: LrcLine[] }[] = allCaptionTracks({ meta, lrcName, tracks: tracksArr }).map(
+    (track) => ({ track, lines: lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === track.id) })
+  )
   const textBlocks = lines.filter((l) => l.kind === 'text')
   // 文字块按 layer 分行（高层在上），顶部留空层作拖放目标
   const textRows: { layer: number; lines: LrcLine[] }[] = []
@@ -744,14 +751,9 @@ export function Timeline(): React.JSX.Element {
   const selectedLine = selectedIds.length === 1 ? lines.find((l) => l.id === selectedIds[0]) : undefined
   const selectedClip = clips.find((c) => c.id === selectedClipId)
 
-  if (lines.length === 0 && clips.length === 0) {
-    return (
-      <div className="timeline empty">
-        {t('tl.empty')}
-      </div>
-    )
-  }
-
+  // 工具栏（含「+ 字幕」「+ 文字」）始终可见：全新工程也要能直接插入独立文字块或第一句歌词，
+  // 不必先导入点别的才解锁；主字幕组的空轨道行本身就是"歌词会显示在这里"的提示，
+  // 不需要再单独弹一条"空状态"文案挡住整个时间轴
   return (
     <div className="timeline">
       <div className="tl-toolbar">
@@ -889,7 +891,16 @@ export function Timeline(): React.JSX.Element {
               {row.lines.map(renderLineSegment)}
             </div>
           ))}
-          <div className="tl-track">{lyricLines.map(renderLineSegment)}</div>
+          {trackRows.map((row) => (
+            <div className="tl-track" key={`ly${row.track.id}`}>
+              <span className="tl-layer-label">
+                {row.track.name || t(row.track.id === 0 ? 'tracks.primary' : 'tracks.untitled', { n: row.track.id })}
+                {' · '}
+                {t('tracks.lineCount', { n: row.lines.length })}
+              </span>
+              {row.lines.map(renderLineSegment)}
+            </div>
+          ))}
           <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} />
         </div>
       </div>

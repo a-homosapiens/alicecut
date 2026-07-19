@@ -1,8 +1,17 @@
 import { useRef, useState } from 'react'
-import { useProject, toRenderStyle, getProjectDuration } from '../store/project'
+import { useProject, toRenderStyle, getProjectDuration, allCaptionTracks } from '../store/project'
 import { runExport } from '../exportRunner'
 import { pause } from '../playback'
 import { useT } from '../i18n'
+import {
+  outExtension,
+  type Container,
+  type Codec,
+  type Speed,
+  type HwAccel,
+  type EncodeSettings,
+  type VideoFrameMode
+} from '../../electron/exporterCore'
 
 interface Props {
   onClose: () => void
@@ -13,6 +22,11 @@ type Phase = 'idle' | 'rendering' | 'done' | 'error'
 export function ExportDialog({ onClose }: Props): React.JSX.Element {
   const t = useT()
   const [fps, setFps] = useState(30)
+  const [container, setContainer] = useState<Container>('mp4')
+  const [codec, setCodec] = useState<Codec>('h264')
+  const [speed, setSpeed] = useState<Speed>('balanced')
+  const [hwAccel, setHwAccel] = useState<HwAccel>('auto')
+  const [videoFrameMode, setVideoFrameMode] = useState<VideoFrameMode>('fast')
   const [phase, setPhase] = useState<Phase>('idle')
   const [progress, setProgress] = useState(0)
   const [message, setMessage] = useState('')
@@ -21,11 +35,16 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
   const st = useProject.getState()
   const duration = getProjectDuration(st)
 
+  // ProRes 只装 .mov：容器选择在此静默解析+改标签，不是错误(不同于 CLI 的硬校验——
+  // GUI 用户没有手动敲扩展名，保存对话框直接给对的就行)
+  const encode: EncodeSettings = { container, codec, speed, hwAccel }
+  const effectiveExt = outExtension(encode)
+
   const start = async (): Promise<void> => {
     const state = useProject.getState()
     const style = toRenderStyle(state.style)
     const baseName = (state.lrcName ?? 'lyrics').replace(/\.[^.]+$/, '')
-    const outPath = await window.desktop.saveVideoPath(`${baseName}.mp4`)
+    const outPath = await window.desktop.saveVideoPath(`${baseName}.${effectiveExt}`, effectiveExt)
     if (!outPath) return
 
     pause()
@@ -39,10 +58,13 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
         lines: state.lines,
         meta: state.meta,
         style,
+        tracks: allCaptionTracks(state),
         clips: state.clips,
         fps,
         durationSec: duration,
         outPath,
+        encode,
+        videoFrameMode,
         onProgress: setProgress,
         isCancelled: () => cancelRef.current
       })
@@ -80,8 +102,59 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
                 <option value={60}>60 fps</option>
               </select>
             </label>
+            <label>
+              {t('export.codec')}
+              <select value={codec} onChange={(e) => setCodec(e.target.value as Codec)}>
+                <option value="h264">{t('export.codecH264')}</option>
+                <option value="hevc">{t('export.codecHevc')}</option>
+                <option value="prores">{t('export.codecProres')}</option>
+              </select>
+            </label>
+            <label>
+              {t('export.container')}
+              <select
+                value={effectiveExt}
+                disabled={codec === 'prores'}
+                onChange={(e) => setContainer(e.target.value as Container)}
+              >
+                <option value="mp4">MP4</option>
+                <option value="mov">MOV</option>
+              </select>
+            </label>
+            <label>
+              {t('export.speed')}
+              <select value={speed} onChange={(e) => setSpeed(e.target.value as Speed)}>
+                <option value="fast">{t('export.speedFast')}</option>
+                <option value="balanced">{t('export.speedBalanced')}</option>
+                <option value="quality">{t('export.speedQuality')}</option>
+              </select>
+            </label>
+            <label className="row">
+              {t('export.hwAccel')}
+              <input
+                type="checkbox"
+                checked={hwAccel === 'auto'}
+                onChange={(e) => setHwAccel(e.target.checked ? 'auto' : 'software')}
+              />
+            </label>
+            <p className="hint">{t('export.hwAccelHint')}</p>
+            {st.clips.some((c) => c.kind === 'video') && (
+              <>
+                <label className="row">
+                  {t('export.videoFrameExact')}
+                  <input
+                    type="checkbox"
+                    checked={videoFrameMode === 'exact'}
+                    onChange={(e) => setVideoFrameMode(e.target.checked ? 'exact' : 'fast')}
+                  />
+                </label>
+                <p className="hint">{t('export.videoFrameModeHint')}</p>
+              </>
+            )}
             <p className="hint">
               {t('export.duration', { n: Math.round(duration) })}
+              {' · '}
+              {effectiveExt.toUpperCase()}
               {st.clips.some((c) => c.kind === 'video') ? t('export.withVideo') : ''}
               {st.clips.some((c) => c.kind === 'audio') ? t('export.withAudio') : t('export.noAudio')}
             </p>

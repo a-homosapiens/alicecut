@@ -13,8 +13,8 @@ export interface LanguagePack {
   strings: Record<string, string>
 }
 
-const PACKS_KEY = 'dlv.languages'
-const LOCALE_KEY = 'dlv.locale'
+const PACKS_KEY = 'alicecut.languages'
+const LOCALE_KEY = 'alicecut.locale'
 
 /** 解析并校验语言包文本；非法抛出可读错误。 */
 export function parseLanguagePack(text: string): LanguagePack {

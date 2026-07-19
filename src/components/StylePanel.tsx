@@ -4,35 +4,11 @@ import { EFFECTS } from '../core/effects'
 import { SYSTEM_FONTS, loadBuiltinFonts, registerImportedFont, type FontOption } from '../fonts'
 import { invalidateLayoutCache } from '../core/render'
 import type { LineTextOverride } from '../core/types'
+import { ClosableSection } from './ClosableSection'
 import { useT, hasMsg } from '../i18n'
 
 /** 内联 style 用的 font-family（含空格/中文名加引号） */
 const cssFamily = (family: string): string => `"${family}"`
-
-/** 可折叠区块：标题点击展开/收起，收起时显示摘要 */
-function Section({
-  title,
-  summary,
-  defaultOpen = true,
-  children
-}: {
-  title: string
-  summary?: string
-  defaultOpen?: boolean
-  children: React.ReactNode
-}): React.JSX.Element {
-  const [open, setOpen] = useState(defaultOpen)
-  return (
-    <section className="sp-section">
-      <h3 className="sp-head" onClick={() => setOpen((o) => !o)}>
-        <span className={`sp-caret${open ? ' open' : ''}`}>▸</span>
-        {title}
-        {!open && summary && <span className="sp-summary">{summary}</span>}
-      </h3>
-      {open && <div className="sp-body">{children}</div>}
-    </section>
-  )
-}
 
 /** 字体可视化选择：点击展开，每个字体用它自身渲染出字体名预览 */
 function FontPicker({
@@ -127,6 +103,22 @@ export function StylePanel(): React.JSX.Element {
   const effItalic = ov?.italic ?? style.italic
   const effColor = ov?.textColor ?? style.textColor
   const effAlpha = ov?.textAlpha ?? style.textAlpha
+  const effLetterSpacing = ov?.letterSpacing ?? style.letterSpacing
+  const effWordSpacing = ov?.wordSpacing ?? style.wordSpacing
+  const effLineSpacing = ov?.lineSpacing ?? style.lineSpacing
+  const effTextAlign = ov?.textAlign ?? style.textAlign
+  const effTextOrientation = ov?.textOrientation ?? style.textOrientation
+  const effStrokeColor = ov?.strokeColor ?? style.strokeColor
+  const effStrokeWidth = ov?.strokeWidth ?? style.strokeWidth
+  const effStrokeAlpha = ov?.strokeAlpha ?? style.strokeAlpha
+  const effTextBgColor = ov?.textBgColor ?? style.textBgColor
+  const effTextBgAlpha = ov?.textBgAlpha ?? style.textBgAlpha
+  const effHalo = ov?.halo ?? style.halo
+  const effGlowColor = ov?.glowColor ?? style.glowColor
+  const effShadowColor = ov?.shadowColor ?? style.shadowColor
+  const effShadowAlpha = ov?.shadowAlpha ?? style.shadowAlpha
+  const effShadowOffset = ov?.shadowOffset ?? style.shadowOffset
+  const effShadowBlur = ov?.shadowBlur ?? style.shadowBlur
   const applyText = (patch: Partial<LineTextOverride>): void => {
     if (textSel) useProject.getState().patchLineOver(selectedIds, patch)
     else patchStyle(patch)
@@ -155,7 +147,9 @@ export function StylePanel(): React.JSX.Element {
 
   const chooseBgImage = async (): Promise<void> => {
     const file = await window.desktop.openImage()
-    if (file) patchStyle({ bgType: 'image', bgImage: file.path })
+    if (!file) return
+    useProject.getState().addImage(file.path, file.name)
+    patchStyle({ bgType: 'image', bgImage: file.path })
   }
 
   const bgName = style.bgImage ? style.bgImage.split(/[\\/]/).pop() : null
@@ -168,7 +162,7 @@ export function StylePanel(): React.JSX.Element {
 
   return (
     <div className="style-panel">
-      <Section title={t('style.sizeSection')}>
+      <ClosableSection windowId="style.size" title={t('style.sizeSection')}>
         <label>
           <select value={style.aspect} onChange={(e) => patchStyle({ aspect: e.target.value as AspectId })}>
             {(Object.keys(RESOLUTIONS) as AspectId[]).map((id) => (
@@ -178,9 +172,9 @@ export function StylePanel(): React.JSX.Element {
             ))}
           </select>
         </label>
-      </Section>
+      </ClosableSection>
 
-      <Section title={t('style.bgSection')} summary={bgSummary} defaultOpen={false}>
+      <ClosableSection windowId="style.background" title={t('style.bgSection')} summary={bgSummary} defaultOpen={false}>
         <div className="bg-types">
           {(['image', 'gradient', 'solid'] as const).map((bt) => (
             <button
@@ -276,9 +270,10 @@ export function StylePanel(): React.JSX.Element {
             </label>
           </>
         )}
-      </Section>
+      </ClosableSection>
 
-      <Section
+      <ClosableSection
+        windowId="style.text"
         title={`${t('style.textSection')}${
           textSel ? t('style.effectsSelected', { n: selectedIds.length }) : t('style.effectsGlobal')
         }`}
@@ -325,6 +320,155 @@ export function StylePanel(): React.JSX.Element {
             onChange={(e) => applyText({ textAlpha: Number(e.target.value) / 100 })}
           />
         </label>
+        <label>
+          {t('style.letterSpacing')} {effLetterSpacing}px
+          <input
+            type="range"
+            min={-20}
+            max={80}
+            value={effLetterSpacing}
+            onChange={(e) => applyText({ letterSpacing: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          {t('style.wordSpacing')} {effWordSpacing}px
+          <input
+            type="range"
+            min={0}
+            max={160}
+            value={effWordSpacing}
+            onChange={(e) => applyText({ wordSpacing: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          {t('style.lineSpacing')} {effLineSpacing.toFixed(2)}x
+          <input
+            type="range"
+            min={0.7}
+            max={2.2}
+            step={0.05}
+            value={effLineSpacing}
+            onChange={(e) => applyText({ lineSpacing: Number(e.target.value) })}
+          />
+        </label>
+        <label className="row">
+          {t('style.textAlign')}
+          <select
+            value={effTextAlign}
+            onChange={(e) => applyText({ textAlign: e.target.value as 'left' | 'center' | 'right' })}
+          >
+            <option value="left">{t('style.alignLeft')}</option>
+            <option value="center">{t('style.alignCenter')}</option>
+            <option value="right">{t('style.alignRight')}</option>
+          </select>
+        </label>
+        <label className="row">
+          {t('style.textOrientation')}
+          <select
+            value={effTextOrientation}
+            onChange={(e) => applyText({ textOrientation: e.target.value as 'horizontal' | 'vertical' })}
+          >
+            <option value="horizontal">{t('style.orientationHorizontal')}</option>
+            <option value="vertical">{t('style.orientationVertical')}</option>
+          </select>
+        </label>
+        <label>
+          {t('style.strokeWidth')} {effStrokeWidth}px{effStrokeWidth === 0 ? t('style.off') : ''}
+          <input
+            type="range"
+            min={0}
+            max={24}
+            step={1}
+            value={effStrokeWidth}
+            onChange={(e) => applyText({ strokeWidth: Number(e.target.value) })}
+          />
+        </label>
+        {effStrokeWidth > 0 && (
+          <>
+            <label className="row">
+              {t('style.strokeColor')}
+              <input type="color" value={effStrokeColor} onChange={(e) => applyText({ strokeColor: e.target.value })} />
+            </label>
+            <label>
+              {t('style.strokeAlpha')} {Math.round(effStrokeAlpha * 100)}%
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={Math.round(effStrokeAlpha * 100)}
+                onChange={(e) => applyText({ strokeAlpha: Number(e.target.value) / 100 })}
+              />
+            </label>
+          </>
+        )}
+        <label>
+          {t('style.halo')} {effHalo}px{effHalo === 0 ? t('style.off') : ''}
+          <input
+            type="range"
+            min={0}
+            max={40}
+            value={effHalo}
+            onChange={(e) => applyText({ halo: Number(e.target.value) })}
+          />
+        </label>
+        <label className="row">
+          {t('style.glowColor')}
+          <input type="color" value={effGlowColor} onChange={(e) => applyText({ glowColor: e.target.value })} />
+        </label>
+        <label>
+          {t('style.bgBoxAlpha')} {Math.round(effTextBgAlpha * 100)}%{effTextBgAlpha === 0 ? t('style.noBgBox') : ''}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(effTextBgAlpha * 100)}
+            onChange={(e) => applyText({ textBgAlpha: Number(e.target.value) / 100 })}
+          />
+        </label>
+        {effTextBgAlpha > 0 && (
+          <label className="row">
+            {t('style.bgBoxColor')}
+            <input type="color" value={effTextBgColor} onChange={(e) => applyText({ textBgColor: e.target.value })} />
+          </label>
+        )}
+        <label>
+          {t('style.shadowAlpha')} {Math.round(effShadowAlpha * 100)}%{effShadowAlpha === 0 ? t('style.off') : ''}
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(effShadowAlpha * 100)}
+            onChange={(e) => applyText({ shadowAlpha: Number(e.target.value) / 100 })}
+          />
+        </label>
+        {effShadowAlpha > 0 && (
+          <>
+            <label className="row">
+              {t('style.shadowColor')}
+              <input type="color" value={effShadowColor} onChange={(e) => applyText({ shadowColor: e.target.value })} />
+            </label>
+            <label>
+              {t('style.shadowOffset')} {effShadowOffset}px
+              <input
+                type="range"
+                min={0}
+                max={20}
+                value={effShadowOffset}
+                onChange={(e) => applyText({ shadowOffset: Number(e.target.value) })}
+              />
+            </label>
+            <label>
+              {t('style.shadowBlur')} {effShadowBlur}px
+              <input
+                type="range"
+                min={0}
+                max={30}
+                value={effShadowBlur}
+                onChange={(e) => applyText({ shadowBlur: Number(e.target.value) })}
+              />
+            </label>
+          </>
+        )}
         {textSel && (
           <button className="btn btn-sm" onClick={() => useProject.getState().clearLineOver(selectedIds)}>
             {t('style.restoreDefault')}
@@ -334,9 +478,14 @@ export function StylePanel(): React.JSX.Element {
           {t('style.showMeta')}
           <input type="checkbox" checked={style.showMeta} onChange={(e) => patchStyle({ showMeta: e.target.checked })} />
         </label>
-      </Section>
+      </ClosableSection>
 
-      <Section title={t('style.transformSection')} summary={`X${style.globalDx} Y${style.globalDy} ${style.globalRotate}°`} defaultOpen={false}>
+      <ClosableSection
+        windowId="style.transform"
+        title={t('style.transformSection')}
+        summary={`X${style.globalDx} Y${style.globalDy} ${style.globalRotate}°`}
+        defaultOpen={false}
+      >
         <p className="hint">{t('style.transformHint')}</p>
         <label>
           {t('style.transformX')} {style.globalDx}px
@@ -374,80 +523,10 @@ export function StylePanel(): React.JSX.Element {
         >
           {t('style.reset')}
         </button>
-      </Section>
+      </ClosableSection>
 
-      <Section title={t('style.decorSection')} defaultOpen={false}>
-        <label>
-          {t('style.bgBoxAlpha')} {Math.round(style.textBgAlpha * 100)}%{style.textBgAlpha === 0 ? t('style.noBgBox') : ''}
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(style.textBgAlpha * 100)}
-            onChange={(e) => patchStyle({ textBgAlpha: Number(e.target.value) / 100 })}
-          />
-        </label>
-        {style.textBgAlpha > 0 && (
-          <label className="row">
-            {t('style.bgBoxColor')}
-            <input type="color" value={style.textBgColor} onChange={(e) => patchStyle({ textBgColor: e.target.value })} />
-          </label>
-        )}
-        <label>
-          {t('style.halo')} {style.halo}px{style.halo === 0 ? t('style.off') : ''}
-          <input
-            type="range"
-            min={0}
-            max={40}
-            value={style.halo}
-            onChange={(e) => patchStyle({ halo: Number(e.target.value) })}
-          />
-        </label>
-        <label className="row">
-          {t('style.glowColor')}
-          <input type="color" value={style.glowColor} onChange={(e) => patchStyle({ glowColor: e.target.value })} />
-        </label>
-        <label>
-          {t('style.shadowAlpha')} {Math.round(style.shadowAlpha * 100)}%{style.shadowAlpha === 0 ? t('style.off') : ''}
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(style.shadowAlpha * 100)}
-            onChange={(e) => patchStyle({ shadowAlpha: Number(e.target.value) / 100 })}
-          />
-        </label>
-        {style.shadowAlpha > 0 && (
-          <>
-            <label className="row">
-              {t('style.shadowColor')}
-              <input type="color" value={style.shadowColor} onChange={(e) => patchStyle({ shadowColor: e.target.value })} />
-            </label>
-            <label>
-              {t('style.shadowOffset')} {style.shadowOffset}px
-              <input
-                type="range"
-                min={0}
-                max={20}
-                value={style.shadowOffset}
-                onChange={(e) => patchStyle({ shadowOffset: Number(e.target.value) })}
-              />
-            </label>
-            <label>
-              {t('style.shadowBlur')} {style.shadowBlur}px
-              <input
-                type="range"
-                min={0}
-                max={30}
-                value={style.shadowBlur}
-                onChange={(e) => patchStyle({ shadowBlur: Number(e.target.value) })}
-              />
-            </label>
-          </>
-        )}
-      </Section>
-
-      <Section
+      <ClosableSection
+        windowId="style.effects"
         title={`${t('style.effects')}${
           selectedIds.length > 0 ? t('style.effectsSelected', { n: selectedIds.length }) : t('style.effectsGlobal')
         }`}
@@ -505,7 +584,7 @@ export function StylePanel(): React.JSX.Element {
             onChange={(e) => patchStyle({ intensity: Number(e.target.value) })}
           />
         </label>
-      </Section>
+      </ClosableSection>
     </div>
   )
 }

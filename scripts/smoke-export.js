@@ -11,7 +11,7 @@ const W = 1080
 const H = 1920
 const FPS = 30
 const FRAMES = 60
-const OUT = require('path').join(require('os').tmpdir(), 'dynamic-caption-smoke.mp4')
+const OUT = require('path').join(require('os').tmpdir(), 'alicecut-smoke.mp4')
 
 async function main() {
   const args = [

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://dynamic-caption/plugin-sdk/manifest.schema.json",
-  "title": "Dynamic Caption Effect Plugin Manifest (api 1)",
+  "$id": "https://alicecut/plugin-sdk/manifest.schema.json",
+  "title": "AliceCut Effect Plugin Manifest (api 1)",
   "description": "Validates the static, JSON-serializable fields of a plugin's default export. NOTE: a manifest is a live JS module, so the `apply` FUNCTION on each effect cannot be checked by JSON Schema — it is validated at runtime by the host (must be a function) and by the plugin validator (must be pure/deterministic/in-range). Use this schema to lint the static metadata only.",
   "type": "object",
   "required": ["api", "name"],

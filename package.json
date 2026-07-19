@@ -1,7 +1,7 @@
 {
-  "name": "dynamic-caption",
+  "name": "alicecut",
   "version": "0.1.0",
-  "description": "动态歌词视频生成器 — 将 .lrc 歌词转换为 Kinetic Typography 动态文字视频",
+  "description": "AliceCut — 将 .lrc 歌词转换为 Kinetic Typography 动态文字视频",
   "main": "out/main/index.js",
   "private": true,
   "scripts": {
@@ -9,6 +9,7 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "benchmark:export": "node scripts/benchmark-export.js",
     "fonts": "node scripts/download-fonts.js",
     "validate-plugin": "node scripts/validate-plugin.ts",
     "start": "electron-vite preview"

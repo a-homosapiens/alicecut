@@ -4,7 +4,7 @@
  */
 export const zh = {
   // 顶栏
-  'topbar.title': '动态歌词',
+  'topbar.title': 'AliceCut',
   'topbar.importLyrics': '导入歌词',
   'topbar.importVideo': '导入视频',
   'topbar.importAudio': '导入音频',
@@ -74,6 +74,19 @@ export const zh = {
   'style.italic': '斜体',
   'style.textColor': '文字颜色',
   'style.textAlpha': '文字不透明度',
+  'style.letterSpacing': '字间距',
+  'style.wordSpacing': '词间距',
+  'style.lineSpacing': '行距',
+  'style.textAlign': '对齐',
+  'style.alignLeft': '左对齐',
+  'style.alignCenter': '居中',
+  'style.alignRight': '右对齐',
+  'style.textOrientation': '方向',
+  'style.orientationHorizontal': '横排',
+  'style.orientationVertical': '竖排',
+  'style.strokeWidth': '描边宽度',
+  'style.strokeColor': '描边颜色',
+  'style.strokeAlpha': '描边不透明度',
   'style.showMeta': '片头显示歌名',
   'style.transformHint': '所有文字（歌词与文字块）一起平移、旋转',
   'style.transformX': '水平 X',
@@ -148,9 +161,8 @@ export const zh = {
   'tl.extractAudio': '提取音频',
   'tl.delete': '删除',
 
-  // 时间轴 · 主组件（工具条 / 空状态 / 线段 / 轨道）
+  // 时间轴 · 主组件（工具条 / 线段 / 轨道）
   'tl.interlude': '（间奏）',
-  'tl.empty': '导入歌词 / 视频 / 音频后，每个素材会成为时间轴上的可编辑线段',
   'tl.addLyricTitle': '在播放头处加一句字幕（2 秒，双击左侧列表改文字）',
   'tl.lyric': '字幕',
   'tl.addTextTitle': '在播放头处加一块独立文字（3 秒，可选特效，不参与歌词流）',
@@ -173,14 +185,62 @@ export const zh = {
   'tl.undo': '撤销',
   'tl.redo': '重做',
 
-  // 歌词面板（LyricsPanel）
+  // 字幕组内容（CaptionTrackPanel）
   'lyrics.empty1': '尚未导入歌词',
-  'lyrics.empty2': '点击上方「导入歌词」选择 .lrc 文件',
   'lyrics.granularity': '分页粒度',
   'lyrics.pages': '≈ {n} 页',
   'lyrics.perWord': '逐词',
   'lyrics.applyPaging': '应用分页',
   'lyrics.perLine': '整句',
+
+  // 字幕组（TrackList / CaptionTrackPanel）：多语言字幕，一组一份独立的歌词流
+  'tracks.sectionTitle': '字幕组',
+  'tracks.addTrack': '+ 新增字幕组',
+  'tracks.primary': '主字幕组',
+  'tracks.untitled': '字幕组 {n}',
+  'tracks.lineCount': '{n} 行',
+  'tracks.showTrack': '显示此字幕组',
+  'tracks.hideTrack': '隐藏此字幕组',
+  'tracks.openPanel': '展开面板',
+  'tracks.float': '浮动显示',
+  'tracks.dock': '停靠显示',
+  'tracks.close': '关闭面板',
+  'tracks.deleteTrack': '删除字幕组',
+  'tracks.importInto': '导入歌词到此组…',
+  'tracks.selectAll': '选中此组全部行',
+  'tracks.selectAllHint': '选中后可在右侧样式面板批量调整此组文字样式',
+  'tracks.renamePlaceholder': '字幕组名称',
+  'tracks.offsetY': '纵向位置',
+  'tracks.offsetHint': '与其它字幕组错开，避免叠在一起；用了停靠式转场（翻转/上移）且历史句数较多时建议加大',
+  'tracks.visibleLabel': '显示',
+  'tracks.addLine': '+ 加一行',
+  'tracks.emptyHint': '点击下方「导入歌词到此组」选择 .lrc / .srt / .vtt 文件',
+
+  // 资源库（ResourceLibrary）：已导入视频/音频/字幕组/图片一览
+  'resourceLibrary.title': '资源库',
+  'resourceLibrary.videosSection': '视频',
+  'resourceLibrary.audiosSection': '音频',
+  'resourceLibrary.captionsSection': '字幕组',
+  'resourceLibrary.imagesSection': '图片',
+  'resourceLibrary.empty': '（暂无）',
+  'resourceLibrary.importImage': '导入图片…',
+  'resourceLibrary.remove': '移除',
+  'resourceLibrary.activeImage': '当前背景',
+
+  // 命令控制台（CommandConsole）：JSON 命令，字段与 job.json 相同
+  'console.title': '命令控制台',
+  'console.placeholder': '{"style": {"fontSize": 100}}',
+  'console.run': '运行 (Ctrl+Enter)',
+  'console.clear': '清空日志',
+  'console.hint':
+    '字段与 job.json 相同：lrc / tracks / audio / video / texts / style / lineEffects / lineStyles。' +
+    'lrc、tracks[].lrc、audio/video 中的路径必须是绝对路径。lrc 只替换主字幕组，不会像命令行那样清空整份工程。' +
+    'tracks / audio / video / texts 每次运行都新增，不是幂等更新——重复运行会重复新增。',
+
+  // 窗口菜单（WindowsMenu）：恢复被关闭的面板/区块
+  'windows.title': '窗口',
+  'windows.close': '关闭此面板',
+  'windows.empty': '（全部面板都开着）',
 
   // 播放条（TransportBar）
   'transport.playPause': '空格键播放/暂停',
@@ -194,7 +254,20 @@ export const zh = {
   'export.title': '导出视频',
   'export.fps': '帧率',
   'export.fps30': '30 fps（推荐）',
-  'export.duration': '时长约 {n} 秒 · H.264 MP4',
+  'export.codec': '编码格式',
+  'export.codecH264': 'H.264（兼容性最好）',
+  'export.codecHevc': 'H.265 / HEVC（体积更小）',
+  'export.codecProres': 'ProRes（Mac 剪辑工具首选）',
+  'export.container': '容器格式',
+  'export.speed': '速度 / 画质',
+  'export.speedFast': '快速',
+  'export.speedBalanced': '均衡（推荐）',
+  'export.speedQuality': '高画质',
+  'export.hwAccel': '硬件加速（如可用）',
+  'export.hwAccelHint': '推荐开启：H.264 可用时走 GPU 驻留 WebCodecs 快速路径；不支持的模式自动回退',
+  'export.videoFrameExact': '背景视频精确逐帧取景（更慢）',
+  'export.videoFrameModeHint': '默认正向连续播放追帧，导出快很多；同一次导出重跑画面可能有极细微差异（不影响文字/音频）。勾选后改回逐帧精确 seek，慢但每次重跑字节级一致',
+  'export.duration': '时长约 {n} 秒',
   'export.withVideo': ' · 含背景视频',
   'export.withAudio': ' · 含音轨',
   'export.noAudio': ' · 无音频（未导入音频文件）',

@@ -1,8 +1,19 @@
 import { app, ipcMain } from 'electron'
+import { readFileSync } from 'fs'
 import { access, readFile, mkdir, writeFile } from 'fs/promises'
 import { basename, dirname, isAbsolute, resolve } from 'path'
 import { readLrcText } from './lrcFile'
+import {
+  outExtension,
+  type Container,
+  type Codec,
+  type Speed,
+  type HwAccel,
+  type EncodeSettings,
+  type VideoFrameMode
+} from './exporterCore'
 import type { VideoTransition } from '../src/core/media'
+import type { LineTextOverride } from '../src/core/types'
 
 /** 转场写法：对象 { type, dur(秒) } 或简写字符串 "type:dur"（如 "fade:1"） */
 type TransitionSpec = string | { type: string; dur: number }
@@ -61,11 +72,26 @@ export interface JobTextSpec {
   /** 画面位置偏移（画布像素） */
   x?: number
   y?: number
+  style?: LineTextOverride
+}
+
+/** job.json 里的额外字幕组（多语言字幕，与顶层 lrc 同时显示、不互相覆盖） */
+export interface JobTrackSpec {
+  /** 展示名，可省略 */
+  name?: string
+  /** 歌词/字幕文件路径（相对 job 文件所在目录，写法同顶层 lrc） */
+  lrc: string
+  /** 相对画面中心的纵向偏移（画布像素）；缺省沿用与手动新增字幕组相同的自动错开位置 */
+  offsetY?: number
+  visible?: boolean
+  /** 键为该字幕组自己的行序号（"3"）或区间（"0-7"），与顶层 lineEffects 是各自独立的编号 */
+  lineEffects?: Record<string, string>
+  lineStyles?: Record<string, LineTextOverride>
 }
 
 /**
  * 无头导出模式（pipeline 用）：
- *   dynamic-caption --export job.json
+ *   alicecut --export job.json
  * job.json 里 lrc/audio/video/out 的相对路径相对于 job 文件所在目录解析。
  */
 export interface ExportJobFile {
@@ -76,14 +102,30 @@ export interface ExportJobFile {
   video?: string | JobClipSpec | (string | JobClipSpec)[] | null
   /** 独立文字块（不参与歌词流，可选特效与字幕相同） */
   texts?: JobTextSpec[]
+  /** 额外字幕组（多语言字幕）：与顶层 lrc（主字幕组）同时渲染，竖直错开不重叠 */
+  tracks?: JobTrackSpec[]
   out?: string
   fps?: number
   /** 成片总时长（秒）；缺省 = max(歌词结尾, 有限媒体线段结尾) */
   duration?: number
+  /** 输出容器，缺省 "mp4"；codec 为 "prores" 时强制视为 "mov"（out 路径必须以 .mov 结尾） */
+  container?: Container
+  /** 视频编码，缺省 "h264" */
+  codec?: Codec
+  /** 编码速度/画质档位，缺省 "balanced"（= 今天的固定行为，字节级一致） */
+  speed?: Speed
+  /** 硬件加速，缺省 "software"；"auto" 时探测失败会自动回退并在 stdout 打一行警告 */
+  hwAccel?: HwAccel
+  /** Keep Chromium GPU acceleration enabled for headless hardware/WebCodecs export. */
+  gpu?: boolean
+  /** 背景视频取景精度，缺省 "fast"（正向连续播放追帧，快很多）；"exact" 逐帧精确 seek，
+   *  慢但同一次导出重跑字节级一致 */
+  videoFrameMode?: VideoFrameMode
   /** 覆盖默认样式（StyleState 的子集，如 aspect/effectId/fontFamily/fontSize…） */
   style?: Record<string, unknown>
   /** 行级特效："3" 或 "0-7"（按歌词行序号）→ 特效 id */
   lineEffects?: Record<string, string>
+  lineStyles?: Record<string, LineTextOverride>
 }
 
 /** 解析归一后的媒体线段（路径已绝对化、文件已确认存在） */
@@ -107,18 +149,36 @@ export interface HeadlessClip {
   transOut: VideoTransition | null
 }
 
+/** 解析归一后的额外字幕组（lrc 内容已读入，路径已绝对化） */
+export interface HeadlessTrackSpec {
+  name?: string
+  lrcText: string
+  lrcName: string
+  offsetY?: number
+  visible?: boolean
+  lineEffects: Record<string, string>
+  lineStyles: Record<string, LineTextOverride>
+}
+
 /** 准备好、可直接发给渲染进程的任务载荷 */
 export interface HeadlessJobPayload {
   lrcText: string
   lrcName: string
   clips: HeadlessClip[]
   texts: JobTextSpec[]
+  /** 额外字幕组，按 job.tracks 原顺序——渲染进程必须按此顺序依次处理，
+   *  以保证铸造出的 trackId 与手动在 GUI 里逐个新增字幕组时一致 */
+  tracks: HeadlessTrackSpec[]
   outPath: string
   fps: number
   durationSec: number | null
   style: Record<string, unknown>
   lineEffects: Record<string, string>
-  /** Path to write .dlv.json (null = don't save project) */
+  lineStyles: Record<string, LineTextOverride>
+  encode: EncodeSettings
+  videoFrameMode: VideoFrameMode
+  gpu: boolean
+  /** Path to write .alicecut.json (null = don't save project) */
   projectOutPath: string | null
   /** Whether to also render video (false = project-only mode) */
   renderVideo: boolean
@@ -140,6 +200,23 @@ export function hasSaveProjectArg(argv: string[]): boolean {
 export function parseSaveProjectArg(argv: string[]): string | null {
   const i = argv.indexOf('--save-project')
   return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : null
+}
+
+export function parseGpuPreference(jobText: string): boolean {
+  try {
+    return (JSON.parse(jobText.replace(/^﻿/, '')) as ExportJobFile).gpu === true
+  } catch {
+    return false
+  }
+}
+
+export function jobRequestsGpu(jobPath: string | null): boolean {
+  if (!jobPath) return false
+  try {
+    return parseGpuPreference(readFileSync(resolve(jobPath), 'utf8'))
+  } catch {
+    return false
+  }
 }
 
 export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
@@ -166,12 +243,65 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
   const fps = Math.min(60, Math.max(10, Math.round(job.fps ?? 30)))
   const durationSec = typeof job.duration === 'number' && job.duration > 0 ? job.duration : null
 
+  // 编码设置：缺省档位必须与今天的固定行为字节级一致（mp4/h264/balanced/software）。
+  // 枚举值写错直接报错，而不是悄悄退回默认——批处理流水线里一个拼错的 codec 静默生效，
+  // 可能很久都不会被发现
+  const container = job.container ?? 'mp4'
+  if (container !== 'mp4' && container !== 'mov') {
+    throw new Error(`job.container 只能是 "mp4" 或 "mov"，收到: ${JSON.stringify(job.container)}`)
+  }
+  const codec = job.codec ?? 'h264'
+  if (codec !== 'h264' && codec !== 'hevc' && codec !== 'prores') {
+    throw new Error(`job.codec 只能是 "h264"/"hevc"/"prores"，收到: ${JSON.stringify(job.codec)}`)
+  }
+  const speed = job.speed ?? 'balanced'
+  if (speed !== 'fast' && speed !== 'balanced' && speed !== 'quality') {
+    throw new Error(`job.speed 只能是 "fast"/"balanced"/"quality"，收到: ${JSON.stringify(job.speed)}`)
+  }
+  const hwAccel = job.hwAccel ?? 'software'
+  if (hwAccel !== 'auto' && hwAccel !== 'software') {
+    throw new Error(`job.hwAccel 只能是 "auto"/"software"，收到: ${JSON.stringify(job.hwAccel)}`)
+  }
+  const encode: EncodeSettings = { container, codec, speed, hwAccel }
+
+  if (job.gpu !== undefined && typeof job.gpu !== 'boolean') {
+    throw new Error(`job.gpu 必须是 true/false，收到: ${JSON.stringify(job.gpu)}`)
+  }
+
+  const videoFrameMode = job.videoFrameMode ?? 'fast'
+  if (videoFrameMode !== 'exact' && videoFrameMode !== 'fast') {
+    throw new Error(`job.videoFrameMode 只能是 "exact"/"fast"，收到: ${JSON.stringify(job.videoFrameMode)}`)
+  }
+
+  // ProRes 只装在 .mov 容器：job.json 是自动化调用方明确写好的路径，静默改名可能弄坏下游流程，
+  // 直接报错让调用方自己改（GUI 侧存盘对话框会自动带对扩展名，两边故意不对称）
+  if (job.out && outExtension(encode) === 'mov' && !job.out.toLowerCase().endsWith('.mov')) {
+    throw new Error(`codec 为 "prores" 时 job.out 必须以 .mov 结尾，收到: ${job.out}`)
+  }
+
   const texts = (job.texts ?? []).map((t) => {
     if (!t.text || typeof t.start !== 'number' || typeof t.end !== 'number' || t.end <= t.start) {
       throw new Error(`texts 条目无效（需要 text 与 start < end 秒数）: ${JSON.stringify(t)}`)
     }
     return t
   })
+
+  // 额外字幕组：逐个按 job.tracks 顺序读取（顺序会决定渲染进程里铸造 trackId 的顺序）
+  const tracks: HeadlessTrackSpec[] = []
+  for (const t of job.tracks ?? []) {
+    if (!t.lrc) throw new Error('job.tracks 中的字幕组缺少 lrc 字段')
+    const tPath = rel(t.lrc)
+    const tText = await readLrcText(tPath)
+    tracks.push({
+      name: t.name,
+      lrcText: tText,
+      lrcName: basename(tPath),
+      offsetY: t.offsetY,
+      visible: t.visible,
+      lineEffects: t.lineEffects ?? {},
+      lineStyles: t.lineStyles ?? {}
+    })
+  }
 
   // 背景图片：把相对路径解析为绝对路径（相对 job 文件目录）
   const style = { ...(job.style ?? {}) }
@@ -182,18 +312,23 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
     lrcName: basename(lrcPath),
     clips,
     texts,
+    tracks,
     outPath,
     fps,
     durationSec,
     style,
     lineEffects: job.lineEffects ?? {},
+    lineStyles: job.lineStyles ?? {},
+    encode,
+    videoFrameMode,
+    gpu: job.gpu === true,
     projectOutPath: null,
     renderVideo: true
   }
 }
 
-/** 把 job 里的 audio/video 字段（字符串/对象/数组）归一成 HeadlessClip 列表 */
-async function normalizeClips(
+/** 把 job 里的 audio/video 字段（字符串/对象/数组）归一成 HeadlessClip 列表；命令控制台经 IPC 直接复用 */
+export async function normalizeClips(
   kind: 'video' | 'audio',
   spec: ExportJobFile['audio'],
   rel: (p: string) => string

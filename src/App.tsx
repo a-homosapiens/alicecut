@@ -10,10 +10,13 @@ import { toggle } from './playback'
 import { PreviewCanvas } from './components/PreviewCanvas'
 import { TransportBar } from './components/TransportBar'
 import { Timeline } from './components/Timeline'
-import { LyricsPanel } from './components/LyricsPanel'
+import { TrackList } from './components/TrackList'
 import { StylePanel } from './components/StylePanel'
 import { ExportDialog } from './components/ExportDialog'
+import { CommandConsole } from './components/CommandConsole'
+import { ResourceLibrary } from './components/ResourceLibrary'
 import { LanguageMenu } from './components/LanguageMenu'
+import { WindowsMenu } from './components/WindowsMenu'
 import { useT } from './i18n'
 
 export function App(): React.JSX.Element {
@@ -24,6 +27,7 @@ export function App(): React.JSX.Element {
   const videoCount = clips.filter((c) => c.kind === 'video').length
   const audioCount = clips.filter((c) => c.kind === 'audio').length
   const [showExport, setShowExport] = useState(false)
+  const [showConsole, setShowConsole] = useState(false)
   const [convertStatus, setConvertStatus] = useState<{ name: string; frac: number } | null>(null)
 
   // 导入归一化进度（主进程转视频时推送）
@@ -155,7 +159,7 @@ export function App(): React.JSX.Element {
     const st = useProject.getState()
     const json = JSON.stringify(serializeProject(st), null, 2)
     const base = (st.lrcName ?? t('app.untitled')).replace(/\.[^.]+$/, '')
-    await window.desktop.saveProject(json, `${base}.dlv.json`)
+    await window.desktop.saveProject(json, `${base}.alicecut.json`)
   }
 
   const exportSrt = async (): Promise<void> => {
@@ -275,12 +279,21 @@ export function App(): React.JSX.Element {
         <button className="btn btn-primary" disabled={!hasLines} onClick={() => setShowExport(true)}>
           {t('topbar.exportVideo')}
         </button>
+        <button
+          className={`btn${showConsole ? ' active' : ''}`}
+          onClick={() => setShowConsole((v) => !v)}
+          title={t('console.hint')}
+        >
+          {t('console.title')}
+        </button>
+        <WindowsMenu />
         <LanguageMenu />
       </header>
 
       <main className="layout">
         <aside className="panel panel-left">
-          <LyricsPanel />
+          <TrackList />
+          <ResourceLibrary />
         </aside>
         <section className="center">
           <PreviewCanvas />
@@ -291,6 +304,8 @@ export function App(): React.JSX.Element {
           <StylePanel />
         </aside>
       </main>
+
+      <CommandConsole open={showConsole} />
 
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
 

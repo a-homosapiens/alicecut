@@ -82,6 +82,11 @@ body,
   background: var(--accent-hover);
 }
 
+.btn.active {
+  border-color: var(--accent);
+  color: var(--accent-hover);
+}
+
 .btn-sm {
   padding: 4px 10px;
   font-size: 12px;
@@ -108,7 +113,6 @@ body,
 .panel-right {
   width: 280px;
   border-left: 1px solid var(--border);
-  padding: 12px;
 }
 
 .center {
@@ -183,17 +187,6 @@ body,
   font-variant-numeric: tabular-nums;
   min-width: 38px;
   text-align: center;
-}
-
-/* ---- 歌词列表 ---- */
-.lyrics-panel.empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--text-dim);
-  text-align: center;
-  line-height: 1.8;
 }
 
 /* ---- 重新分页控件 ---- */
@@ -336,7 +329,7 @@ body,
   cursor: pointer;
   user-select: none;
   border-bottom: none !important;
-  padding: 8px 0;
+  padding: 8px 12px;
   margin: 0 !important;
 }
 
@@ -350,8 +343,15 @@ body,
   transform: rotate(90deg);
 }
 
-.sp-summary {
+.sp-head-actions {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sp-summary {
   text-transform: none;
   letter-spacing: 0;
   color: var(--text);
@@ -362,8 +362,25 @@ body,
   text-overflow: ellipsis;
 }
 
+.sp-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.sp-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
 .sp-body {
-  padding: 4px 0 8px;
+  padding: 4px 12px 8px;
 }
 
 /* 背景类型 + 图片 */
@@ -481,13 +498,6 @@ body,
   border-top: 1px solid var(--border);
   background: var(--panel);
   user-select: none;
-}
-
-.timeline.empty {
-  padding: 18px;
-  text-align: center;
-  color: var(--text-dim);
-  font-size: 12px;
 }
 
 .tl-toolbar {
@@ -1009,4 +1019,305 @@ body,
   height: 100%;
   background: var(--accent);
   transition: width 0.15s linear;
+}
+
+/* ---- 字幕组（TrackList / CaptionTrackPanel / 浮动面板） ----
+   .track-row 只出现在停靠的字幕组列表里（祖先始终是 .sp-body），横向内边距交给它统一提供，
+   这里只留纵向，避免两层都留 12px 叠成 24px */
+.track-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.track-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track-row-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.track-row-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+  border-radius: 4px;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.track-row-btn:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.track-row-btn.active {
+  color: var(--accent-hover);
+}
+
+.track-row-btn.wide {
+  width: auto;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.track-panel-dock {
+  border-bottom: 1px solid var(--border);
+  /* 抵消祖先 .sp-body 的 12px 横向内边距：.track-panel-body 自己也有 12px，两层都留就叠成
+     24px；用负 margin 抵消，让它在停靠/浮动两种场景下（浮动时祖先是无内边距的
+     .float-panel-body）表现一致 */
+  margin: 0 -12px;
+}
+
+.track-panel-body {
+  padding: 8px 12px 12px;
+}
+
+.track-panel-body .btn-sm {
+  display: block;
+  margin: 6px 0;
+}
+
+.track-rename {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  cursor: text;
+}
+
+.track-rename-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.track-panel-offset label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text-dim);
+  margin: 8px 0;
+}
+
+.track-panel-offset label.row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.track-panel-offset input[type='range'] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* 浮动面板：可拖动，portal 到 body，独立于左侧栏布局 */
+.float-panel {
+  position: fixed;
+  width: 280px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.float-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+  cursor: move;
+}
+
+.float-panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.float-panel-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.float-panel-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.float-panel-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.float-panel-body {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---- 资源库（ResourceLibrary）：已导入视频/音频/字幕组/图片一览。整块始终停靠在
+   ClosableSection 里（祖先是 .sp-body），横向内边距交给它统一提供，这里都只留纵向 ---- */
+.resource-section {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
+
+.resource-section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin: 0 0 4px;
+}
+
+.resource-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.resource-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.resource-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.resource-row-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.resource-row-image.active {
+  background: rgba(99, 102, 241, 0.14);
+}
+
+.resource-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.resource-section .btn-sm {
+  margin: 6px 0 0;
+}
+
+/* ---- 命令控制台（CommandConsole）：底部可折叠，JSON 命令 + 回显日志 ---- */
+.command-console {
+  display: flex;
+  flex-direction: column;
+  height: 220px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.command-console.collapsed {
+  display: none;
+}
+
+.command-console-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.console-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.console-line-command {
+  color: var(--text);
+  font-weight: 700;
+  margin-top: 6px;
+}
+
+.console-line-result {
+  color: #4ade80;
+}
+
+.console-line-error {
+  color: #f87171;
+}
+
+.command-console-input {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.command-console-input textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 120px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 12px;
+}
+
+.command-console-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.command-console-actions .btn-sm {
+  margin: 0;
+  white-space: nowrap;
 }

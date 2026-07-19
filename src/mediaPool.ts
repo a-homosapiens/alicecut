@@ -53,6 +53,9 @@ export function drawBackgroundImage(
 }
 
 const pool = new Map<number, HTMLVideoElement | HTMLAudioElement>()
+// clip id → 最近一次真正 seeked 成功时的源时间(秒);seekClipExact 用它跳过连续请求同一源帧的重复 seek。
+// 必须和 pool 一起在 disposeEl 里清理,否则长会话里条目会一直攒着
+const lastSeekedSec = new Map<number, number>()
 
 export function getMediaEl(clip: MediaClip): HTMLVideoElement | HTMLAudioElement {
   let el = pool.get(clip.id)
@@ -80,6 +83,9 @@ function disposeEl(id: number): void {
   el.removeAttribute('src')
   el.load()
   pool.delete(id)
+  lastSeekedSec.delete(id)
+  forwardMediaTime.delete(id)
+  forwardLastTarget.delete(id)
 }
 
 /** 探测媒体文件时长（ms）；无法解码时 reject */
@@ -153,18 +159,33 @@ function ensureMetadata(el: HTMLMediaElement, path: string): Promise<void> {
   })
 }
 
+// 连续两帧请求的源时间落在这个范围内视为"同一源帧"，跳过重复 seek。
+// 固定小 epsilon，不按 sourceFps 换算——该字段目前项目里任何地方都不存在（MediaClip/HeadlessClip/
+// ExportJobFile 均未探测过源帧率），没有真实数据支撑按帧率去重；这里只捕获字面重复请求
+// （画面暂停不前进，或输出帧率高于源帧率恰好整除的情况），常见的"源=30fps 输出=30fps 但两者不对齐"
+// 场景本质上帧帧不同，这个 dedup 帮不上——那需要真正的源帧率数据，本轮不做。
+const SEEK_DEDUP_EPS_SEC = 0.004 // 约半帧 @120fps，对更高帧率的源不安全但目前没有这类素材
+
 /** 导出用：把视频元素精确 seek 到源时间（秒），等 seeked 完成 */
 export async function seekClipExact(clip: MediaClip, srcSec: number): Promise<void> {
   const el = getMediaEl(clip)
   await ensureMetadata(el, clip.path)
   // readyState>=2 才说明当前帧已解码可绘制
   if (el.readyState >= 2 && Math.abs(el.currentTime - srcSec) < 0.0005) return Promise.resolve()
+  // 上一次真正 seeked 成功的目标源时间足够接近：视为同一源帧，跳过重复 seek。
+  // 只信任由 onSeeked 真正写入的缓存（见下方）——3 秒超时兜底路径不写入，
+  // 否则一次超时会让后续所有请求同一 srcSec 的帧都误用那个未确认到位的画面，一帧坏图变成一片
+  const last = lastSeekedSec.get(clip.id)
+  if (el.readyState >= 2 && last !== undefined && Math.abs(last - srcSec) < SEEK_DEDUP_EPS_SEC) {
+    return Promise.resolve()
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup()
-      resolve() // 个别格式 seeked 不可靠时不卡死导出，用当前帧
+      resolve() // 个别格式 seeked 不可靠时不卡死导出，用当前帧（不写入缓存，下一帧仍会重新尝试 seek）
     }, 3000)
     const onSeeked = (): void => {
+      lastSeekedSec.set(clip.id, srcSec)
       cleanup()
       resolve()
     }
@@ -181,6 +202,80 @@ export async function seekClipExact(clip: MediaClip, srcSec: number): Promise<vo
     el.addEventListener('error', onError, { once: true })
     el.currentTime = srcSec
   })
+}
+
+// 这台机器上验证过 requestVideoFrameCallback 可用(Electron 33 / Chromium 130+);
+// 不支持的老环境整条退化为 seekClipExact 精确逐帧 seek(慢但一直能用)，探测一次即可
+const RVFC_SUPPORTED =
+  typeof HTMLVideoElement !== 'undefined' && 'requestVideoFrameCallback' in HTMLVideoElement.prototype
+
+// clip id → 正向连续播放时最近一次 requestVideoFrameCallback 报告的源时间(秒)
+const forwardMediaTime = new Map<number, number>()
+// clip id → 上一帧请求的目标源时间(秒);下一帧目标比它小说明循环从头开始了，需要重新 seek 一次
+const forwardLastTarget = new Map<number, number>()
+
+// 正常情况下命中只需几毫秒（实测 98%+ 的等待 <10ms）；极少数帧会因为主线程一时繁忙
+// （渲染/回读/系统负载波动）明显更久，但通常在几百毫秒到几秒内就能追上，而不是真的卡死——
+// 实测过短的超时（如 250ms）反而会让更多本可等到的帧被迫改走一次主动 seek，
+// 那次 seek 同样要竞争被占用的资源，总耗时不降反升。3 秒与 seekClipExact 自己的超时一致，
+// 命中率高、发生频率低（实测千帧级导出里个位数），真出现"超时也等不到"才用当前帧兜底。
+const RVFC_WAIT_TIMEOUT_MS = 3000
+
+/**
+ * 等视频元素正向播放到 targetSec 或之后，而不是每帧都精确 seek。
+ * 只有超时兜底这一条路径需要显式 cancelVideoFrameCallback——调用方（waitForSourceTime）保证
+ * 同一 clip 不会有两次调用重叠，正常命中路径不重新注册就没有悬挂的回调；但超时后若不取消，
+ * 那个回调会在未来某帧真正到达时才触发，把已经过时的 mediaTime 写回缓存。
+ */
+function waitForFrameAtOrAfter(video: HTMLVideoElement, clipId: number, targetSec: number): Promise<void> {
+  const cached = forwardMediaTime.get(clipId)
+  if (cached !== undefined && cached >= targetSec) return Promise.resolve()
+  return new Promise((resolve) => {
+    let handle: number | null = null
+    const timer = setTimeout(() => {
+      if (handle !== null) video.cancelVideoFrameCallback(handle)
+      resolve() // 个别帧真的追不上时不卡死导出，用当前帧（不影响后续：下一帧会重新判断）
+    }, RVFC_WAIT_TIMEOUT_MS)
+    const check = (_now: number, metadata: VideoFrameCallbackMetadata): void => {
+      forwardMediaTime.set(clipId, metadata.mediaTime)
+      if (metadata.mediaTime >= targetSec) {
+        clearTimeout(timer)
+        resolve()
+        return
+      }
+      handle = video.requestVideoFrameCallback(check)
+    }
+    handle = video.requestVideoFrameCallback(check)
+  })
+}
+
+/**
+ * 导出用：让视频元素正向连续播放并等到 srcSec 就绪，替代逐帧精确 seek（seekClipExact）。
+ * 只在"新可见"或"循环从头开始播放"时真正 seek 一次（重新定位+续播），此后每帧只是等
+ * 正向播放追上目标时间——这是比逐帧 seek 快一个数量级的原因（实测 ~28x，见设计文档）。
+ * 不支持 requestVideoFrameCallback 的环境整条退化为 seekClipExact。
+ */
+export async function waitForSourceTime(clip: MediaClip, srcSec: number): Promise<void> {
+  if (!RVFC_SUPPORTED) return seekClipExact(clip, srcSec)
+  const el = getMediaEl(clip)
+  if (!(el instanceof HTMLVideoElement)) return seekClipExact(clip, srcSec)
+  const video = el
+
+  const lastTarget = forwardLastTarget.get(clip.id)
+  const isNewOrWrapped = lastTarget === undefined || srcSec < lastTarget
+  forwardLastTarget.set(clip.id, srcSec)
+
+  if (isNewOrWrapped) {
+    // 新可见或循环从头开始：重新定位到 srcSec 再续播，此后靠正向播放追帧，不必每帧 seek
+    video.pause()
+    await seekClipExact(clip, srcSec)
+    if (video.playbackRate !== clip.speed) video.playbackRate = clip.speed
+    await video.play().catch(() => {})
+    forwardMediaTime.set(clip.id, srcSec) // 刚 seek 到位，视为已到达；下一帧起才需要真正等
+    return
+  }
+
+  await waitForFrameAtOrAfter(video, clip.id, srcSec)
 }
 
 export interface ClipRect {

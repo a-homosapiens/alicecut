@@ -6,16 +6,18 @@ import { useProject } from './store/project'
 
 type State = ReturnType<typeof useProject.getState>
 
-const KEY = 'dlv.session'
+const KEY = 'alicecut.session'
 
 /** 与 App「保存工程」一致的可序列化结构（clips 去掉运行时 id） */
 export function serializeProject(s: State): object {
   return {
-    version: 2,
+    version: 4,
     meta: s.meta,
     lines: s.lines,
     style: s.style,
     lrcName: s.lrcName,
+    tracks: s.tracks,
+    images: s.images,
     clips: s.clips.map(({ id: _id, ...rest }) => rest)
   }
 }
@@ -60,7 +62,9 @@ export function enableSessionAutosave(): void {
       s.clips === prev.clips &&
       s.style === prev.style &&
       s.meta === prev.meta &&
-      s.lrcName === prev.lrcName
+      s.lrcName === prev.lrcName &&
+      s.tracks === prev.tracks &&
+      s.images === prev.images
     ) {
       return
     }

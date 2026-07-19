@@ -1,4 +1,4 @@
-// Dynamic Caption — effect plugin starter template (api 1)
+// AliceCut — effect plugin starter template (api 1)
 // Copy this file, rename it, and edit the effects below.
 //
 // A plugin is an ES module whose default export is a PluginManifest.

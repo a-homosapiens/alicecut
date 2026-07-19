@@ -23,6 +23,22 @@ export interface LineTextOverride {
   italic?: boolean
   textColor?: string
   textAlpha?: number
+  letterSpacing?: number
+  wordSpacing?: number
+  lineSpacing?: number
+  textAlign?: 'left' | 'center' | 'right'
+  textOrientation?: 'horizontal' | 'vertical'
+  strokeColor?: string
+  strokeWidth?: number
+  strokeAlpha?: number
+  textBgColor?: string
+  textBgAlpha?: number
+  glowColor?: string
+  halo?: number
+  shadowColor?: string
+  shadowAlpha?: number
+  shadowBlur?: number
+  shadowOffset?: number
 }
 
 export interface LrcLine {
@@ -49,6 +65,27 @@ export interface LrcLine {
    * 只在自己的起止区间内独立进场显示。缺省/undefined 为普通歌词行。
    */
   kind?: 'text'
+  /** 所属字幕组（多语言/多字幕轨场景）；缺省/undefined = 主字幕组（0） */
+  trackId?: number
+}
+
+/** 一条额外字幕组（多语言字幕）；主字幕组（id 0）不在这里存储，仍用顶层 meta/lines/lrcName */
+export interface CaptionTrack {
+  id: number
+  /** 展示名；空串 = UI 显示本地化占位名 */
+  name: string
+  lrcName: string | null
+  meta: LrcMeta
+  /** 竖直位置偏移（画布像素），叠加在每行自己的 dy 之上，用于与其它字幕组错开不重叠 */
+  offsetY: number
+  visible: boolean
+}
+
+/** 图片库中的一张已导入图片（当前只用作背景图，路径不内嵌） */
+export interface ImageAsset {
+  id: number
+  path: string
+  name: string
 }
 
 export interface LrcMeta {

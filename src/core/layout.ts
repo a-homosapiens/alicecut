@@ -25,6 +25,11 @@ export interface LayoutOptions {
   width: number
   height: number
   fontSize: number
+  letterSpacing: number
+  wordSpacing: number
+  lineSpacing: number
+  align: 'left' | 'center' | 'right'
+  orientation: 'horizontal' | 'vertical'
   variant: LayoutVariant
   /** 测量函数：给定文本与字号返回像素宽度（由渲染层注入，core 不碰 DOM） */
   measure: (text: string, fontSize: number) => number
@@ -65,7 +70,7 @@ function makeItems(
   sizeFor: (unitIndex: number) => number,
   rotateFor: (unitIndex: number) => number
 ): RowItem[] {
-  const letterSpacing = opts.fontSize * 0.05
+  const letterSpacing = opts.letterSpacing
   return line.words.map((word, unitIndex) => {
     const fontSize = sizeFor(unitIndex)
     const charWidths = word.chars.map((c) => opts.measure(c.text, fontSize))
@@ -83,6 +88,7 @@ export function layoutLine(line: LrcLine, opts: LayoutOptions): PlacedChar[] {
   if (line.words.length === 0) return []
   const rand = seededRand(line.id + 1)
   const isStaggered = opts.variant === 'staggered'
+  const orientation = opts.orientation
 
   const items = makeItems(
     line,
@@ -92,12 +98,12 @@ export function layoutLine(line: LrcLine, opts: LayoutOptions): PlacedChar[] {
   )
 
   const maxWidth = opts.width * (isStaggered ? 0.86 : 0.82)
-  const gap = opts.fontSize * (isStaggered ? 0.3 : 0.12)
-  const letterSpacing = opts.fontSize * 0.05
+  const gap = isStaggered ? Math.max(opts.wordSpacing, opts.fontSize * 0.3) : opts.wordSpacing
+  const letterSpacing = opts.letterSpacing
   const rows = packRows(items, maxWidth, gap)
 
   const rowHeights = rows.map(
-    (row) => Math.max(...row.map((it) => it.fontSize)) * (isStaggered ? 1.4 : 1.3)
+    (row) => Math.max(...row.map((it) => it.fontSize)) * (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
   )
   const blockHeight = rowHeights.reduce((a, b) => a + b, 0)
   let y = opts.height / 2 - blockHeight / 2
@@ -108,24 +114,33 @@ export function layoutLine(line: LrcLine, opts: LayoutOptions): PlacedChar[] {
     const rowWidth = row.reduce((a, it) => a + it.width, 0) + gap * Math.max(0, row.length - 1)
     // 错落构图：行整体加一点水平抖动，制造交错感
     const jitterX = isStaggered ? (rand(rowIdx * 31 + 17) - 0.5) * opts.fontSize * 0.8 : 0
-    let x = (opts.width - rowWidth) / 2 + jitterX
+    const left = opts.width * 0.09
+    const right = opts.width * 0.91
+    let x =
+      opts.align === 'left'
+        ? left + jitterX
+        : opts.align === 'right'
+          ? right - rowWidth + jitterX
+          : (opts.width - rowWidth) / 2 + jitterX
     const cy = y + rowHeights[rowIdx] / 2
 
     for (const item of row) {
       const jitterY = isStaggered ? (rand(item.unitIndex * 11 + 3) - 0.5) * opts.fontSize * 0.25 : 0
       item.word.chars.forEach((char, ci) => {
         const w = item.charWidths[ci]
+        const charX = x + w / 2
+        const charY = cy + jitterY
         placed.push({
           char,
           word: item.word,
           unitIndex: item.unitIndex,
           charIndexInUnit: ci,
           globalCharIndex: globalCharIndex++,
-          x: x + w / 2,
-          y: cy + jitterY,
+          x: orientation === 'vertical' ? opts.width / 2 + (charY - opts.height / 2) : charX,
+          y: orientation === 'vertical' ? opts.height / 2 + (charX - opts.width / 2) : charY,
           fontSize: item.fontSize,
           w,
-          rotate: item.rotate
+          rotate: item.rotate + (orientation === 'vertical' ? Math.PI / 2 : 0)
         })
         x += w + letterSpacing
       })

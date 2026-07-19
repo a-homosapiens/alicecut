@@ -10,6 +10,14 @@ export interface RenderStyle {
   fontWeight: number
   fontSize: number
   textColor: string
+  letterSpacing: number
+  wordSpacing: number
+  lineSpacing: number
+  textAlign: 'left' | 'center' | 'right'
+  textOrientation: 'horizontal' | 'vertical'
+  strokeColor: string
+  strokeWidth: number
+  strokeAlpha: number
   glowColor: string
   bgType: 'solid' | 'gradient' | 'image'
   bgFrom: string
@@ -48,6 +56,13 @@ export interface RenderStyle {
   shadowOffset: number
 }
 
+/** 字幕组在画面上的绘制位置（多语言字幕场景，每组一个纵向偏移，避免叠在一起） */
+export interface TrackPlacement {
+  id: number
+  offsetY: number
+  visible: boolean
+}
+
 /** 上一行退场的淡出时长 ms（默认退场；停靠式转场有自己的节奏） */
 const EXIT_MS = 280
 
@@ -72,7 +87,23 @@ export function resolveLineStyle(line: LrcLine, style: RenderStyle): RenderStyle
     fontWeight: o.fontWeight ?? style.fontWeight,
     italic: o.italic ?? style.italic,
     textColor: o.textColor ?? style.textColor,
-    textAlpha: o.textAlpha ?? style.textAlpha
+    textAlpha: o.textAlpha ?? style.textAlpha,
+    letterSpacing: o.letterSpacing ?? style.letterSpacing,
+    wordSpacing: o.wordSpacing ?? style.wordSpacing,
+    lineSpacing: o.lineSpacing ?? style.lineSpacing,
+    textAlign: o.textAlign ?? style.textAlign,
+    textOrientation: o.textOrientation ?? style.textOrientation,
+    strokeColor: o.strokeColor ?? style.strokeColor,
+    strokeWidth: o.strokeWidth ?? style.strokeWidth,
+    strokeAlpha: o.strokeAlpha ?? style.strokeAlpha,
+    textBgColor: o.textBgColor ?? style.textBgColor,
+    textBgAlpha: o.textBgAlpha ?? style.textBgAlpha,
+    glowColor: o.glowColor ?? style.glowColor,
+    halo: o.halo ?? style.halo,
+    shadowColor: o.shadowColor ?? style.shadowColor,
+    shadowAlpha: o.shadowAlpha ?? style.shadowAlpha,
+    shadowBlur: o.shadowBlur ?? style.shadowBlur,
+    shadowOffset: o.shadowOffset ?? style.shadowOffset
   }
 }
 
@@ -85,7 +116,7 @@ function getLayout(
   style: RenderStyle,
   variant: 'center' | 'staggered'
 ): PlacedChar[] {
-  const key = `${line.id}|${line.text}|${variant}|${style.width}x${style.height}|${style.fontSize}|${style.italic ? 'i' : ''}${style.fontWeight} ${style.fontFamily}`
+  const key = `${line.id}|${line.text}|${variant}|${style.width}x${style.height}|${style.fontSize}|${style.letterSpacing}|${style.wordSpacing}|${style.lineSpacing}|${style.textAlign}|${style.textOrientation}|${style.italic ? 'i' : ''}${style.fontWeight} ${style.fontFamily}`
   const hit = layoutCache.get(key)
   if (hit) return hit
   if (layoutCache.size > 300) layoutCache.clear()
@@ -97,6 +128,11 @@ function getLayout(
     width: style.width,
     height: style.height,
     fontSize: style.fontSize,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    lineSpacing: style.lineSpacing,
+    align: style.textAlign,
+    orientation: style.textOrientation,
     variant,
     measure
   })
@@ -115,6 +151,17 @@ function quoteFamily(family: string): string {
 /** 组装 ctx.font 字符串（含斜体/字重） */
 function fontStr(style: RenderStyle, fontSize: number): string {
   return `${style.italic ? 'italic ' : ''}${style.fontWeight} ${fontSize}px ${quoteFamily(style.fontFamily)}`
+}
+
+function paintText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, style: RenderStyle): void {
+  if (style.strokeWidth > 0.01 && style.strokeAlpha > 0.004) {
+    ctx.lineJoin = 'round'
+    ctx.miterLimit = 2
+    ctx.lineWidth = style.strokeWidth
+    ctx.strokeStyle = hexToRgba(style.strokeColor, style.strokeAlpha)
+    ctx.strokeText(text, x, y)
+  }
+  ctx.fillText(text, x, y)
 }
 
 /** #rrggbb + alpha → rgba() 字符串（阴影颜色用） */
@@ -340,12 +387,12 @@ function drawMetaIntro(
   const cy = style.height / 2
   if (meta.title) {
     ctx.font = fontStr(style, style.fontSize * 1.1)
-    ctx.fillText(meta.title, cx, cy - style.fontSize * 0.75)
+    paintText(ctx, meta.title, cx, cy - style.fontSize * 0.75, style)
   }
   if (meta.artist) {
     ctx.globalAlpha = alpha * 0.7
     ctx.font = `400 ${style.fontSize * 0.5}px ${quoteFamily(style.fontFamily)}`
-    ctx.fillText(meta.artist, cx, cy + style.fontSize * 0.55)
+    paintText(ctx, meta.artist, cx, cy + style.fontSize * 0.55, style)
   }
   ctx.restore()
 }
@@ -390,17 +437,18 @@ function measureBlock(placed: PlacedChar[], fontSize: number): BlockRect {
   }
 }
 
-/** 选中编辑用：某行文字块在画布上的静止位置（含该行 dx/dy 偏移） */
+/** 选中编辑用：某行文字块在画布上的静止位置（含该行 dx/dy 偏移 + 所属字幕组的纵向偏移） */
 export function getLineBlockRect(
   ctx: CanvasRenderingContext2D,
   line: LrcLine,
-  styleIn: RenderStyle
+  styleIn: RenderStyle,
+  trackOffsetY = 0
 ): BlockRect | null {
   const style = resolveLineStyle(line, styleIn) // 选择框/吸附按该行实际字号
   const placed = getLayout(ctx, line, style, effectFor(line, style).layoutVariant)
   if (placed.length === 0) return null
   const b = measureBlock(placed, style.fontSize)
-  return { x: b.x + line.dx, y: b.y + line.dy, w: b.w, h: b.h }
+  return { x: b.x + line.dx, y: b.y + line.dy + trackOffsetY, w: b.w, h: b.h }
 }
 
 /** 整行块绘制：绕画面中心做统一变换，再叠加该行的位置偏移 */
@@ -428,13 +476,13 @@ function drawBlock(
   if (!hasShadow && style.halo > 0.5) applyGlow(ctx, style, style.halo)
   for (const p of placed) {
     ctx.font = fontStr(style, p.fontSize)
-    ctx.fillText(p.char.text, p.x - cx, p.y - cy)
+    paintText(ctx, p.char.text, p.x - cx, p.y - cy, style)
   }
   if (hasShadow && style.halo > 0.5) {
     applyGlow(ctx, style, style.halo)
     for (const p of placed) {
       ctx.font = fontStr(style, p.fontSize)
-      ctx.fillText(p.char.text, p.x - cx, p.y - cy)
+      paintText(ctx, p.char.text, p.x - cx, p.y - cy, style)
     }
   }
   ctx.restore()
@@ -452,19 +500,23 @@ function drawLineStack(
   style: RenderStyle,
   tMs: number,
   current: number,
-  drawn: Set<number>
+  drawn: Set<number>,
+  trackOffsetY: number
 ): void {
   const trans = effect.lineTransition!
   const eased = easeOutCubic(clamp01((tMs - lines[current].start) / effect.enterDuration))
 
   // 实测各深度行的包围盒，停靠位置据此紧靠排布
   const layouts: PlacedChar[][] = []
+  const styles: RenderStyle[] = []
   const blocks: { w: number; h: number }[] = []
   for (let d = 0; d <= trans.maxDepth + 1; d++) {
     const i = current - d
-    const placed = i >= 0 ? getLayout(ctx, lines[i], style, effect.layoutVariant) : []
+    const lineStyle = i >= 0 ? resolveLineStyle(lines[i], style) : style
+    const placed = i >= 0 ? getLayout(ctx, lines[i], lineStyle, effect.layoutVariant) : []
+    styles.push(lineStyle)
     layouts.push(placed)
-    const b = measureBlock(placed, style.fontSize)
+    const b = measureBlock(placed, lineStyle.fontSize)
     blocks.push({ w: b.w, h: b.h })
   }
 
@@ -474,12 +526,13 @@ function drawLineStack(
     drawn.add(current - d)
     if (placed.length === 0) continue
     const line = lines[current - d]
+    const lineStyle = styles[d]
     const args = {
       lineId: line.id,
-      width: style.width,
-      height: style.height,
-      fontSize: style.fontSize,
-      intensity: style.intensity,
+      width: lineStyle.width,
+      height: lineStyle.height,
+      fontSize: lineStyle.fontSize,
+      intensity: lineStyle.intensity,
       blocks
     }
     const target = trans.pose(d, args)
@@ -488,7 +541,7 @@ function drawLineStack(
       d === 0 ? trans.enterFrom(args) : trans.pose(d - 1, { ...args, blocks: blocks.slice(1) })
     const fx = lerpLineFx(source, target, eased)
     if (fx.alpha <= 0.003 || fx.scale <= 0.003) continue
-    drawBlock(ctx, placed, line, style, fx)
+    drawBlock(ctx, placed, line, lineStyle, trackOffsetY === 0 ? fx : { ...fx, dy: fx.dy + trackOffsetY })
   }
 }
 
@@ -554,7 +607,7 @@ function drawCharTrail(
     ctx.globalAlpha = clamp01(a * style.textAlpha)
     ctx.fillStyle = style.textColor
     ctx.font = fontStr(style, p.fontSize)
-    ctx.fillText(p.char.text, 0, 0)
+    paintText(ctx, p.char.text, 0, 0, style)
     ctx.restore()
   }
 }
@@ -620,10 +673,10 @@ function drawLine(
     const glow = Math.max(fx.glow > 0.5 ? fx.glow : 0, style.halo)
     const hasShadow = applyShadow(ctx, style, alpha)
     if (!hasShadow && glow > 0.5) applyGlow(ctx, style, glow)
-    ctx.fillText(p.char.text, 0, 0)
+    paintText(ctx, p.char.text, 0, 0, style)
     if (hasShadow && glow > 0.5) {
       applyGlow(ctx, style, glow)
-      ctx.fillText(p.char.text, 0, 0)
+      paintText(ctx, p.char.text, 0, 0, style)
     }
     ctx.restore()
   }
@@ -655,11 +708,12 @@ function drawLineReveal(
   effect: EffectPreset,
   line: LrcLine,
   style: RenderStyle,
-  tMs: number
+  tMs: number,
+  lineDy = 0
 ): void {
   const p = clamp01((tMs - line.start) / effect.enterDuration)
   if (p >= 1) {
-    drawLine(ctx, effect, line, style, tMs, 1, 0)
+    drawLine(ctx, effect, line, style, tMs, 1, lineDy)
     return
   }
   const placed = getLayout(ctx, line, style, effect.layoutVariant)
@@ -668,7 +722,7 @@ function drawLineReveal(
   // 余量：避免裁掉抗锯齿边缘与辉光（擦入的推进边仍是硬边，符合 wipe 观感）
   const pad = style.fontSize * 0.6
   const x = b.x + line.dx - pad
-  const y = b.y + line.dy - pad
+  const y = b.y + line.dy + lineDy - pad
   const w = b.w + pad * 2
   const h = b.h + pad * 2
   const e = easeOutCubic(p)
@@ -689,7 +743,7 @@ function drawLineReveal(
     ctx.rect(x, y, w * e, h)
   }
   ctx.clip()
-  drawLine(ctx, effect, line, style, tMs, 1, 0)
+  drawLine(ctx, effect, line, style, tMs, 1, lineDy)
   ctx.restore()
 }
 
@@ -736,16 +790,95 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: Re
  * drawBackdrop：可选的背景视频绘制层（画在纯色/渐变之上、文字之下），
  * 由调用方提供——预览取播放中的帧，导出取精确 seek 后的帧。
  */
+
+/**
+ * 绘制一个字幕组的完整歌词流：找当前行 → 停靠式转场（整块 + 历史）或逐行常规进退场。
+ * trackOffsetY 是该字幕组相对画面中心的纵向偏移（多语言字幕错开不重叠），
+ * 与每行自己的 dy 叠加——用法等同于原先仅在退场时使用的 lineDy 参数。
+ */
+function drawLyricFlow(
+  ctx: CanvasRenderingContext2D,
+  lyric: LrcLine[],
+  style: RenderStyle,
+  tMs: number,
+  trackOffsetY: number
+): void {
+  if (lyric.length === 0) return
+
+  // 当前行 = 最后一个已开始的行（lyric 按 start 排序）
+  let current = -1
+  for (let i = 0; i < lyric.length; i++) {
+    if (lyric[i].start <= tMs) current = i
+    else break
+  }
+
+  // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
+  const drawnByStack = new Set<number>()
+  if (current >= 0) {
+    const curEffect = effectFor(lyric[current], style)
+    if (curEffect.lineTransition) {
+      drawLineStack(ctx, curEffect, lyric, style, tMs, current, drawnByStack, trackOffsetY)
+    }
+  }
+
+  for (let i = 0; i < lyric.length; i++) {
+    if (drawnByStack.has(i)) continue
+    const line = lyric[i]
+    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    const effect = effectFor(line, style)
+    const ls = resolveLineStyle(line, style) // 行级文字覆盖
+    if (tMs < line.end) {
+      if (effect.reveal) drawLineReveal(ctx, effect, line, ls, tMs, trackOffsetY)
+      else drawLine(ctx, effect, line, ls, tMs, 1, trackOffsetY)
+    } else {
+      // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
+      const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
+      const out = effectOutFor(line)
+      if (out) drawLine(ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
+      else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
+    }
+  }
+}
+
+/** 按 trackId 分组（?? 0 = 主字幕组）；lyric 已按 start 排序，filter 保留组内相对顺序 */
+function groupByTrack(lyric: LrcLine[]): Map<number, LrcLine[]> {
+  const groups = new Map<number, LrcLine[]>()
+  for (const l of lyric) {
+    const tid = l.trackId ?? 0
+    const g = groups.get(tid)
+    if (g) g.push(l)
+    else groups.set(tid, [l])
+  }
+  return groups
+}
+
+/** 各字幕组的绘制位置：外部给定的 placements + 数据中多出的 trackId 兜底 */
+function resolvePlacements(groups: Map<number, LrcLine[]>, tracks?: TrackPlacement[]): TrackPlacement[] {
+  return tracks
+    ? [
+        ...tracks,
+        // 兜底：数据里存在但 placements 里没给的 trackId（工程文件手改/异常数据）也画出来，
+        // 内容不无声消失——叠在默认位置也比整段消失更容易被发现
+        ...[...groups.keys()]
+          .filter((id) => !tracks.some((p) => p.id === id))
+          .map((id) => ({ id, offsetY: 0, visible: true }))
+      ]
+    : [...groups.keys()].sort((a, b) => a - b).map((id) => ({ id, offsetY: 0, visible: true }))
+}
+
 export function renderFrame(
   ctx: CanvasRenderingContext2D,
   lines: LrcLine[],
   meta: LrcMeta,
   style: RenderStyle,
   tMs: number,
-  drawBackdrop?: (ctx: CanvasRenderingContext2D) => void
+  drawBackdrop?: (ctx: CanvasRenderingContext2D) => void,
+  opts: { skipBackground?: boolean; tracks?: TrackPlacement[] } = {}
 ): void {
-  drawBackground(ctx, style)
-  drawBackdrop?.(ctx)
+  if (!opts.skipBackground) {
+    drawBackground(ctx, style)
+    drawBackdrop?.(ctx)
+  }
   if (lines.length === 0) return
 
   // 全局文字变换：绕画面中心平移+旋转所有文字（背景/视频不受影响）
@@ -760,40 +893,19 @@ export function renderFrame(
   const lyric = lines.filter((l) => l.kind !== 'text')
 
   if (lyric.length > 0) {
-    drawMetaIntro(ctx, meta, style, tMs, lyric[0].start)
+    const groups = groupByTrack(lyric)
+    const placements = resolvePlacements(groups, opts.tracks)
 
-    // 当前行 = 最后一个已开始的行（lines 按 start 排序）
-    let current = -1
-    for (let i = 0; i < lyric.length; i++) {
-      if (lyric[i].start <= tMs) current = i
-      else break
-    }
+    // 片头：用"可见字幕组中最早开始"的行判定淡出时机，避免被隐藏字幕组的行带偏
+    const visibleIds = new Set(placements.filter((p) => p.visible).map((p) => p.id))
+    const visibleFirst = lyric.find((l) => visibleIds.has(l.trackId ?? 0))
+    drawMetaIntro(ctx, meta, style, tMs, (visibleFirst ?? lyric[0]).start)
 
-    // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
-    const drawnByStack = new Set<number>()
-    if (current >= 0) {
-      const curEffect = effectFor(lyric[current], style)
-      if (curEffect.lineTransition) {
-        drawLineStack(ctx, curEffect, lyric, style, tMs, current, drawnByStack)
-      }
-    }
-
-    for (let i = 0; i < lyric.length; i++) {
-      if (drawnByStack.has(i)) continue
-      const line = lyric[i]
-      if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
-      const effect = effectFor(line, style)
-      const ls = resolveLineStyle(line, style) // 行级文字覆盖
-      if (tMs < line.end) {
-        if (effect.reveal) drawLineReveal(ctx, effect, line, ls, tMs)
-        else drawLine(ctx, effect, line, ls, tMs, 1, 0)
-      } else {
-        // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
-        const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
-        const out = effectOutFor(line)
-        if (out) drawLine(ctx, out, line, ls, tMs, 1, 0, exitP)
-        else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, -exitP * ls.fontSize * 0.5)
-      }
+    for (const p of placements) {
+      if (!p.visible) continue
+      const group = groups.get(p.id)
+      if (!group || group.length === 0) continue
+      drawLyricFlow(ctx, group, style, tMs, p.offsetY)
     }
   }
 
@@ -813,4 +925,211 @@ export function applyGlobalTextTransform(ctx: CanvasRenderingContext2D, style: R
   ctx.translate(style.width / 2 + style.globalDx, style.height / 2 + style.globalDy)
   ctx.rotate((style.globalRotate * Math.PI) / 180)
   ctx.translate(-style.width / 2, -style.height / 2)
+}
+
+/* ---- 帧指纹：导出跳过重复帧用 ----
+ *
+ * renderFrame 是 tMs 的纯确定性函数：把这一帧绘制会用到的所有随时间变化的
+ * 量（每个字符的 CharFx、高亮块姿态、光标闪烁相位、进/退场进度、停靠转场
+ * 进度、片头淡入淡出透明度……）序列化成一个字符串。lines/meta/style/tracks
+ * 不变时，相邻两帧指纹相同 ⇔ 两帧像素完全一致，导出循环据此直接重发上一帧
+ * 的像素缓冲，跳过渲染与回读（歌词视频的静止段落占比很高）。
+ *
+ * 下面的 fp* 系列与 draw* 系列一一对应，遍历结构必须保持同步：
+ * fpLine ↔ drawLine（含残影/高亮块/光标）、fpLineReveal ↔ drawLineReveal、
+ * fpTextBlock ↔ drawTextBlock、fpLyricFlow ↔ drawLyricFlow（含停靠转场）。
+ */
+
+/** drawLine 的指纹：逐字符 CharFx + 残影姿态 + 高亮块 + 光标闪烁相位 */
+function fpLine(
+  parts: string[],
+  ctx: CanvasRenderingContext2D,
+  effect: EffectPreset,
+  line: LrcLine,
+  style: RenderStyle,
+  tMs: number,
+  lineAlpha: number,
+  lineDy: number,
+  exitT?: number
+): void {
+  const placed = getLayout(ctx, line, style, effect.layoutVariant)
+  if (placed.length === 0) return
+  const rand = seededRand(line.id + 1)
+  const unitCount = line.words.length
+  const enterOverride = exitT != null ? 1 - clamp01(exitT) : undefined
+
+  parts.push(`L${line.id};${effect.id};${lineAlpha};${lineDy}`)
+
+  const box = effect.wordBox && exitT == null ? resolveWordBox(placed, tMs, style.fontSize) : null
+  if (box) parts.push(`B${box.activeIdx};${box.alpha};${box.rect.cx};${box.rect.cy};${box.rect.w};${box.rect.h}`)
+
+  let lastVisible = -1
+  for (let i = 0; i < placed.length; i++) {
+    const p = placed[i]
+    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount, enterOverride)
+    if (!fx) continue
+    const alpha = fx.alpha * lineAlpha
+    if (alpha <= 0.003 || fx.scale <= 0.003) continue
+    lastVisible = i
+    parts.push(
+      `${i};${fx.dx};${fx.dy};${fx.scale};${fx.rotate};${fx.alpha};${fx.blur};${fx.glow};${fx.highlight ?? 0};${fx.skewX ?? 0};${fx.skewY ?? 0}`
+    )
+    // 残影：与 drawCharTrail 相同的可见性判定，把会画出来的残影姿态计入指纹
+    if (effect.trail && exitT == null) {
+      const trail = effect.trail
+      const decay = trail.decay ?? 0.5
+      for (let k = trail.count; k >= 1; k--) {
+        const gf = charFxAt(effect, p, line, tMs - k * trail.stepMs, style.intensity, rand, unitCount)
+        if (!gf) continue
+        if (Math.abs(gf.dx - fx.dx) < 0.5 && Math.abs(gf.dy - fx.dy) < 0.5) continue
+        const a = gf.alpha * lineAlpha * (1 - k / (trail.count + 1)) * decay
+        if (a <= 0.01 || gf.scale <= 0.003) continue
+        parts.push(`t${k};${gf.dx};${gf.dy};${gf.scale};${gf.rotate};${a}`)
+      }
+    }
+  }
+
+  // 打字机光标：位置由最后一个可见字符决定，闪烁相位随时间翻转
+  if (effect.cursor && lineAlpha > 0.5 && lastVisible >= 0 && tMs < line.end) {
+    const blink = ((tMs - line.start) / 530) % 2 < 1
+    if (blink) parts.push(`c${lastVisible}`)
+  }
+}
+
+/** drawLineReveal 的指纹：揭示进行中计入裁剪进度，完成后回退常规 fpLine */
+function fpLineReveal(
+  parts: string[],
+  ctx: CanvasRenderingContext2D,
+  effect: EffectPreset,
+  line: LrcLine,
+  style: RenderStyle,
+  tMs: number,
+  lineDy = 0
+): void {
+  const p = clamp01((tMs - line.start) / effect.enterDuration)
+  if (p < 1) parts.push(`R${effect.reveal};${p}`)
+  fpLine(parts, ctx, effect, line, style, tMs, 1, lineDy)
+}
+
+/** drawTextBlock 的指纹 */
+function fpTextBlock(
+  parts: string[],
+  ctx: CanvasRenderingContext2D,
+  line: LrcLine,
+  styleIn: RenderStyle,
+  tMs: number
+): void {
+  const style = resolveLineStyle(line, styleIn)
+  const effect = effectFor(line, style)
+  const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
+
+  if (!effect.lineTransition) {
+    const out = exitP > 0 ? effectOutFor(line) : null
+    if (effect.reveal && exitP === 0) fpLineReveal(parts, ctx, effect, line, style, tMs)
+    else if (out) fpLine(parts, ctx, out, line, style, tMs, 1, 0, exitP)
+    else fpLine(parts, ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+    return
+  }
+
+  // 停靠式整块演绎：姿态只由进场进度与退场进度决定（布局/样式在导出期间不变）
+  const eased = easeOutCubic(clamp01((tMs - line.start) / effect.enterDuration))
+  parts.push(`T${line.id};${effect.id};${eased};${exitP}`)
+}
+
+/** drawLyricFlow 的指纹：当前行序号 + 停靠转场进度 + 各可见行的逐字姿态 */
+function fpLyricFlow(
+  parts: string[],
+  ctx: CanvasRenderingContext2D,
+  lyric: LrcLine[],
+  style: RenderStyle,
+  tMs: number,
+  trackOffsetY: number
+): void {
+  if (lyric.length === 0) return
+
+  let current = -1
+  for (let i = 0; i < lyric.length; i++) {
+    if (lyric[i].start <= tMs) current = i
+    else break
+  }
+
+  const drawnByStack = new Set<number>()
+  if (current >= 0) {
+    const curEffect = effectFor(lyric[current], style)
+    if (curEffect.lineTransition) {
+      // 停靠姿态（pose/enterFrom）只依赖行内容与样式，导出期间不变；
+      // 随时间变化的只有当前行序号与进场缓动进度
+      const eased = easeOutCubic(clamp01((tMs - lyric[current].start) / curEffect.enterDuration))
+      parts.push(`S${curEffect.id};${current};${eased}`)
+      for (let d = Math.min(curEffect.lineTransition.maxDepth + 1, current); d >= 0; d--) {
+        drawnByStack.add(current - d)
+      }
+    }
+  }
+
+  for (let i = 0; i < lyric.length; i++) {
+    if (drawnByStack.has(i)) continue
+    const line = lyric[i]
+    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    const effect = effectFor(line, style)
+    const ls = resolveLineStyle(line, style)
+    if (tMs < line.end) {
+      if (effect.reveal) fpLineReveal(parts, ctx, effect, line, ls, tMs, trackOffsetY)
+      else fpLine(parts, ctx, effect, line, ls, tMs, 1, trackOffsetY)
+    } else {
+      const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
+      const out = effectOutFor(line)
+      if (out) fpLine(parts, ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
+      else fpLine(parts, ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
+    }
+  }
+}
+
+/**
+ * 计算某一时刻画面的指纹。lines/meta/style/tracks 不变的前提下，
+ * 相邻两个时刻指纹相同 ⇒ renderFrame 画出的像素完全一致。
+ * 背景（纯色/渐变/图片）不随时间变化，不计入；背景视频由调用方自行判断
+ * （有可见视频线段的帧不适用指纹跳帧）。
+ */
+export function renderFingerprint(
+  ctx: CanvasRenderingContext2D,
+  lines: LrcLine[],
+  meta: LrcMeta,
+  style: RenderStyle,
+  tMs: number,
+  opts: { tracks?: TrackPlacement[] } = {}
+): string {
+  if (lines.length === 0) return ''
+  const parts: string[] = []
+
+  const lyric = lines.filter((l) => l.kind !== 'text')
+  if (lyric.length > 0) {
+    const groups = groupByTrack(lyric)
+    const placements = resolvePlacements(groups, opts.tracks)
+
+    // 片头歌名/歌手：透明度随时间淡入淡出（中段恒 1、首行开始后恒 0 的区间是静止的）
+    if (style.showMeta && (meta.title || meta.artist)) {
+      const visibleIds = new Set(placements.filter((p) => p.visible).map((p) => p.id))
+      const visibleFirst = lyric.find((l) => visibleIds.has(l.trackId ?? 0))
+      const first = (visibleFirst ?? lyric[0]).start
+      const alpha = Math.min(clamp01(tMs / 600), clamp01((first - tMs) / 500))
+      if (alpha > 0) parts.push(`M${alpha}`)
+    }
+
+    for (const p of placements) {
+      if (!p.visible) continue
+      const group = groups.get(p.id)
+      if (!group || group.length === 0) continue
+      parts.push(`G${p.id}`)
+      fpLyricFlow(parts, ctx, group, style, tMs, p.offsetY)
+    }
+  }
+
+  const textBlocks = lines.filter((l) => l.kind === 'text').sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0))
+  for (const line of textBlocks) {
+    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    fpTextBlock(parts, ctx, line, style, tMs)
+  }
+
+  return parts.join('|')
 }

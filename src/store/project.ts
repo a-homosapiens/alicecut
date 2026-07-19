@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { LrcLine, LrcMeta, LineTextOverride } from '../core/types'
+import type { LrcLine, LrcMeta, LineTextOverride, CaptionTrack, ImageAsset } from '../core/types'
 import { parseCaptions, repaginateLines } from '../core/subtitles'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
 import {
@@ -36,6 +36,14 @@ export interface StyleState {
   fontWeight: number
   fontSize: number
   textColor: string
+  letterSpacing: number
+  wordSpacing: number
+  lineSpacing: number
+  textAlign: 'left' | 'center' | 'right'
+  textOrientation: 'horizontal' | 'vertical'
+  strokeColor: string
+  strokeWidth: number
+  strokeAlpha: number
   glowColor: string
   /** 卡拉OK高亮色（当前词染色） */
   highlightColor: string
@@ -79,6 +87,8 @@ interface DocSnapshot {
   style: StyleState
   meta: LrcMeta
   lrcName: string | null
+  tracks: CaptionTrack[]
+  images: ImageAsset[]
 }
 
 interface ProjectState {
@@ -117,10 +127,38 @@ interface ProjectState {
   /** 已导入的插件视频转场（仅 id/name，实现在 media 注册表里），驱动时间轴转场菜单刷新 */
   pluginVideoTransitions: { id: string; name: string }[]
   addPluginVideoTransitions(list: { id: string; name: string }[]): void
+
+  /** 额外字幕组（多语言字幕）：主字幕组（id 0）仍用 meta/lines/lrcName 存储，这里只存 id≥1 的 */
+  tracks: CaptionTrack[]
+  /** 新增一个字幕组；默认竖直位置依次向下错开，避免与已有字幕组重叠 */
+  addTrack(name?: string): CaptionTrack
+  /** 删除字幕组（含该组全部行）；主字幕组（id 0）不可删除，调用无效果 */
+  removeTrack(id: number): void
+  renameTrack(id: number, name: string): void
+  setTrackOffsetY(id: number, y: number): void
+  setTrackVisible(id: number, visible: boolean): void
+  /** 非破坏性地把一份歌词/字幕载入指定字幕组（id 0 = 主字幕组）；只替换该组自己的行，
+   *  不影响其它字幕组、独立文字块、撤销历史——与 loadLrc（整份重置）是两个不同用途的动作 */
+  loadLrcToTrack(id: number, text: string, name: string): void
+
+  /** 图片库（当前只用作背景图候选）：与字幕组/媒体线段一样是独立资源，不随 loadLrc 清空 */
+  images: ImageAsset[]
+  /** 登记一张图片；按路径去重，已存在则直接返回原记录 */
+  addImage(path: string, name: string): ImageAsset
+  /** 从图片库移除；若正是当前背景图，一并清空 style.bgImage */
+  removeImage(id: number): void
+
   loadLrc(text: string, name: string): void
-  /** 按"每页时长阈值"重新分页（整句 ↔ 逐词）；重置行级特效/位置 */
-  repaginate(combineWithinMs: number): void
-  hydrate(data: { meta: LrcMeta; lines: LrcLine[]; style: StyleState; lrcName: string | null }): void
+  /** 按"每页时长阈值"重新分页（整句 ↔ 逐词）；只影响 trackId 指定的字幕组，重置该组行级特效/位置 */
+  repaginate(trackId: number, combineWithinMs: number): void
+  hydrate(data: {
+    meta: LrcMeta
+    lines: LrcLine[]
+    style: StyleState
+    lrcName: string | null
+    tracks?: CaptionTrack[]
+    images?: ImageAsset[]
+  }): void
   /** 加入媒体线段；缺省字段（trim/speed/layer/变换等）自动补默认值 */
   addClip(clip: Parameters<typeof withClipDefaults>[0]): MediaClip
   removeClip(id: number): void
@@ -140,8 +178,8 @@ interface ProjectState {
   /** 在 tMs 处切开线段；切点在线段外则不动。返回是否切了 */
   splitClip(id: number, tMs: number): boolean
   setSelectedClip(id: number | null): void
-  /** 在 startMs 处加一行字幕 / 一块独立文字 */
-  addLineAt(startMs: number, kind: 'lyric' | 'text', text?: string): LrcLine
+  /** 在 startMs 处加一行字幕 / 一块独立文字；trackId 缺省 = 主字幕组（0），仅 kind='lyric' 时有意义 */
+  addLineAt(startMs: number, kind: 'lyric' | 'text', text?: string, trackId?: number): LrcLine
   removeLines(ids: number[]): void
   updateLineText(id: number, text: string): void
   patchStyle(patch: Partial<StyleState>): void
@@ -194,10 +232,23 @@ function mergeLines(lines: LrcLine[], replaced: LrcLine[]): LrcLine[] {
   return sortLines(lines.map((l) => byId.get(l.id) ?? l))
 }
 
+/** 全局最大行 id（跨全部字幕组 + 独立文字块），用于铸造新的全局唯一 id */
+function maxLineId(lines: LrcLine[]): number {
+  return lines.reduce((m, l) => Math.max(m, l.id), -1)
+}
+
+/** 主字幕组（id 0）用顶层 meta/lines/lrcName 存储，这里把它和额外字幕组拼成统一列表，
+ *  供 UI/headless 一视同仁地遍历"全部字幕组" */
+export function allCaptionTracks(s: { meta: LrcMeta; lrcName: string | null; tracks: CaptionTrack[] }): CaptionTrack[] {
+  return [{ id: 0, name: '', lrcName: s.lrcName, meta: s.meta, offsetY: 0, visible: true }, ...s.tracks]
+}
+
 export const useProject = create<ProjectState>((set, get) => ({
   meta: { offset: 0 },
   lines: [],
   lrcName: null,
+  tracks: [],
+  images: [],
   clips: [],
   style: {
     aspect: '9:16',
@@ -205,6 +256,14 @@ export const useProject = create<ProjectState>((set, get) => ({
     fontWeight: 700,
     fontSize: 88,
     textColor: '#ffffff',
+    letterSpacing: 4,
+    wordSpacing: 12,
+    lineSpacing: 1,
+    textAlign: 'center',
+    textOrientation: 'horizontal',
+    strokeColor: '#000000',
+    strokeWidth: 0,
+    strokeAlpha: 1,
     glowColor: '#7dd3fc',
     highlightColor: '#ffd400',
     bgType: 'gradient',
@@ -282,24 +341,125 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ pluginVideoTransitions: merged })
   },
 
+  addTrack(name = '') {
+    const st = get()
+    const id = Math.max(0, ...st.tracks.map((t) => t.id)) + 1
+    const track: CaptionTrack = {
+      id,
+      name,
+      lrcName: null,
+      meta: { offset: 0 },
+      // 依次向下错开，避免与已有字幕组（含主字幕组，始终 offsetY 0）重叠
+      offsetY: Math.round((st.tracks.length + 1) * 2.4 * st.style.fontSize),
+      visible: true
+    }
+    set({ tracks: [...st.tracks, track] })
+    return track
+  },
+
+  removeTrack(id) {
+    if (id === 0) return // 主字幕组不可删除
+    const st = get()
+    const removedIds = new Set(st.lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === id).map((l) => l.id))
+    invalidateLayoutCache()
+    set({
+      tracks: st.tracks.filter((t) => t.id !== id),
+      lines: st.lines.filter((l) => !removedIds.has(l.id)),
+      selectedIds: st.selectedIds.filter((sid) => !removedIds.has(sid))
+    })
+  },
+
+  renameTrack(id, name) {
+    if (id === 0) return
+    set({ tracks: get().tracks.map((t) => (t.id === id ? { ...t, name } : t)) })
+  },
+
+  setTrackOffsetY(id, y) {
+    if (id === 0) return
+    set({ tracks: get().tracks.map((t) => (t.id === id ? { ...t, offsetY: Math.round(y) } : t)) })
+  },
+
+  setTrackVisible(id, visible) {
+    if (id === 0) return
+    set({ tracks: get().tracks.map((t) => (t.id === id ? { ...t, visible } : t)) })
+  },
+
+  loadLrcToTrack(id, text, name) {
+    const st = get()
+    const parsed = parseCaptions(text, name)
+    const base = maxLineId(st.lines)
+    const stamped = parsed.lines.map((l, i) => ({
+      ...l,
+      id: base + 1 + i,
+      ...(id ? { trackId: id } : {})
+    }))
+    const removedIds = new Set(st.lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === id).map((l) => l.id))
+    const otherLines = st.lines.filter((l) => !removedIds.has(l.id))
+    const selectedIds = st.selectedIds.filter((sid) => !removedIds.has(sid))
+    invalidateLayoutCache()
+    if (id === 0) {
+      set({ meta: parsed.meta, lrcName: name, lines: sortLines([...otherLines, ...stamped]), selectedIds })
+    } else {
+      set({
+        tracks: st.tracks.map((t) => (t.id === id ? { ...t, meta: parsed.meta, lrcName: name } : t)),
+        lines: sortLines([...otherLines, ...stamped]),
+        selectedIds
+      })
+    }
+  },
+
+  addImage(path, name) {
+    const st = get()
+    const existing = st.images.find((img) => img.path === path)
+    if (existing) return existing
+    const image: ImageAsset = { id: Math.max(0, ...st.images.map((img) => img.id)) + 1, path, name }
+    set({ images: [...st.images, image] })
+    return image
+  },
+
+  removeImage(id) {
+    const st = get()
+    const removed = st.images.find((img) => img.id === id)
+    if (!removed) return
+    set({
+      images: st.images.filter((img) => img.id !== id),
+      ...(removed.path === st.style.bgImage ? { style: { ...st.style, bgImage: null } } : {})
+    })
+  },
+
   loadLrc(text, name) {
     const parsed = parseCaptions(text, name)
     invalidateLayoutCache()
     historySuspend = true // 载入是全新文档，清空历史
-    set({ meta: parsed.meta, lines: parsed.lines, lrcName: name, currentTime: 0, selectedIds: [], past: [], future: [] })
+    // 连额外字幕组一起清空：它们是上一份歌词的翻译/注音，跟着旧内容一起作废，
+    // 避免留下指向新歌词、内容却对不上的空字幕组
+    set({
+      meta: parsed.meta,
+      lines: parsed.lines,
+      lrcName: name,
+      tracks: [],
+      currentTime: 0,
+      selectedIds: [],
+      past: [],
+      future: []
+    })
     historySuspend = false
   },
 
-  repaginate(combineWithinMs) {
+  repaginate(trackId, combineWithinMs) {
     const st = get()
-    const lyric = st.lines.filter((l) => l.kind !== 'text')
+    const lyric = st.lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === trackId)
     if (lyric.length === 0) return
-    const textBlocks = st.lines.filter((l) => l.kind === 'text')
-    // text 块 id 保留，重排的歌词行 id 顺延其后，保证全局唯一
-    const maxTextId = textBlocks.reduce((m, l) => Math.max(m, l.id), -1)
-    const repaged = repaginateLines(lyric, combineWithinMs).map((l, i) => ({ ...l, id: maxTextId + 1 + i }))
+    const others = st.lines.filter((l) => l.kind === 'text' || (l.trackId ?? 0) !== trackId)
+    // 其它行 id 保留，重排的行 id 顺延其后，保证全局唯一
+    const base = maxLineId(st.lines)
+    const repaged = repaginateLines(lyric, combineWithinMs).map((l, i) => ({
+      ...l,
+      id: base + 1 + i,
+      ...(trackId ? { trackId } : {})
+    }))
     invalidateLayoutCache()
-    set({ lines: sortLines([...repaged, ...textBlocks]), selectedIds: [], selectedClipId: null })
+    set({ lines: sortLines([...repaged, ...others]), selectedIds: [], selectedClipId: null })
   },
 
   hydrate(data) {
@@ -308,12 +468,25 @@ export const useProject = create<ProjectState>((set, get) => ({
     const lines = sortLines(
       data.lines.map((l) => ({ ...l, effectId: l.effectId ?? null, dx: l.dx ?? 0, dy: l.dy ?? 0, layer: l.layer ?? 0 }))
     )
+    // 兼容无 tracks 字段的旧工程文件（视为只有主字幕组）；补齐字幕组字段默认值
+    const tracks = (data.tracks ?? []).map((tr) => ({
+      id: tr.id,
+      name: tr.name ?? '',
+      lrcName: tr.lrcName ?? null,
+      meta: tr.meta ?? { offset: 0 },
+      offsetY: tr.offsetY ?? 0,
+      visible: tr.visible ?? true
+    }))
+    // 兼容无 images 字段的旧工程文件
+    const images = (data.images ?? []).map((img) => ({ id: img.id, path: img.path, name: img.name }))
     historySuspend = true // 打开工程是全新文档，清空历史
     set({
       meta: data.meta,
       lines,
       style: { ...get().style, ...data.style },
       lrcName: data.lrcName,
+      tracks,
+      images,
       clips: [],
       currentTime: 0,
       playing: false,
@@ -418,13 +591,13 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ selectedClipId: id, ...(id !== null ? { selectedIds: [] } : {}) })
   },
 
-  addLineAt(startMs, kind, text) {
+  addLineAt(startMs, kind, text, trackId) {
     const st = get()
     const start = Math.max(0, Math.round(startMs))
     const end = start + (kind === 'text' ? 3000 : 2000)
     const content = text ?? (kind === 'text' ? '文字' : '新字幕')
     const bare: LrcLine = {
-      id: st.lines.reduce((m, l) => Math.max(m, l.id), -1) + 1,
+      id: maxLineId(st.lines) + 1,
       start,
       end,
       text: '',
@@ -433,7 +606,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       dx: 0,
       dy: 0,
       layer: 0,
-      ...(kind === 'text' ? { kind: 'text' as const } : {})
+      ...(kind === 'text' ? { kind: 'text' as const } : {}),
+      ...(kind === 'lyric' && trackId ? { trackId } : {})
     }
     const line = rebuildLineText(bare, content)
     invalidateLayoutCache()
@@ -529,7 +703,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     if (!line) return
     const t = Math.round(tMs)
     if (t <= line.start || t >= line.end) return // 切点在区间外
-    const newId = lines.reduce((m, l) => Math.max(m, l.id), -1) + 1
+    const newId = maxLineId(lines) + 1
     const left = retimeLine(line, line.start, t)
     const right = { ...retimeLine(line, t, line.end), id: newId }
     invalidateLayoutCache()
@@ -540,7 +714,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     const lines = get().lines
     const line = lines.find((l) => l.id === id)
     if (!line) return
-    const newId = lines.reduce((m, l) => Math.max(m, l.id), -1) + 1
+    const newId = maxLineId(lines) + 1
     // 紧接原行之后：整体右移一个时长
     let dup = { ...shiftLine(line, line.end - line.start), id: newId }
     if (line.kind === 'text') {
@@ -591,11 +765,25 @@ const HISTORY_CAP = 50
 const HISTORY_COALESCE_MS = 500
 
 function snapshotDoc(s: ProjectState): DocSnapshot {
-  return { lines: s.lines, clips: s.clips, style: s.style, meta: s.meta, lrcName: s.lrcName }
+  return {
+    lines: s.lines,
+    clips: s.clips,
+    style: s.style,
+    meta: s.meta,
+    lrcName: s.lrcName,
+    tracks: s.tracks,
+    images: s.images
+  }
 }
 function docChanged(a: ProjectState, b: ProjectState): boolean {
   return (
-    a.lines !== b.lines || a.clips !== b.clips || a.style !== b.style || a.meta !== b.meta || a.lrcName !== b.lrcName
+    a.lines !== b.lines ||
+    a.clips !== b.clips ||
+    a.style !== b.style ||
+    a.meta !== b.meta ||
+    a.lrcName !== b.lrcName ||
+    a.tracks !== b.tracks ||
+    a.images !== b.images
   )
 }
 
@@ -628,6 +816,14 @@ export function toRenderStyle(style: StyleState): RenderStyle {
     fontWeight: style.fontWeight,
     fontSize: style.fontSize,
     textColor: style.textColor,
+    letterSpacing: style.letterSpacing,
+    wordSpacing: style.wordSpacing,
+    lineSpacing: style.lineSpacing,
+    textAlign: style.textAlign,
+    textOrientation: style.textOrientation,
+    strokeColor: style.strokeColor,
+    strokeWidth: style.strokeWidth,
+    strokeAlpha: style.strokeAlpha,
     glowColor: style.glowColor,
     highlightColor: style.highlightColor,
     bgType: style.bgType,
