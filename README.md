@@ -8,6 +8,24 @@ AliceCut combines multi-track caption editing, a layered audio/video timeline, d
 
 ![AliceCut editor showing caption tracks, preview canvas, waveform timeline, and styling controls](docs/assets/ui-v0p1.png)
 
+## Agentic video editing, with or without the GUI
+
+AliceCut is designed to be operated by people, scripts, and agents through the same project model and rendering pipeline. An agent can build a complete caption-driven edit as JSON, render it without opening a window, save a normal `.alicecut.json` project for human review, or hand precise commands to the project already open in the desktop editor.
+
+| Surface | Best for | Agentic workflow |
+|---|---|---|
+| **Desktop editor** | Visual review and hands-on timing, layout, and styling | A person inspects or refines the same project produced by an agent |
+| **Command Console** | Changing the live project without navigating panels | An agent emits undoable JSON commands for captions, media, styles, and effects |
+| **Headless jobs** | Batch generation, automation, and render pipelines | An agent writes `job.json`, launches AliceCut, reads progress from stdout, and checks the process exit code |
+
+For example, an agent can generate a job and ask the installed Windows application to save an editable project and render the final video in one run:
+
+```powershell
+AliceCut.exe --export job.json --save-project job.json
+```
+
+Relative media paths in `job.json` resolve from the job file's directory, which makes the whole input bundle portable. Headless progress is machine-readable (`[export] 37%`), success returns exit code `0`, and failures return exit code `1`. The saved project can then be opened in the GUI without conversion or reconstruction.
+
 ## What AliceCut does
 
 ### Caption-first editing
@@ -38,16 +56,6 @@ AliceCut combines multi-track caption editing, a layered audio/video timeline, d
 - Drag selected captions directly on the preview canvas.
 - Use solid colors, gradients, images, or video as the visual background.
 - Choose `9:16`, `16:9`, or `1:1` output compositions.
-
-### GUI, agentic, and headless workflows
-
-AliceCut exposes the same editing model through three surfaces:
-
-1. **Desktop editor** — interactive caption, media, style, preview, and export controls.
-2. **Command Console** — apply JSON instructions to the project currently open in the editor.
-3. **Headless jobs** — render or generate projects from `job.json` for batch processing and pipelines.
-
-The console and headless paths share one project-command layer, and all three surfaces ultimately use the same project state, rendering core, and export pipeline. This reduces behavioral drift between manual and automated work.
 
 ## Quick start
 
@@ -106,7 +114,7 @@ Unsupported editing codecs and containers are normalized to an H.264 MP4 proxy a
 
 ## Command Console
 
-Open the Command Console from the toolbar or **View** menu and enter a JSON command. Commands operate on the current project and can be undone like manual edits.
+Open the Command Console from the toolbar or **View** menu and enter a JSON command. It is the direct agent-facing control surface for the project currently visible in AliceCut: commands use the same state transitions as the UI and can be undone like manual edits.
 
 ```json
 {
@@ -121,11 +129,11 @@ Open the Command Console from the toolbar or **View** menu and enter a JSON comm
 }
 ```
 
-The console can also import captions and media, add caption tracks and text blocks, apply project styles, and assign line-level effects. File paths supplied to the live console must be absolute because there is no job-file directory to use as a relative base.
+The console can also import captions and media, add caption tracks and text blocks, apply project styles, and assign line-level effects. This makes it practical for an agent to propose a structured edit while a person immediately reviews the result in the preview and timeline. File paths supplied to the live console must be absolute because there is no job-file directory to use as a relative base.
 
 ## Headless rendering and project generation
 
-The same application binary can render without showing the editor:
+The same application binary is also an automation endpoint. It can construct and render a project without showing the editor, making AliceCut usable from agent runtimes, scheduled jobs, shell scripts, and larger media pipelines:
 
 ```powershell
 # Installed Windows application

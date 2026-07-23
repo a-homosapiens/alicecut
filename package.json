@@ -1,6 +1,6 @@
 {
   "name": "alicecut",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "description": "AliceCut — 将 .lrc 歌词转换为 Kinetic Typography 动态文字视频",
   "author": "AliceCut Contributors",
   "repository": {

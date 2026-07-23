@@ -10,9 +10,11 @@ jobs:
   build:
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -21,12 +23,64 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run smoke:electron
-      - run: npm run dist:win
+      - name: Build Windows installer
+        shell: pwsh
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: |
+          if ($env:CSC_LINK) {
+            npm run dist:win
+            "Windows installer was built with the configured signing certificate." >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            npm run dist:win:unsigned
+            "Warning: no WINDOWS_CSC_LINK secret was configured, so this prerelease is unsigned." >> $env:GITHUB_STEP_SUMMARY
+          }
+      - name: Generate release checksums
+        shell: pwsh
+        run: |
+          $releaseFiles = Get-ChildItem -Path release -File | Where-Object {
+            $_.Name -match '-setup\.exe(\.blockmap)?$' -or $_.Name -eq 'latest.yml'
+          }
+          $checksums = foreach ($file in $releaseFiles) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+            "$hash  $($file.Name)"
+          }
+          $checksums | Set-Content -Path release/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
           name: AliceCut-Windows-beta
-          path: release/*-setup.exe
+          path: |
+            release/*-setup.exe
+            release/*-setup.exe.blockmap
+            release/latest.yml
+            release/SHA256SUMS.txt
           if-no-files-found: error
+      - name: Publish GitHub prerelease
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $title = "AliceCut $tag"
+          $assets = @(
+            Get-ChildItem -Path release -File | Where-Object {
+              $_.Name -match '-setup\.exe(\.blockmap)?$' -or
+              $_.Name -eq 'latest.yml' -or
+              $_.Name -eq 'SHA256SUMS.txt'
+            } | ForEach-Object { $_.FullName }
+          )
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $title --prerelease
+          } else {
+            gh release create $tag @assets `
+              --repo $env:GITHUB_REPOSITORY `
+              --title $title `
+              --generate-notes `
+              --prerelease `
+              --verify-tag
+          }
