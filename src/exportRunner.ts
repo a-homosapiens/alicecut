@@ -1,6 +1,6 @@
 import type { LrcLine, LrcMeta } from './core/types'
 import { renderFrame, renderFingerprint, type RenderStyle, type TrackPlacement } from './core/render'
-import { clipSourceTime, type MediaClip } from './core/media'
+import { clipSourceTime, clipRenderSourceTime, junctionLeadMs, type MediaClip } from './core/media'
 import type { EncodeSettings, VideoFrameMode } from '../electron/exporterCore'
 import { canUseWebCodecsExport, WebCodecsFrameSink } from './webcodecsExport'
 import {
@@ -66,9 +66,9 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
   const ctx = canvas.getContext('2d', webCodecsConfig ? undefined : { willReadFrequently: true })
   if (!ctx) throw new Error('无法创建画布')
 
-  const videoClips = o.clips.filter((c) => c.kind === 'video')
+  const videoClips = o.clips.filter((c) => c.kind === 'video' && !c.offline)
   const audioClips = o.clips
-    .filter((c) => c.kind === 'audio')
+    .filter((c) => c.kind === 'audio' && !c.offline)
     .map((c) => ({
       path: c.path,
       startMs: c.start,
@@ -77,7 +77,8 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
       speed: c.speed,
       loop: c.loop,
       fadeInMs: c.fadeInMs,
-      fadeOutMs: c.fadeOutMs
+      fadeOutMs: c.fadeOutMs,
+      volume: c.volume ?? 1
     }))
 
   // 导出期间预览不在播放，确保元素都停住，只按帧 seek
@@ -95,7 +96,8 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
         o.style.height,
         o.style.bgImageScale,
         o.style.bgImageX,
-        o.style.bgImageY
+        o.style.bgImageY,
+        o.style.bgImageRotate
       )
     }
   }
@@ -115,6 +117,9 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
 
   const durationMs = o.durationSec * 1000
   const totalFrames = Math.max(1, Math.ceil(o.durationSec * o.fps))
+  // 相邻视频过渡（junction）的预卷时长按线段配置固定，逐帧不变，预先算好一份
+  const leadByClipId = new Map<number, number>(videoClips.map((c) => [c.id, junctionLeadMs(c, videoClips)]))
+  const clipLead = (c: MediaClip): number => leadByClipId.get(c.id) ?? 0
   // With no video clips, stdin can contain only the changing text layer. FFmpeg
   // loops this one PNG and composites the alpha frames before encoding.
   const staticBackgroundPng = !webCodecsConfig && videoClips.length === 0 && staticBackdrop
@@ -186,7 +191,7 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
         return { code: -1, log: '', cancelled: true }
       }
       const tMs = (n * 1000) / o.fps
-      const videoVisible = videoClips.some((c) => clipSourceTime(c, tMs, durationMs) !== null)
+      const videoVisible = videoClips.some((c) => clipRenderSourceTime(c, tMs, durationMs, clipLead(c)) !== null)
       const fp = videoVisible
         ? null
         : renderFingerprint(ctx, o.lines, o.meta, o.style, tMs, { tracks: o.tracks })
@@ -198,10 +203,13 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
       } else {
         // 所有可见视频线段先就位，再整帧绘制
         for (const clip of videoClips) {
-          const srcT = clipSourceTime(clip, tMs, durationMs)
+          const lead = clipLead(clip)
+          const srcT = clipRenderSourceTime(clip, tMs, durationMs, lead)
           if (srcT !== null) {
             getMediaEl(clip)
-            if (o.videoFrameMode === 'exact') {
+            // junction 预卷窗口冻结在首帧：始终精确 seek（不走正向追帧，避免帧被"播走"）
+            const frozen = clipSourceTime(clip, tMs, durationMs) === null
+            if (frozen || o.videoFrameMode === 'exact') {
               await seekClipExact(clip, srcT / 1000)
             } else {
               await waitForSourceTime(clip, srcT / 1000)
@@ -260,9 +268,15 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
     throw err
   }
 
-  const { code, log } = webCodecsSink
-    ? await webCodecsSink.finish()
-    : await window.desktop.exportEnd()
+  let result: { code: number; log: string }
+  try {
+    result = webCodecsSink ? await webCodecsSink.finish() : await window.desktop.exportEnd()
+  } catch (err) {
+    if (webCodecsSink) await webCodecsSink.cancel().catch(() => {})
+    else await window.desktop.exportCancel().catch(() => {})
+    throw err
+  }
+  const { code, log } = result
   const elapsedMs = performance.now() - startedAt
   o.onLog?.(
     `导出性能: ${elapsedMs.toFixed(0)}ms · 渲染 ${renderedFrames}/${totalFrames} 帧` +

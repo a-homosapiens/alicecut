@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="76 102 620 1188" role="img" aria-label="Artificial Homo Sapiens">
+  <title>Artificial Homo Sapiens</title>
+  <style>
+    svg { color: #000; }
+    @media (prefers-color-scheme: dark) { svg { color: #fff; } }
+  </style>
+  <g fill="currentColor" stroke="currentColor" stroke-width="7" stroke-linecap="round">
+    <line x1="386" y1="411" x2="222" y2="400"/>
+    <line x1="386" y1="411" x2="550" y2="400"/>
+
+    <line x1="222" y1="400" x2="386" y2="307"/>
+    <line x1="386" y1="411" x2="386" y2="307"/>
+    <line x1="550" y1="400" x2="386" y2="307"/>
+
+    <line x1="386" y1="411" x2="386" y2="737"/>
+    <line x1="386" y1="411" x2="172" y2="586"/>
+    <line x1="386" y1="411" x2="129" y2="773"/>
+    <line x1="386" y1="411" x2="600" y2="586"/>
+    <line x1="386" y1="411" x2="643" y2="773"/>
+    <line x1="222" y1="400" x2="172" y2="586"/>
+    <line x1="172" y1="586" x2="129" y2="773"/>
+    <line x1="550" y1="400" x2="600" y2="586"/>
+    <line x1="600" y1="586" x2="643" y2="773"/>
+    <line x1="386" y1="737" x2="283" y2="986"/>
+    <line x1="283" y1="986" x2="283" y2="1234"/>
+    <line x1="386" y1="737" x2="489" y2="986"/>
+    <line x1="489" y1="986" x2="489" y2="1234"/>
+
+    <circle cx="386" cy="217" r="90"/>
+    <circle cx="222" cy="400" r="29"/>
+    <circle cx="386" cy="411" r="29"/>
+    <circle cx="550" cy="400" r="29"/>
+    <circle cx="172" cy="586" r="29"/>
+    <circle cx="600" cy="586" r="29"/>
+    <circle cx="386" cy="737" r="29"/>
+    <circle cx="129" cy="773" r="29"/>
+    <circle cx="643" cy="773" r="29"/>
+    <circle cx="283" cy="986" r="29"/>
+    <circle cx="489" cy="986" r="29"/>
+    <circle cx="283" cy="1234" r="29"/>
+    <circle cx="489" cy="1234" r="29"/>
+  </g>
+</svg>

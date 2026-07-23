@@ -1,7 +1,10 @@
 import type { JobClipSpec, JobTextSpec, JobTrackSpec, HeadlessClip, HeadlessTrackSpec } from '../electron/headless'
 import type { LineTextOverride } from './core/types'
+import { useProject } from './store/project'
 import {
   applyLineEffects,
+  applyLineEffectsOut,
+  applyLineEffectDurations,
   applyLineStyles,
   applyTrack,
   applyClips,
@@ -12,10 +15,10 @@ import {
 } from './projectCommand'
 
 /**
- * 命令控制台接受的 JSON 命令：字段与 job.json 同名同义，是它的一个子集
- * （不含 out/fps/duration——那三个是导出专属参数，作为一次性动作在实时编辑里没有意义）。
- * 应用顺序固定：lrc → tracks → audio/video → texts → style → lineEffects → lineStyles，
- * 让 lineEffects/lineStyles 有机会命中同一条命令里刚 lrc/tracks 载入的新内容。
+ * 命令控制台接受的 JSON 命令：支持 job.json 的实时编辑子集，并额外支持
+ * select/effectIn/effectOut/selectedStyle 这组选区命令（不含导出专用的 out/fps/duration）。
+ * 应用顺序固定：lrc → tracks → audio/video → texts → select → style →
+ * effectIn/effectOut/selectedStyle → lineEffects → lineEffectsOut → lineStyles。
  * 每个顶层字段各自 try/catch、各自在回显里报告成功/失败——不做"全部成功才生效"的事务，
  * 每一步本身已经在撤销栈上，一步坏了 Ctrl+Z 即可，没必要另建回滚机制。
  */
@@ -27,8 +30,18 @@ export interface ConsoleCommand {
   video?: string | JobClipSpec | (string | JobClipSpec)[]
   texts?: JobTextSpec[]
   tracks?: (Omit<JobTrackSpec, 'lrc'> & { lrc: string })[]
+  /** Select captions before applying the selected-item fields below. */
+  select?: 'captions' | 'all' | 'none' | number[]
   style?: Record<string, unknown>
+  effectIn?: string | null
+  effectOut?: string | null
+  /** Selected-caption durations in seconds. If both are present, In has priority. */
+  effectInDuration?: number
+  effectOutDuration?: number
+  selectedStyle?: LineTextOverride
   lineEffects?: Record<string, string>
+  lineEffectsOut?: Record<string, string>
+  lineEffectDurations?: Record<string, import('../electron/headless').EffectDurationSpec>
   lineStyles?: Record<string, LineTextOverride>
 }
 
@@ -45,6 +58,22 @@ export async function runConsoleCommand(raw: string, log: CommandLog): Promise<v
     cmd = JSON.parse(raw) as ConsoleCommand
   } catch (err) {
     log(`✗ JSON 解析失败：${errMsg(err)}`)
+    return
+  }
+  if (!cmd || typeof cmd !== 'object' || Array.isArray(cmd)) {
+    log('✗ 命令必须是 JSON 对象')
+    return
+  }
+  if (cmd.tracks !== undefined && !Array.isArray(cmd.tracks)) {
+    log('✗ tracks: expected an array')
+    return
+  }
+  if (cmd.texts !== undefined && !Array.isArray(cmd.texts)) {
+    log('✗ texts: expected an array')
+    return
+  }
+  if (cmd.style !== undefined && (!cmd.style || typeof cmd.style !== 'object' || Array.isArray(cmd.style))) {
+    log('✗ style: expected an object')
     return
   }
 
@@ -71,6 +100,7 @@ export async function runConsoleCommand(raw: string, log: CommandLog): Promise<v
           offsetY: spec.offsetY,
           visible: spec.visible,
           lineEffects: spec.lineEffects ?? {},
+          lineEffectsOut: spec.lineEffectsOut ?? {},
           lineStyles: spec.lineStyles ?? {}
         }
         const track = applyTrack(resolved, log)
@@ -101,6 +131,22 @@ export async function runConsoleCommand(raw: string, log: CommandLog): Promise<v
     }
   }
 
+  if (cmd.select !== undefined) {
+    try {
+      const st = useProject.getState()
+      if (cmd.select === 'captions') st.selectAllCaptions()
+      else if (cmd.select === 'all') st.selectAll()
+      else if (cmd.select === 'none') st.clearSelection()
+      else if (Array.isArray(cmd.select)) {
+        const existing = new Set(st.lines.map((line) => line.id))
+        st.setSelection(cmd.select.filter((id) => Number.isInteger(id) && existing.has(id)))
+      } else throw new Error('expected "captions", "all", "none", or an array of line ids')
+      log(`✓ select: ${useProject.getState().selectedIds.length} item(s) selected`)
+    } catch (err) {
+      log(`✗ select: ${errMsg(err)}`)
+    }
+  }
+
   if (cmd.style) {
     try {
       applyStyle(cmd.style)
@@ -110,12 +156,80 @@ export async function runConsoleCommand(raw: string, log: CommandLog): Promise<v
     }
   }
 
+  if (Object.prototype.hasOwnProperty.call(cmd, 'effectIn')) {
+    try {
+      const ids = useProject.getState().selectedIds
+      if (ids.length === 0) throw new Error('no captions selected')
+      useProject.getState().setLineEffect(ids, cmd.effectIn ?? null)
+      log(`✓ effectIn: applied to ${ids.length} selected item(s)`)
+    } catch (err) {
+      log(`✗ effectIn: ${errMsg(err)}`)
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(cmd, 'effectOut')) {
+    try {
+      const ids = useProject.getState().selectedIds
+      if (ids.length === 0) throw new Error('no captions selected')
+      useProject.getState().setLineEffectOut(ids, cmd.effectOut ?? null)
+      log(`✓ effectOut: applied to ${ids.length} selected item(s)`)
+    } catch (err) {
+      log(`✗ effectOut: ${errMsg(err)}`)
+    }
+  }
+
+  if (cmd.effectInDuration !== undefined || cmd.effectOutDuration !== undefined) {
+    try {
+      const ids = useProject.getState().selectedIds
+      if (ids.length === 0) throw new Error('no captions selected')
+      // One command containing both values gives In priority.
+      if (typeof cmd.effectOutDuration === 'number') {
+        useProject.getState().setLineEffectDuration(ids, 'out', cmd.effectOutDuration * 1000)
+      }
+      if (typeof cmd.effectInDuration === 'number') {
+        useProject.getState().setLineEffectDuration(ids, 'in', cmd.effectInDuration * 1000)
+      }
+      log(`✓ effect duration: applied to ${ids.length} selected item(s)`)
+    } catch (err) {
+      log(`✗ effect duration: ${errMsg(err)}`)
+    }
+  }
+
+  if (cmd.selectedStyle) {
+    try {
+      const ids = useProject.getState().selectedIds
+      if (ids.length === 0) throw new Error('no captions selected')
+      useProject.getState().patchLineOver(ids, cmd.selectedStyle)
+      log(`✓ selectedStyle: applied to ${ids.length} selected item(s)`)
+    } catch (err) {
+      log(`✗ selectedStyle: ${errMsg(err)}`)
+    }
+  }
+
   if (cmd.lineEffects) {
     try {
       applyLineEffects(cmd.lineEffects, log)
       log(`✓ lineEffects: 已应用`)
     } catch (err) {
       log(`✗ lineEffects: ${errMsg(err)}`)
+    }
+  }
+
+  if (cmd.lineEffectsOut) {
+    try {
+      applyLineEffectsOut(cmd.lineEffectsOut, log)
+      log(`✓ lineEffectsOut: 已应用`)
+    } catch (err) {
+      log(`✗ lineEffectsOut: ${errMsg(err)}`)
+    }
+  }
+
+  if (cmd.lineEffectDurations) {
+    try {
+      applyLineEffectDurations(cmd.lineEffectDurations, log)
+      log(`✓ lineEffectDurations: 已应用`)
+    } catch (err) {
+      log(`✗ lineEffectDurations: ${errMsg(err)}`)
     }
   }
 

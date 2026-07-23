@@ -78,6 +78,8 @@ export interface LineTransition {
 export interface EffectPreset {
   id: string
   name: string
+  /** Which picker exposes this preset. Omitted means it is useful for both directions. */
+  picker?: 'in' | 'out' | 'both'
   /** 单个单元进场动画时长 ms */
   enterDuration: number
   /** 布局构图 */

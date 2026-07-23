@@ -1,0 +1,32 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Karaoke,Noto Sans CJK SC,58,&H00FFFFFF,&H0000D7FF,&H96000000,&H96000000,0,0,0,0,100,100,0,0,1,3,1,2,60,60,72,1
+
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+Dialogue: 0,0:00:03.84,0:00:06.24,Karaoke,,0,0,0,,{\k48}洞{\k64}庭{\k128}青{\k1}草，
+Dialogue: 0,0:00:08.48,0:00:14.08,Karaoke,,0,0,0,,{\k32}近{\k528}中{\k1}秋，
+Dialogue: 0,0:00:14.16,0:00:18.96,Karaoke,,0,0,0,,{\k88}更{\k1}无{\k72}一{\k184}点{\k96}风{\k40}色。
+Dialogue: 0,0:00:18.96,0:00:51.44,Karaoke,,0,0,0,,{\k616}玉{\k1232}鉴{\k1232}琼{\k52}田{\k52}三{\k48}万{\k16}顷，
+Dialogue: 0,0:00:51.44,0:00:55.84,Karaoke,,0,0,0,,{\k240}着{\k96}我{\k8}扁{\k96}舟{\k1}一{\k1}叶。
+Dialogue: 0,0:00:58.80,0:01:00.96,Karaoke,,0,0,0,,{\k56}素{\k16}月{\k40}分{\k104}辉，
+Dialogue: 0,0:01:00.96,0:01:03.36,Karaoke,,0,0,0,,{\k24}明{\k40}河{\k96}共{\k80}影，
+Dialogue: 0,0:01:04.08,0:01:06.80,Karaoke,,0,0,0,,{\k72}表{\k56}里{\k56}俱{\k64}澄{\k24}澈。
+Dialogue: 0,0:01:08.64,0:01:11.92,Karaoke,,0,0,0,,{\k24}悠{\k24}然{\k272}心{\k8}会，
+Dialogue: 0,0:01:13.68,0:01:16.72,Karaoke,,0,0,0,,{\k24}妙{\k32}处{\k104}难{\k80}与{\k64}君{\k1}说。
+Dialogue: 0,0:01:17.04,0:01:26.03,Karaoke,,0,0,0,,{\k16}应{\k364}念{\k328}岭{\k171}海{\k13}经{\k7}年，
+Dialogue: 0,0:01:26.09,0:01:27.20,Karaoke,,0,0,0,,{\k7}孤{\k88}光{\k8}自{\k8}照，
+Dialogue: 0,0:01:28.08,0:01:29.68,Karaoke,,0,0,0,,{\k16}肝{\k40}肺{\k40}皆{\k48}冰{\k16}雪。
+Dialogue: 0,0:01:29.68,0:01:36.72,Karaoke,,0,0,0,,{\k64}短{\k1}发{\k640}萧{\k1}骚{\k1}襟{\k1}袖{\k1}冷，
+Dialogue: 0,0:01:36.72,0:01:40.24,Karaoke,,0,0,0,,{\k48}稳{\k1}泛{\k104}沧{\k152}浪{\k1}空{\k48}阔。
+Dialogue: 0,0:01:41.04,0:01:42.48,Karaoke,,0,0,0,,{\k48}尽{\k40}挹{\k48}西{\k8}江，
+Dialogue: 0,0:01:43.52,0:01:45.04,Karaoke,,0,0,0,,{\k4}细{\k4}斟{\k144}北{\k1}斗，
+Dialogue: 0,0:01:45.04,0:01:47.26,Karaoke,,0,0,0,,{\k8}万{\k40}象{\k1}为{\k87}宾{\k87}客。
+Dialogue: 0,0:01:48.13,0:01:52.72,Karaoke,,0,0,0,,{\k174}扣{\k174}舷{\k87}独{\k24}啸，
+Dialogue: 0,0:01:54.16,0:01:58.08,Karaoke,,0,0,0,,{\k32}不{\k8}知{\k104}今{\k136}夕{\k56}何{\k56}夕！
+Dialogue: 0,0:01:58.31,0:02:00.40,Karaoke,,0,0,0,,{\k46}不{\k46}知{\k46}今{\k35}夕{\k24}何{\k12}夕！

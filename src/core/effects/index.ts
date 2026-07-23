@@ -12,9 +12,13 @@ import { bounce } from './bounce'
 import { wobble } from './wobble'
 import { streak } from './streak'
 import { wipe, iris, clockWipe } from './reveals'
+import { ENTRANCE_EFFECTS } from './entrances'
+import { EXIT_EFFECTS } from './exits'
+import { none } from './none'
 
 /** 内置特效（第一方） */
 export const EFFECTS: EffectPreset[] = [
+  none,
   pop,
   punch,
   slide,
@@ -30,7 +34,9 @@ export const EFFECTS: EffectPreset[] = [
   clockWipe,
   flip,
   flipBottom,
-  rise
+  rise,
+  ...ENTRANCE_EFFECTS,
+  ...EXIT_EFFECTS
 ]
 
 /** 第三方插件特效注册表（运行时导入注入） */

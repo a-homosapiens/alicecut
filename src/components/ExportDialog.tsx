@@ -34,6 +34,7 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
 
   const st = useProject.getState()
   const duration = getProjectDuration(st)
+  const [durationInput, setDurationInput] = useState(duration > 0 ? duration : 5)
 
   // ProRes 只装 .mov：容器选择在此静默解析+改标签，不是错误(不同于 CLI 的硬校验——
   // GUI 用户没有手动敲扩展名，保存对话框直接给对的就行)
@@ -42,10 +43,17 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
 
   const start = async (): Promise<void> => {
     const state = useProject.getState()
+    if (!Number.isFinite(durationInput) || durationInput <= 0) {
+      setPhase('error')
+      setMessage('Export duration must be greater than zero.')
+      return
+    }
+    if (state.clips.some((clip) => clip.offline) && !confirm('Some media is offline and will be omitted from the export. Continue?')) return
     const style = toRenderStyle(state.style)
     const baseName = (state.lrcName ?? 'lyrics').replace(/\.[^.]+$/, '')
     const outPath = await window.desktop.saveVideoPath(`${baseName}.${effectiveExt}`, effectiveExt)
     if (!outPath) return
+    state.setProjectDurationSec(durationInput)
 
     pause()
     state.setExporting(true)
@@ -61,7 +69,7 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
         tracks: allCaptionTracks(state),
         clips: state.clips,
         fps,
-        durationSec: duration,
+        durationSec: durationInput,
         outPath,
         encode,
         videoFrameMode,
@@ -101,6 +109,17 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
                 <option value={30}>{t('export.fps30')}</option>
                 <option value={60}>60 fps</option>
               </select>
+            </label>
+            <label>
+              Duration (seconds)
+              <input
+                type="number"
+                min={0.1}
+                max={86400}
+                step={0.1}
+                value={durationInput}
+                onChange={(e) => setDurationInput(Number(e.target.value))}
+              />
             </label>
             <label>
               {t('export.codec')}
@@ -152,7 +171,7 @@ export function ExportDialog({ onClose }: Props): React.JSX.Element {
               </>
             )}
             <p className="hint">
-              {t('export.duration', { n: Math.round(duration) })}
+              {t('export.duration', { n: Math.round(durationInput) })}
               {' · '}
               {effectiveExt.toUpperCase()}
               {st.clips.some((c) => c.kind === 'video') ? t('export.withVideo') : ''}

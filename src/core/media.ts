@@ -37,6 +37,10 @@ export interface MediaClip {
   kind: 'video' | 'audio'
   /** 源文件绝对路径 */
   path: string
+  /** Original user-selected path. `path` may point at a disposable compatibility proxy. */
+  sourcePath?: string
+  /** Missing files stay in the project so they can be relinked instead of silently disappearing. */
+  offline?: boolean
   name: string
   /** 时间轴起点 ms */
   start: number
@@ -55,10 +59,14 @@ export interface MediaClip {
   tx: number
   ty: number
   scale: number
+  /** 视频画面旋转（度，绕画面矩形中心），音频忽略；缺省 0 = 不旋转 */
+  rotate: number
   /** 音频淡入时长 ms（从线段起点起，0 = 无）；视频忽略 */
   fadeInMs: number
   /** 音频淡出时长 ms（到线段结束处止，0 = 无）；视频忽略 */
   fadeOutMs: number
+  /** Per-clip audio gain. Applied to audio clips and to video clips that contain audio. */
+  volume?: number
   /** 视频进场转场（null = 无）；音频忽略。视频间转场靠重叠两段 + 后一段 transIn 实现 */
   transIn?: VideoTransition | null
   /** 视频退场转场（null = 无）；音频忽略 */
@@ -88,8 +96,9 @@ export function clampSpeed(speed: unknown): number {
 export function withClipDefaults(
   c: Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>
 ): Omit<MediaClip, 'id'> {
-  const sourceIn = Math.max(0, c.sourceIn ?? 0)
-  const sourceOut = Math.min(c.sourceDuration, Math.max(sourceIn + 1, c.sourceOut ?? c.sourceDuration))
+  const sourceDuration = Math.max(0, Number.isFinite(c.sourceDuration) ? c.sourceDuration : 0)
+  const sourceIn = Math.min(Math.max(0, sourceDuration - 1), Math.max(0, c.sourceIn ?? 0))
+  const sourceOut = Math.min(sourceDuration, Math.max(Math.min(sourceDuration, sourceIn + 1), c.sourceOut ?? sourceDuration))
   const speed = clampSpeed(c.speed ?? 1)
   const loop = normalizeLoop(c.loop ?? 1)
   // 淡入/淡出钳到线段在时间轴上的总占用时长内（无限循环不设上限）
@@ -97,19 +106,23 @@ export function withClipDefaults(
   return {
     kind: c.kind,
     path: c.path,
+    sourcePath: c.sourcePath ?? c.path,
+    offline: c.offline ?? false,
     name: c.name,
     start: Math.max(0, c.start),
-    sourceDuration: c.sourceDuration,
+    sourceDuration,
     sourceIn,
     sourceOut,
     speed,
     loop,
-    layer: Math.max(0, Math.round(c.layer ?? 0)),
+    layer: Math.min(MAX_LAYER, Math.max(0, Math.round(c.layer ?? 0))),
     tx: c.tx ?? 0,
     ty: c.ty ?? 0,
     scale: c.scale && c.scale > 0 ? c.scale : 1,
+    rotate: c.rotate ?? 0,
     fadeInMs: Math.min(placedMs, Math.max(0, Math.round(c.fadeInMs ?? 0))),
     fadeOutMs: Math.min(placedMs, Math.max(0, Math.round(c.fadeOutMs ?? 0))),
+    volume: Math.min(1, Math.max(0, Number.isFinite(c.volume) ? Number(c.volume) : 1)),
     transIn: normTransition(c.transIn),
     transOut: normTransition(c.transOut)
   }
@@ -247,9 +260,10 @@ for (const t of VIDEO_TRANSITIONS) {
 /**
  * tMs 时刻该视频线段的转场绘制修正。进场窗口 [start, start+inDur]、
  * 退场窗口 [end-outDur, end]；窗口外、无转场或 type 未注册返回恒等。
+ * ignoreIn=true 时跳过进场（junction 转场把 transIn 挪到前一段尾部播放，本段自身不再重复进场）。
  */
-export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: number): VideoClipFx {
-  const ti = clip.transIn
+export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: number, ignoreIn = false): VideoClipFx {
+  const ti = ignoreIn ? null : clip.transIn
   const to = clip.transOut
   if ((!ti || ti.durationMs <= 0) && (!to || to.durationMs <= 0)) return IDENTITY_CLIP_FX
   const end = clipEnd(clip, projectEndMs)
@@ -261,6 +275,56 @@ export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: numbe
     return getVideoTransition(to.type)?.out(easeOutCubic(clamp01((end - tMs) / to.durationMs))) ?? IDENTITY_CLIP_FX
   }
   return IDENTITY_CLIP_FX
+}
+
+/* ---- 相邻视频线段之间的过渡（junction）----
+ * 两段同层视频首尾相接（A.end === B.start）时，B 的 transIn 不再从黑场进场，而是作为
+ * A→B 的过渡：在 A 的尾部窗口 [B.start−d, B.start] 里，B 冻结在首帧、按 transIn.in 姿态叠加
+ * 绘制在 A（仍在自己窗口内正常播放）之上——fade = 交叉淡化，slide/wipe/zoom = 覆盖进入。
+ */
+
+/** 本视频线段相对其前一相邻线段的过渡时长 ms（夹到两段可用长度内）；无相邻前段或无 transIn 时 0。 */
+export function junctionLeadMs(clip: MediaClip, clips: readonly MediaClip[]): number {
+  if (clip.kind !== 'video') return 0
+  const ti = clip.transIn
+  if (!ti || !(ti.durationMs > 0)) return 0
+  const prev = clips.find(
+    (o) =>
+      o.id !== clip.id &&
+      o.kind === 'video' &&
+      o.layer === clip.layer &&
+      o.loop !== 'infinite' &&
+      clipEnd(o, 0) === clip.start
+  )
+  if (!prev) return 0
+  const prevLen = clipEnd(prev, 0) - prev.start
+  const selfLen = clip.loop === 'infinite' ? Infinity : clipEnd(clip, 0) - clip.start
+  return Math.max(0, Math.min(ti.durationMs, prevLen, selfLen))
+}
+
+/**
+ * 渲染用源时间：正常窗口内 = clipSourceTime；junction 预卷窗口 [start−lead, start) 内冻结在首帧
+ * （sourceIn）；两者都不在时返回 null。
+ */
+export function clipRenderSourceTime(
+  clip: MediaClip,
+  tMs: number,
+  projectEndMs: number,
+  leadMs: number
+): number | null {
+  const normal = clipSourceTime(clip, tMs, projectEndMs)
+  if (normal !== null) return normal
+  if (leadMs > 0 && tMs >= clip.start - leadMs && tMs < clip.start) return clip.sourceIn
+  return null
+}
+
+/** junction 预卷窗口内该视频线段的入场姿态（叠加在前一段之上）；窗口外恒等。 */
+export function junctionInFxAt(clip: MediaClip, tMs: number, leadMs: number): VideoClipFx {
+  if (leadMs <= 0 || tMs < clip.start - leadMs || tMs >= clip.start) return IDENTITY_CLIP_FX
+  const ti = clip.transIn
+  if (!ti) return IDENTITY_CLIP_FX
+  const p = easeOutCubic(clamp01((tMs - (clip.start - leadMs)) / leadMs))
+  return getVideoTransition(ti.type)?.in(p) ?? IDENTITY_CLIP_FX
 }
 
 /** 把部分 VideoClipFx 合并到恒等并钳制（插件转场用） */
@@ -315,6 +379,31 @@ export function clipsDuration(clips: MediaClip[]): number {
 export function shiftClip(clip: MediaClip, deltaMs: number): MediaClip {
   const d = Math.max(deltaMs, -clip.start)
   return d === 0 ? clip : { ...clip, start: Math.round(clip.start + d) }
+}
+
+/**
+ * 同层视频线段不重叠：把 desiredStart 夹到「不与任何邻居重叠、且不越过邻居」的位置——
+ * 拖过头就贴着邻居边缘停住（bounce/stick）。
+ * neighbors：同层其它视频线段的 [start, end] 区间；origStart：拖拽起点位置；len：本段时间轴长度。
+ * 只限制本段所在的那段空隙（由起点位置决定的左右邻居），因此不能拖着穿过邻居换位。
+ */
+export function clampStartNoOverlap(
+  neighbors: readonly (readonly [number, number])[],
+  origStart: number,
+  len: number,
+  desiredStart: number
+): number {
+  let lo = 0
+  let hi = Infinity
+  const origCenter = origStart + len / 2
+  for (const [ns, ne] of neighbors) {
+    if (ne <= origStart) lo = Math.max(lo, ne) // 完全在左侧的邻居
+    else if (ns >= origStart + len) hi = Math.min(hi, ns) // 完全在右侧的邻居
+    else if ((ns + ne) / 2 < origCenter) lo = Math.max(lo, ne) // 预存重叠（旧工程）：按中心分侧
+    else hi = Math.min(hi, ns)
+  }
+  const maxStart = hi === Infinity ? Infinity : hi - len
+  return Math.max(0, Math.min(Math.max(desiredStart, lo), maxStart))
 }
 
 /**

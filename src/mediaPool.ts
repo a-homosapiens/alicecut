@@ -1,4 +1,13 @@
-import { clipSourceTime, clipGain, clipTransition, type MediaClip, type VideoClipFx } from './core/media'
+import {
+  clipSourceTime,
+  clipGain,
+  clipTransition,
+  clipRenderSourceTime,
+  junctionLeadMs,
+  junctionInFxAt,
+  type MediaClip,
+  type VideoClipFx
+} from './core/media'
 
 /**
  * 媒体元素池：每个媒体线段对应一个 <video>/<audio> 元素，
@@ -8,7 +17,10 @@ import { clipSourceTime, clipGain, clipTransition, type MediaClip, type VideoCli
 
 /** 本地绝对路径 → media:// URL */
 export function mediaUrl(path: string): string {
-  return 'media:///' + path.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
+  // A privileged standard scheme needs a real host. The previous hostless
+  // media:///D%3A/... form worked inconsistently: HTMLMediaElement accepted it,
+  // while fetch() (used for waveforms) rejected it as an unsafe URL.
+  return 'media://local/' + path.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
 }
 
 /* ---- 背景图片：按路径缓存一个 HTMLImageElement，cover 铺满画布 ---- */
@@ -18,6 +30,9 @@ function getBgImage(path: string): HTMLImageElement {
   let img = bgImages.get(path)
   if (!img) {
     img = new Image()
+    // media://local is a different origin from the renderer. Request it in
+    // CORS mode before assigning src so drawing it cannot taint export canvases.
+    img.crossOrigin = 'anonymous'
     img.src = mediaUrl(path)
     bgImages.set(path, img)
   }
@@ -28,10 +43,15 @@ function getBgImage(path: string): HTMLImageElement {
 export async function loadBgImage(path: string): Promise<void> {
   const img = getBgImage(path)
   if (img.complete && img.naturalWidth > 0) return
-  await img.decode().catch(() => {})
+  try {
+    await img.decode()
+  } catch {
+    throw new Error(`背景图片无法解码: ${path}`)
+  }
+  if (img.naturalWidth === 0 || img.naturalHeight === 0) throw new Error(`背景图片无法解码: ${path}`)
 }
 
-/** 把背景图片按 cover 铺满画布（保持比例裁切居中） */
+/** 把背景图片按 cover 铺满画布（保持比例裁切居中），可叠加缩放/平移/旋转 */
 export function drawBackgroundImage(
   ctx: CanvasRenderingContext2D,
   path: string,
@@ -39,7 +59,8 @@ export function drawBackgroundImage(
   h: number,
   userScale = 1,
   offsetX = 0,
-  offsetY = 0
+  offsetY = 0,
+  rotate = 0
 ): void {
   const img = getBgImage(path)
   const iw = img.naturalWidth
@@ -49,7 +70,19 @@ export function drawBackgroundImage(
   const scale = Math.max(w / iw, h / ih) * (userScale > 0 ? userScale : 1)
   const dw = iw * scale
   const dh = ih * scale
-  ctx.drawImage(img, (w - dw) / 2 + offsetX, (h - dh) / 2 + offsetY, dw, dh)
+  const dx = (w - dw) / 2 + offsetX
+  const dy = (h - dh) / 2 + offsetY
+  if (rotate) {
+    // 绕画面中心旋转（转出画面的角会露出兜底黑底，放大可补满）
+    ctx.save()
+    ctx.translate(w / 2, h / 2)
+    ctx.rotate((rotate * Math.PI) / 180)
+    ctx.translate(-w / 2, -h / 2)
+    ctx.drawImage(img, dx, dy, dw, dh)
+    ctx.restore()
+  } else {
+    ctx.drawImage(img, dx, dy, dw, dh)
+  }
 }
 
 const pool = new Map<number, HTMLVideoElement | HTMLAudioElement>()
@@ -62,14 +95,30 @@ export function getMediaEl(clip: MediaClip): HTMLVideoElement | HTMLAudioElement
   if (!el) {
     if (clip.kind === 'video') {
       const v = document.createElement('video')
+      // Must be set before src. Otherwise frames drawn from media://local make
+      // the canvas origin-unsafe and WebCodecs rejects new VideoFrame(canvas).
+      v.crossOrigin = 'anonymous'
       v.muted = true
       v.playsInline = true
       el = v
     } else {
-      el = new Audio()
+      const audio = new Audio()
+      audio.defaultMuted = false
+      audio.muted = false
+      audio.volume = 1
+      el = audio
     }
     el.preload = 'auto'
     el.loop = true // 线段循环靠元素原生 loop + 激活窗口控制
+    // 必须挂进文档且必须有布局盒：脱离 DOM 或 display:none 的 <audio> 在 Chromium 里都会被限速播放
+    // （实测跌到不到一半速，声音卡顿/几乎没声）——两者都被排除出布局树，触发同一限速。
+    // opacity:0 的 1x1 元素仍参与布局/绘制，不受影响；<video> 本身不受限速影响，但一并处理更稳妥。
+    el.style.position = 'fixed'
+    el.style.width = '1px'
+    el.style.height = '1px'
+    el.style.opacity = '0'
+    el.style.pointerEvents = 'none'
+    document.body.appendChild(el)
     el.src = mediaUrl(clip.path)
     pool.set(clip.id, el)
   }
@@ -82,6 +131,7 @@ function disposeEl(id: number): void {
   el.pause()
   el.removeAttribute('src')
   el.load()
+  el.remove()
   pool.delete(id)
   lastSeekedSec.delete(id)
   forwardMediaTime.delete(id)
@@ -92,6 +142,7 @@ function disposeEl(id: number): void {
 export function probeMediaDuration(path: string, kind: 'video' | 'audio'): Promise<number> {
   return new Promise((resolve, reject) => {
     const el = kind === 'video' ? document.createElement('video') : new Audio()
+    el.crossOrigin = 'anonymous'
     el.preload = 'metadata'
     el.addEventListener(
       'loadedmetadata',
@@ -124,13 +175,19 @@ export function syncMediaPlayback(
   }
 
   for (const clip of clips) {
+    if (clip.offline) continue
     const el = getMediaEl(clip)
     // 音轨淡入淡出：每帧按时间轴位置设音量
-    if (clip.kind === 'audio') el.volume = clipGain(clip, tMs, projectEndMs)
-    const srcT = clipSourceTime(clip, tMs, projectEndMs)
-    if (srcT === null || !playing) {
+    if (clip.kind === 'audio') el.volume = Math.min(1, (clip.volume ?? 1) * clipGain(clip, tMs, projectEndMs))
+    const normalSrc = clipSourceTime(clip, tMs, projectEndMs)
+    const lead = clip.kind === 'video' ? junctionLeadMs(clip, clips) : 0
+    // junction 预卷窗口：本段还没到自己的时间，冻结在首帧（暂停并 seek 到 sourceIn），
+    // 好让 drawVideoBackdrop 把它叠加在前一段之上做过渡
+    const inLead = normalSrc === null && lead > 0 && tMs >= clip.start - lead && tMs < clip.start
+    const srcT = inLead ? clip.sourceIn : normalSrc
+    if (srcT === null || !playing || inLead) {
       if (!el.paused) el.pause()
-      // 暂停态把画面停在播放头位置：拖动播放头时也实时跟随（半帧容差）；
+      // 暂停态/预卷把画面停在目标源位置（拖动播放头时也实时跟随，半帧容差）；
       // seek 进行中不打断，seeked 后下一帧自然跟进最新位置
       if (srcT !== null && !el.seeking && Math.abs(el.currentTime - srcT / 1000) > 0.05) {
         el.currentTime = srcT / 1000
@@ -139,8 +196,14 @@ export function syncMediaPlayback(
     }
     if (el.playbackRate !== clip.speed) el.playbackRate = clip.speed
     if (el.paused) {
+      if (clip.kind === 'audio') {
+        el.defaultMuted = false
+        el.muted = false
+      }
       el.currentTime = srcT / 1000
-      void el.play().catch(() => {})
+      void el.play().catch((error: unknown) => {
+        console.error(`Audio/video playback failed for ${clip.path}`, error)
+      })
     } else if (!el.seeking && Math.abs(el.currentTime - srcT / 1000) > DRIFT_SEC) {
       el.currentTime = srcT / 1000
     }
@@ -182,7 +245,7 @@ export async function seekClipExact(clip: MediaClip, srcSec: number): Promise<vo
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       cleanup()
-      resolve() // 个别格式 seeked 不可靠时不卡死导出，用当前帧（不写入缓存，下一帧仍会重新尝试 seek）
+      reject(new Error(`视频定位超时，导出已停止以避免损坏画面: ${clip.path}`))
     }, 3000)
     const onSeeked = (): void => {
       lastSeekedSec.set(clip.id, srcSec)
@@ -230,11 +293,11 @@ const RVFC_WAIT_TIMEOUT_MS = 3000
 function waitForFrameAtOrAfter(video: HTMLVideoElement, clipId: number, targetSec: number): Promise<void> {
   const cached = forwardMediaTime.get(clipId)
   if (cached !== undefined && cached >= targetSec) return Promise.resolve()
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let handle: number | null = null
     const timer = setTimeout(() => {
       if (handle !== null) video.cancelVideoFrameCallback(handle)
-      resolve() // 个别帧真的追不上时不卡死导出，用当前帧（不影响后续：下一帧会重新判断）
+      reject(new Error('视频帧解码超时，导出已停止以避免重复或错误画面'))
     }, RVFC_WAIT_TIMEOUT_MS)
     const check = (_now: number, metadata: VideoFrameCallbackMetadata): void => {
       forwardMediaTime.set(clipId, metadata.mediaTime)
@@ -298,13 +361,13 @@ function clipRectFor(video: HTMLVideoElement, clip: MediaClip, w: number, h: num
 
 /** 选中标记用：某视频线段当前在画布上占的矩形；尺寸未就绪时返回 null */
 export function getClipDrawRect(clip: MediaClip, w: number, h: number): ClipRect | null {
-  if (clip.kind !== 'video') return null
+  if (clip.kind !== 'video' || clip.offline) return null
   const el = getMediaEl(clip)
   if (!(el instanceof HTMLVideoElement)) return null
   return clipRectFor(el, clip, w, h)
 }
 
-/** 把一帧视频画到画布：cover 适配为基准，再叠加该线段的平移/缩放变换 */
+/** 把一帧视频画到画布：cover 适配为基准，再叠加该线段的平移/缩放/旋转变换 */
 function drawCover(
   ctx: CanvasRenderingContext2D,
   video: HTMLVideoElement,
@@ -314,7 +377,20 @@ function drawCover(
 ): void {
   if (video.readyState < 2) return
   const r = clipRectFor(video, clip, w, h)
-  if (r) ctx.drawImage(video, r.x, r.y, r.w, r.h)
+  if (!r) return
+  const deg = clip.rotate ?? 0
+  if (deg) {
+    const cx = r.x + r.w / 2
+    const cy = r.y + r.h / 2
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.rotate((deg * Math.PI) / 180)
+    ctx.translate(-cx, -cy)
+    ctx.drawImage(video, r.x, r.y, r.w, r.h)
+    ctx.restore()
+  } else {
+    ctx.drawImage(video, r.x, r.y, r.w, r.h)
+  }
 }
 
 /** 画出 tMs 时刻所有可见的背景视频线段（低层在下、高层在上；同层后开始的在上） */
@@ -327,13 +403,17 @@ export function drawVideoBackdrop(
   height: number
 ): void {
   const videos = clips
-    .filter((c) => c.kind === 'video')
+    .filter((c) => c.kind === 'video' && !c.offline)
     .sort((a, b) => a.layer - b.layer || a.start - b.start)
   for (const clip of videos) {
-    if (clipSourceTime(clip, tMs, projectEndMs) === null) continue
+    const lead = junctionLeadMs(clip, clips)
+    // junction 预卷窗口内本段也算可见（叠加在前一段之上）
+    if (clipRenderSourceTime(clip, tMs, projectEndMs, lead) === null) continue
     const el = getMediaEl(clip)
     if (!(el instanceof HTMLVideoElement)) continue
-    const fx = clipTransition(clip, tMs, projectEndMs)
+    const inLead = lead > 0 && tMs < clip.start
+    // 预卷窗口用 junction 入场姿态；否则正常转场（junction 段跳过自身进场，避免重复）
+    const fx = inLead ? junctionInFxAt(clip, tMs, lead) : clipTransition(clip, tMs, projectEndMs, lead > 0)
     if (fx.alpha <= 0.004) continue
     // 无转场时走快路径，避免每帧 save/restore
     if (fx.alpha === 1 && fx.dxFrac === 0 && fx.dyFrac === 0 && fx.scale === 1 && !fx.wipe) {

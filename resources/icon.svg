@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <title>AliceCut</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1" />
+      <stop offset="1" stop-color="#312e81" />
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#dbeafe" />
+    </linearGradient>
+  </defs>
+
+  <!-- 圆角方底：与应用主色（--accent）同一族靛蓝 -->
+  <rect width="64" height="64" rx="14" fill="url(#bg)" />
+
+  <g stroke="url(#mark)" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 兔耳：耳根停在表盘边缘上，不伸进盘面里 -->
+    <path d="M27.5 23.5C22 17 19.5 10 22 5c4.5 3.5 8 11 9 18" />
+    <path d="M36.5 23.5C42 17 44.5 10 42 5c-4.5 3.5-8 11-9 18" />
+    <!-- 表盘 -->
+    <circle cx="32" cy="40" r="17" />
+  </g>
+
+  <!-- 怀表刻度：12/3/6/9，点出「表」而不是普通圆圈 -->
+  <g stroke="#fbbf24" stroke-width="2.4" stroke-linecap="round" opacity="0.95">
+    <path d="M32 26v3" />
+    <path d="M46 40h-3" />
+    <path d="M32 54v-3" />
+    <path d="M18 40h3" />
+  </g>
+
+  <!-- 播放三角 -->
+  <path d="M29 34 39.5 40 29 46z" fill="url(#mark)" stroke="url(#mark)" stroke-width="3.2"
+        stroke-linejoin="round" />
+</svg>

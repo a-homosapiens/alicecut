@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'" />
+    <title>AliceCut Help</title>
+    <link rel="stylesheet" href="./help.css" />
+  </head>
+  <body>
+    <main>
+      <header class="product-heading">
+        <img src="../icon.png" alt="AliceCut logo" />
+        <div>
+          <div class="eyebrow">Quick Start</div>
+          <h1>AliceCut Help</h1>
+          <div class="muted">Create caption-led videos from lyrics, subtitles, audio, and video.</div>
+        </div>
+      </header>
+
+      <div class="steps">
+        <section class="step">
+          <strong>Import captions</strong>
+          <p>Choose <b>File → Import Lyrics</b> and open an LRC, SRT, VTT, or timestamped text file. If captions already exist, choose whether to replace the primary captions or add the file as another caption track.</p>
+        </section>
+        <section class="step">
+          <strong>Add video and audio</strong>
+          <p>Use <b>File → Import Video</b> or <b>Import Audio</b>. Imported media appears as clips on the timeline. Unsupported video formats are converted automatically for editing.</p>
+        </section>
+        <section class="step">
+          <strong>Arrange the timeline</strong>
+          <p>Drag clips and captions to move them. Drag either edge to trim timing. Select captions to edit text, timing, position, and per-line effects.</p>
+        </section>
+        <section class="step">
+          <strong>Style and preview</strong>
+          <p>Use the style panels to choose aspect ratio, typography, colors, background, and entrance or exit effects. Press <kbd>Space</kbd> to preview from the playhead.</p>
+        </section>
+        <section class="step">
+          <strong>Save your project</strong>
+          <p>Choose <b>File → Save Project</b> to create an AliceCut project file before making larger edits or closing the application. Keep the project file and its media folders together when copying the project to another computer; AliceCut stores portable relative paths but does not embed the media itself.</p>
+        </section>
+        <section class="step">
+          <strong>Export</strong>
+          <p>Choose <b>File → Export Video</b>, select format and quality settings, then choose an output location. You can also export the selected caption track as SRT.</p>
+        </section>
+      </div>
+
+      <h2>Essential shortcuts</h2>
+      <div class="card">
+        <table>
+          <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>A</kbd></td><td>Select all captions</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo</td></tr>
+            <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd></td><td>Redo</td></tr>
+            <tr><td><kbd>Delete</kbd></td><td>Delete the selected clip or captions</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Clear the current selection</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </body>
+</html>

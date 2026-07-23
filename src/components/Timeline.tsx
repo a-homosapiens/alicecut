@@ -16,6 +16,8 @@ import { seek } from '../playback'
 import { useWaveform } from '../waveform'
 import { useT, hasMsg } from '../i18n'
 import type { LrcLine, CaptionTrack } from '../core/types'
+import { segmentClickTimeSec, visibleTimelineLayers } from '../core/timeline'
+import { TextEditModal } from './TextEditModal'
 
 /** 每种特效的线段配色，便于一眼区分 */
 const EFFECT_COLORS: Record<string, string> = {
@@ -96,7 +98,7 @@ interface DragState {
   /** 拖拽起始时刻的行快照（深拷贝），位移始终相对快照计算 */
   originals: LrcLine[]
   moved: boolean
-  clickedId: number
+  clickTimeSec: number
 }
 
 function fmt(sec: number): string {
@@ -140,11 +142,16 @@ function Playhead({
 function ClipSegment({
   clip,
   pxPerSec,
-  durationMs
+  durationMs,
+  onLayerDragChange,
+  forceWave = false
 }: {
   clip: MediaClip
   pxPerSec: number
   durationMs: number
+  onLayerDragChange?: (dragging: boolean) => void
+  /** 强制展开显示波形（即使未选中）——选中字幕时给音轨 1 用作对齐参考 */
+  forceWave?: boolean
 }): React.JSX.Element {
   const t = useT()
   const selected = useProject((s) => s.selectedClipId === clip.id)
@@ -178,11 +185,14 @@ function ClipSegment({
     const onMove = (ev: MouseEvent): void => {
       const deltaPx = ev.clientX - startClientX
       const deltaPy = ev.clientY - startClientY
-      if (Math.abs(deltaPx) > 3 || Math.abs(deltaPy) > 3) moved = true
+      if (!moved && (Math.abs(deltaPx) > 3 || Math.abs(deltaPy) > 3)) {
+        moved = true
+        onLayerDragChange?.(true)
+      }
       if (!moved) return
       useProject.getState().moveClipFrom(original, (deltaPx / pxPerSec) * 1000)
-      // 竖向拖换层（视频与音频均支持）：界面上层在上方，往上拖 = 层序加大
-      const layerDelta = -Math.round(deltaPy / MEDIA_ROW_H)
+      // 竖向拖换层（视频与音频均支持）：新层在下方，往下拖 = 层序加大
+      const layerDelta = Math.round(deltaPy / MEDIA_ROW_H)
       const layer = Math.min(MAX_LAYER, Math.max(0, original.layer + layerDelta))
       if (layer !== useProject.getState().clips.find((c) => c.id === clip.id)?.layer) {
         useProject.getState().setClipLayer(clip.id, layer)
@@ -191,6 +201,7 @@ function ClipSegment({
     const onUp = (): void => {
       // 纯点击：把播放头移到点击处并刷新画面（拖动过则不跳）
       if (!moved) seek(clickTime)
+      if (moved) onLayerDragChange?.(false)
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
@@ -198,7 +209,7 @@ function ClipSegment({
     window.addEventListener('mouseup', onUp)
   }
 
-  const showWave = clip.kind === 'audio' && selected
+  const showWave = clip.kind === 'audio' && (selected || forceWave)
 
   return (
     <div
@@ -301,6 +312,79 @@ function ClipVideoFx({ clip }: { clip: MediaClip }): React.JSX.Element {
   )
 }
 
+/**
+ * 相邻两段视频接缝处的过渡标记：点接缝上的 ⋈ 设置/编辑 A→B 过渡（存在后一段 B 的 transIn 上）。
+ * 未设置时点击加一个默认 fade 1s 并展开编辑；已设置时点击展开改类型/时长或删除。
+ */
+function JunctionMarker({ clipB, pxPerSec }: { clipB: MediaClip; pxPerSec: number }): React.JSX.Element {
+  const t = useT()
+  const st = useProject.getState
+  const [open, setOpen] = useState(false)
+  // 订阅插件视频转场以在其变化时更新选项
+  useProject((s) => s.pluginVideoTransitions)
+  const trans = clipB.transIn ?? null
+  const options = videoTransitionList().map((o) => ({
+    id: o.id,
+    name: hasMsg(`vtrans.${o.id}`) ? t(`vtrans.${o.id}` as Parameters<typeof t>[0]) : o.name
+  }))
+  const left = (clipB.start / 1000) * pxPerSec
+
+  const onBadge = (e: React.MouseEvent): void => {
+    e.stopPropagation()
+    if (!trans) st().setClipTransition(clipB.id, 'in', { type: 'fade', durationMs: 1000 })
+    setOpen((o) => !o)
+  }
+
+  return (
+    <span className="tl-junction" style={{ left }} onMouseDown={(e) => e.stopPropagation()}>
+      <button
+        className={`tl-junction-badge${trans ? ' active' : ''}`}
+        title={trans ? t('tl.junctionEditTitle') : t('tl.junctionAddTitle')}
+        onClick={onBadge}
+      >
+        ⋈
+      </button>
+      {open && trans && (
+        <div className="tl-junction-pop" onMouseDown={(e) => e.stopPropagation()}>
+          <select
+            value={trans.type}
+            onChange={(e) => st().setClipTransition(clipB.id, 'in', { ...trans, type: e.target.value })}
+          >
+            {options.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+          <input
+            type="number"
+            step={0.1}
+            min={0.1}
+            value={(trans.durationMs / 1000).toFixed(1)}
+            onChange={(e) =>
+              st().setClipTransition(clipB.id, 'in', { ...trans, durationMs: Math.max(100, Number(e.target.value) * 1000) })
+            }
+          />
+          {t('tl.sec')}
+          <button
+            className="clip-fx-x"
+            title={t('tl.removeTrans')}
+            onClick={() => {
+              st().setClipTransition(clipB.id, 'in', null)
+              setOpen(false)
+            }}
+          >
+            ✕
+          </button>
+          <button className="clip-fx-x" title={t('tl.junctionDone')} onClick={() => setOpen(false)}>
+            ✓
+          </button>
+        </div>
+      )}
+    </span>
+  )
+}
+
 /** 音轨特效：淡入(transit in)/淡出(transit out)。从菜单添加后以可编辑「?秒」呈现 */
 function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
   const t = useT()
@@ -315,6 +399,17 @@ function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
 
   return (
     <span className="clip-fx">
+      <label className="clip-fx-chip">
+        {t('tl.audioTrack')} {Math.round((clip.volume ?? 1) * 100)}%
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={clip.volume ?? 1}
+          onChange={(e) => st().setClipVolume(clip.id, Number(e.target.value))}
+        />
+      </label>
       <span className="clip-fx-add">
         <button className="btn btn-sm" onClick={() => setMenuOpen((o) => !o)} title={t('tl.addFadeTitle')}>
           + {t('tl.fx')} ▾
@@ -451,18 +546,19 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
         <>
           <label className="tl-layer-ctl" title={t('tl.layerTitle')}>
             {t('tl.layer')} {clip.layer + 1}
+            {/* 界面上层在上方（layer 小），▲ 上移 = 减小层序，▼ 下移 = 增大层序 */}
             <button
               className="btn btn-sm"
-              disabled={clip.layer >= MAX_LAYER}
-              onClick={() => st().setClipLayer(clip.id, clip.layer + 1)}
+              disabled={clip.layer <= 0}
+              onClick={() => st().setClipLayer(clip.id, clip.layer - 1)}
               title={t('tl.moveUp')}
             >
               ▲
             </button>
             <button
               className="btn btn-sm"
-              disabled={clip.layer <= 0}
-              onClick={() => st().setClipLayer(clip.id, clip.layer - 1)}
+              disabled={clip.layer >= MAX_LAYER}
+              onClick={() => st().setClipLayer(clip.id, clip.layer + 1)}
               title={t('tl.moveDown')}
             >
               ▼
@@ -477,6 +573,17 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
               step={0.05}
               value={clip.scale}
               onChange={(e) => st().setClipScale(clip.id, Number(e.target.value))}
+            />
+          </label>
+          <label title={t('tl.rotateTitle')}>
+            {t('tl.rotate')} {clip.rotate ?? 0}°
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              step={1}
+              value={clip.rotate ?? 0}
+              onChange={(e) => st().setClipRotate(clip.id, Number(e.target.value))}
             />
           </label>
           <button className="btn btn-sm" onClick={() => void extractAudio()} title={t('tl.extractAudioTitle')}>
@@ -512,6 +619,9 @@ export function Timeline(): React.JSX.Element {
   const canUndo = useProject((s) => s.past.length > 0)
   const canRedo = useProject((s) => s.future.length > 0)
   const [pxPerSec, setPxPerSec] = useState(60)
+  const [layerDragKind, setLayerDragKind] = useState<'audio' | 'text' | null>(null)
+  // 双击片段打开的文字编辑弹窗
+  const [editLineId, setEditLineId] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<DragState | null>(null)
   const pxPerSecRef = useRef(pxPerSec)
@@ -597,28 +707,43 @@ export function Timeline(): React.JSX.Element {
   const ticks: number[] = []
   for (let s = 0; s <= duration; s += step) ticks.push(s)
 
-  // 视频/音频按层分行（高层在上），最上方再留一条空层轨作为「叠加新层」的拖放目标
+  // 视频/音频按层分行（高层在上）；Audio 的额外空投放层只在拖动 Audio 时显示
   const videoClips = clips.filter((c) => c.kind === 'video')
   const audioClips = clips.filter((c) => c.kind === 'audio')
-  const layerRows = (cs: MediaClip[]): { layer: number; clips: MediaClip[] }[] => {
+  const layerRows = (cs: MediaClip[], showExtraDropLayer: boolean): { layer: number; clips: MediaClip[] }[] => {
     if (cs.length === 0) return []
-    const top = Math.min(MAX_LAYER, cs.reduce((m, c) => Math.max(m, c.layer), 0) + 1) // 顶部空轨
-    const rows: { layer: number; clips: MediaClip[] }[] = []
-    for (let l = top; l >= 0; l--) rows.push({ layer: l, clips: cs.filter((c) => c.layer === l) })
-    return rows
+    return visibleTimelineLayers(
+      cs.map((c) => c.layer),
+      showExtraDropLayer,
+      MAX_LAYER
+    ).map((layer) => ({ layer, clips: cs.filter((c) => c.layer === layer) }))
   }
-  const videoRows = layerRows(videoClips)
-  const audioRows = layerRows(audioClips)
+  const videoRows = layerRows(videoClips, true)
+  const audioRows = layerRows(audioClips, layerDragKind === 'audio')
+  // 「音轨 1」= 最底层音轨（导入时第一条音频落在 layer 0；取最小层兼容异常数据）
+  const audioTrack1Layer = audioClips.length > 0 ? Math.min(...audioClips.map((c) => c.layer)) : null
+  // 选中字幕（歌词，非独立文字块）时，让音轨 1 自己那一行展开显示波形做对齐参考——
+  // 复用选中音轨时的同一份波形，不再另画一条，避免出现两条波形令人困惑
+  const captionSelected = selectedIds.some((id) => {
+    const l = lines.find((x) => x.id === id)
+    return !!l && l.kind !== 'text'
+  })
+  const track1WaveActive = captionSelected && audioTrack1Layer !== null
   // 歌词按所属字幕组分行（一组一行，含空组），一眼区分多语言字幕；组内仍按 start 排好序
   const trackRows: { track: CaptionTrack; lines: LrcLine[] }[] = allCaptionTracks({ meta, lrcName, tracks: tracksArr }).map(
     (track) => ({ track, lines: lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === track.id) })
   )
   const textBlocks = lines.filter((l) => l.kind === 'text')
-  // 文字块按 layer 分行（高层在上），顶部留空层作拖放目标
+  // 文字块按 layer 分行（高层在上）；额外空投放层只在拖动 Text 时显示
   const textRows: { layer: number; lines: LrcLine[] }[] = []
   if (textBlocks.length > 0) {
-    const top = Math.min(MAX_LAYER, textBlocks.reduce((m, l) => Math.max(m, l.layer ?? 0), 0) + 1)
-    for (let l = top; l >= 0; l--) textRows.push({ layer: l, lines: textBlocks.filter((b) => (b.layer ?? 0) === l) })
+    for (const layer of visibleTimelineLayers(
+      textBlocks.map((line) => line.layer ?? 0),
+      layerDragKind === 'text',
+      MAX_LAYER
+    )) {
+      textRows.push({ layer, lines: textBlocks.filter((block) => (block.layer ?? 0) === layer) })
+    }
   }
 
   const zoom = (factor: number): void => {
@@ -646,7 +771,16 @@ export function Timeline(): React.JSX.Element {
     const afterSel = useProject.getState()
     const dragIds = new Set(mode === 'move' ? afterSel.selectedIds : [line.id])
     const originals = afterSel.lines.filter((l) => dragIds.has(l.id)).map((l) => structuredClone(l))
-    dragRef.current = { mode, startClientX: e.clientX, startClientY: e.clientY, originals, moved: false, clickedId: line.id }
+    const segmentRect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const clickTimeSec = segmentClickTimeSec(line.start, line.end, e.clientX, segmentRect.left, pxPerSec)
+    dragRef.current = {
+      mode,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      originals,
+      moved: false,
+      clickTimeSec
+    }
     // 文字块的移动支持竖向换层（歌词行只走水平）
     const textMove = line.kind === 'text' && mode === 'move'
 
@@ -655,14 +789,17 @@ export function Timeline(): React.JSX.Element {
       if (!drag) return
       const deltaPx = ev.clientX - drag.startClientX
       const deltaPy = ev.clientY - drag.startClientY
-      if (Math.abs(deltaPx) > 3 || (textMove && Math.abs(deltaPy) > 3)) drag.moved = true
+      if (!drag.moved && (Math.abs(deltaPx) > 3 || (textMove && Math.abs(deltaPy) > 3))) {
+        drag.moved = true
+        if (textMove) setLayerDragKind('text')
+      }
       if (!drag.moved) return
       const deltaMs = (deltaPx / pxPerSec) * 1000
       const s = useProject.getState()
       if (drag.mode === 'move') {
         s.moveLinesFrom(drag.originals, deltaMs)
         if (textMove) {
-          const layerDelta = -Math.round(deltaPy / MEDIA_ROW_H)
+          const layerDelta = Math.round(deltaPy / MEDIA_ROW_H)
           for (const o of drag.originals) {
             if (o.kind !== 'text') continue
             const layer = Math.min(MAX_LAYER, Math.max(0, (o.layer ?? 0) + layerDelta))
@@ -677,11 +814,9 @@ export function Timeline(): React.JSX.Element {
     }
     const onUp = (): void => {
       const drag = dragRef.current
-      // 纯点击（没拖动）：把红色播放头移到该线段起点
-      if (drag && !drag.moved) {
-        const l = useProject.getState().lines.find((x) => x.id === drag.clickedId)
-        if (l) seek(l.start / 1000)
-      }
+      // 纯点击片段主体（没拖动）：把红色播放头移到鼠标所在时间点；裁剪手柄不改变播放头
+      if (drag && !drag.moved && drag.mode === 'move') seek(drag.clickTimeSec)
+      if (textMove) setLayerDragKind(null)
       dragRef.current = null
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
@@ -733,8 +868,12 @@ export function Timeline(): React.JSX.Element {
           borderColor: color,
           background: `${color}2e`
         }}
-        title={`${line.text}\n${effName(effId)}${line.effectId ? '' : t('style.effectsGlobal')}`}
+        title={`${line.text}\n${effName(effId)}${line.effectId ? '' : t('style.effectsGlobal')}\n${t('tl.dblclickEdit')}`}
         onMouseDown={(e) => onSegmentMouseDown(e, line, 'move')}
+        onDoubleClick={(e) => {
+          e.stopPropagation()
+          setEditLineId(line.id)
+        }}
       >
         <div className="tl-handle l" onMouseDown={(e) => onSegmentMouseDown(e, line, 'trim-l')} />
         <span className="tl-seg-text">
@@ -864,24 +1003,41 @@ export function Timeline(): React.JSX.Element {
               {row.clips.map((c) => (
                 <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
               ))}
+              {/* 接缝过渡标记：后一段紧接前一段（A.end === B.start）时在接缝处显示 */}
+              {row.clips
+                .filter((b) => row.clips.some((a) => a.id !== b.id && a.loop !== 'infinite' && clipEnd(a, 0) === b.start))
+                .map((b) => (
+                  <JunctionMarker key={`j${b.id}`} clipB={b} pxPerSec={pxPerSec} />
+                ))}
             </div>
           ))}
-          {audioRows.map((row) => (
-            <div
-              className={`tl-mediatrack tl-audiotrack${
-                row.clips.some((c) => c.id === selectedClipId) ? ' expanded' : ''
-              }${row.clips.length === 0 ? ' empty' : ''}`}
-              key={`a${row.layer}`}
-            >
-              <span className="tl-layer-label">
-                {t('tl.audioLayer')} {row.layer + 1}
-                {row.clips.length === 0 ? t('tl.audioDropHint') : ''}
-              </span>
-              {row.clips.map((c) => (
-                <ClipSegment key={c.id} clip={c} pxPerSec={pxPerSec} durationMs={durationMs} />
-              ))}
-            </div>
-          ))}
+          {audioRows.map((row) => {
+            // 选中字幕时，音轨 1（最底层音轨）展开显示波形做对齐参考
+            const waveRow = track1WaveActive && row.layer === audioTrack1Layer
+            return (
+              <div
+                className={`tl-mediatrack tl-audiotrack${
+                  row.clips.some((c) => c.id === selectedClipId) || waveRow ? ' expanded' : ''
+                }${row.clips.length === 0 ? ' empty' : ''}`}
+                key={`a${row.layer}`}
+              >
+                <span className="tl-layer-label">
+                  {t('tl.audioLayer')} {row.layer + 1}
+                  {row.clips.length === 0 ? t('tl.audioDropHint') : ''}
+                </span>
+                {row.clips.map((c) => (
+                  <ClipSegment
+                    key={c.id}
+                    clip={c}
+                    pxPerSec={pxPerSec}
+                    durationMs={durationMs}
+                    onLayerDragChange={(dragging) => setLayerDragKind(dragging ? 'audio' : null)}
+                    forceWave={waveRow}
+                  />
+                ))}
+              </div>
+            )
+          })}
           {textRows.map((row) => (
             <div className={`tl-texttrack${row.lines.length === 0 ? ' empty' : ''}`} key={`t${row.layer}`}>
               <span className="tl-layer-label">
@@ -904,6 +1060,8 @@ export function Timeline(): React.JSX.Element {
           <Playhead pxPerSec={pxPerSec} scrollRef={scrollRef} />
         </div>
       </div>
+
+      {editLineId !== null && <TextEditModal lineId={editLineId} onClose={() => setEditLineId(null)} />}
     </div>
   )
 }

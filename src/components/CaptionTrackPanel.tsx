@@ -24,7 +24,6 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
   const lines = useProject((s) => s.lines)
   const currentTime = useProject((s) => s.currentTime)
   const tracksArr = useProject((s) => s.tracks)
-  const primaryLrcName = useProject((s) => s.lrcName)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [draft, setDraft] = useState('')
   const [gran, setGran] = useState(1200)
@@ -35,14 +34,14 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
   if (trackId !== 0 && !extra) return null // 字幕组已被删除但面板还没关
 
   const name = trackId === 0 ? '' : extra!.name
-  const lrcName = trackId === 0 ? primaryLrcName : extra!.lrcName
+  const lrcName = trackId === 0 ? null : extra!.lrcName
   const offsetY = trackId === 0 ? 0 : extra!.offsetY
   const visible = trackId === 0 ? true : extra!.visible
   const displayName = name || t(trackId === 0 ? 'tracks.primary' : 'tracks.untitled', { n: trackId })
 
   const trackLines = lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === trackId)
   const tMs = currentTime * 1000
-  const activeId = trackLines.findLast((l) => l.start <= tMs)?.id
+  const activeId = trackLines.findLast((l) => l.start <= tMs && tMs < l.end)?.id
   const previewPages = repaginateLines(trackLines, gran).length
 
   const commitText = (id: number): void => {
@@ -92,17 +91,20 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
 
       {lrcName && <p className="hint path">{lrcName}</p>}
 
-      <button className="btn btn-sm" onClick={() => void importLrc()}>
-        {t('tracks.importInto')}
-      </button>
+      {trackId !== 0 && (
+        <button className="btn btn-sm" onClick={() => void importLrc()}>
+          {t('tracks.importInto')}
+        </button>
+      )}
 
       {trackLines.length > 0 && (
-        <>
-          <button className="btn btn-sm" onClick={() => useProject.getState().setSelection(trackLines.map((l) => l.id))}>
-            {t('tracks.selectAll')} ({trackLines.length})
-          </button>
-          <p className="hint">{t('tracks.selectAllHint')}</p>
-        </>
+        <button
+          className="btn btn-sm track-select-all"
+          title={`${t('tracks.selectAll')} — ${t('tracks.selectAllHint')}`}
+          onClick={() => useProject.getState().setSelection(trackLines.map((l) => l.id))}
+        >
+          ✓ {t('tracks.selectAllShort')} ({trackLines.length})
+        </button>
       )}
 
       {trackId !== 0 && (
@@ -136,7 +138,7 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
         <p className="hint">
           {t('lyrics.empty1')}
           <br />
-          {t('tracks.emptyHint')}
+          {t(trackId === 0 ? 'tracks.primaryEmptyHint' : 'tracks.emptyHint')}
         </p>
       ) : (
         <>

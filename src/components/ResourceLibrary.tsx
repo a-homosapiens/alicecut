@@ -1,7 +1,8 @@
 import { useProject, allCaptionTracks } from '../store/project'
 import { usePanels } from '../store/panels'
 import { seek } from '../playback'
-import { mediaUrl } from '../mediaPool'
+import { loadBgImage, mediaUrl, probeMediaDuration } from '../mediaPool'
+import type { MediaClip } from '../core/media'
 import { ClosableSection } from './ClosableSection'
 import { useT } from '../i18n'
 
@@ -41,7 +42,25 @@ export function ResourceLibrary(): React.JSX.Element {
   const importImage = async (): Promise<void> => {
     const file = await window.desktop.openImage()
     if (!file) return
-    useProject.getState().addImage(file.path, file.name)
+    try {
+      await loadBgImage(file.path)
+      useProject.getState().addImage(file.path, file.name)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const relinkClip = async (clip: MediaClip): Promise<void> => {
+    const files = clip.kind === 'video' ? await window.desktop.openVideo() : await window.desktop.openAudio()
+    const file = files?.[0]
+    if (!file) return
+    try {
+      const path = clip.kind === 'video' ? (await window.desktop.ensurePlayable(file.path)).path : file.path
+      const duration = await probeMediaDuration(path, clip.kind)
+      useProject.getState().replaceClipMedia(clip.id, path, file.path, duration)
+    } catch (err) {
+      alert(`Could not relink media:\n${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   const clipSection = (title: string, list: typeof clips): React.JSX.Element => (
@@ -51,11 +70,16 @@ export function ResourceLibrary(): React.JSX.Element {
         <p className="hint">{t('resourceLibrary.empty')}</p>
       ) : (
         list.map((c) => (
-          <div key={c.id} className="resource-row" onClick={() => selectClip(c.id, c.start)}>
+          <div key={c.id} className={`resource-row${c.offline ? ' offline' : ''}`} onClick={() => selectClip(c.id, c.start)}>
             <span className="resource-row-name" title={c.path}>
-              {c.name}
+              {c.offline ? `⚠ ${c.name}` : c.name}
             </span>
             <span className="resource-row-meta">{fmt(c.start)}</span>
+            {c.offline && (
+              <button className="track-row-btn" title="Relink media" onClick={(e) => { e.stopPropagation(); void relinkClip(c) }}>
+                ↻
+              </button>
+            )}
             <button
               className="track-row-btn"
               title={t('resourceLibrary.remove')}

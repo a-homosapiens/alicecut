@@ -3,7 +3,8 @@ import { useProject, toRenderStyle, getProjectDuration, allCaptionTracks } from 
 import { getEffect } from './core/effects'
 import { loadBuiltinFonts } from './fonts'
 import { runExport } from './exportRunner'
-import { applyLineEffects, applyLineStyles, applyTrack, applyClips, applyTexts, applyStyle } from './projectCommand'
+import { applyLineEffects, applyLineEffectsOut, applyLineEffectDurations, applyLineStyles, applyTrack, applyClips, applyTexts, applyStyle } from './projectCommand'
+import { serializeProject } from './projectFile'
 
 /** 无头导出（--export job.json）：复用 store 的加载逻辑与 GUI 同一套导出循环 */
 export async function runHeadlessJob(job: HeadlessJobPayload): Promise<void> {
@@ -16,6 +17,8 @@ export async function runHeadlessJob(job: HeadlessJobPayload): Promise<void> {
     if (Object.keys(job.style).length > 0) applyStyle(job.style)
 
     applyLineEffects(job.lineEffects, log)
+    applyLineEffectsOut(job.lineEffectsOut, log)
+    applyLineEffectDurations(job.lineEffectDurations, log)
     applyLineStyles(job.lineStyles, log)
 
     // 额外字幕组（多语言字幕）：必须按 job.tracks 原顺序依次处理——addTrack 铸造的
@@ -46,20 +49,7 @@ export async function runHeadlessJob(job: HeadlessJobPayload): Promise<void> {
 
     // Save GUI-compatible project file if requested
     if (job.projectOutPath) {
-      const projectJson = JSON.stringify(
-        {
-          version: 4,
-          meta: state.meta,
-          lines: state.lines,
-          style: state.style,
-          lrcName: state.lrcName,
-          tracks: state.tracks,
-          images: state.images,
-          clips: state.clips.map(({ id: _id, ...rest }) => rest)
-        },
-        null,
-        2
-      )
+      const projectJson = JSON.stringify(serializeProject(state), null, 2)
       await window.desktop.saveProjectHeadless(projectJson, job.projectOutPath)
       log(`项目已保存: ${job.projectOutPath}`)
     }

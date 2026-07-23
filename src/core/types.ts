@@ -10,6 +10,8 @@ export interface LrcChar {
 
 export interface LrcWord {
   text: string
+  /** Whitespace that preceded this word in the source caption. Not rendered as an animation unit. */
+  leading?: string
   start: number
   end: number
   chars: LrcChar[]
@@ -17,6 +19,8 @@ export interface LrcWord {
 
 /** 行级文字属性覆盖：缺省字段跟随全局样式 */
 export interface LineTextOverride {
+  /** 本行文字整体旋转（度，绕文字块中心）；缺省 0 = 不旋转。叠加在全局旋转之上 */
+  rotate?: number
   fontFamily?: string
   fontSize?: number
   fontWeight?: number
@@ -53,6 +57,9 @@ export interface LrcLine {
   effectId: string | null
   /** 本行退场特效（反向播放该特效的进场）；缺省/null = 默认淡出上浮 */
   effectOutId?: string | null
+  /** 本行 In/Out 特效时长覆盖（ms）；缺省/null = 跟随全局设置 */
+  effectInDurationMs?: number | null
+  effectOutDurationMs?: number | null
   /** 本行画面位置偏移（画布像素），画布内拖拽设置 */
   dx: number
   dy: number

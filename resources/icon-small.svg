@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="512" height="512">
+  <title>AliceCut (small sizes)</title>
+  <!--
+    16/24/32 px 专用的简化版：去掉怀表刻度（小尺寸下只会糊成噪点），
+    描边加粗、图形放大占满画布，保证任务栏/标题栏里仍认得出「兔耳 + 表盘 + 播放」。
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6366f1" />
+      <stop offset="1" stop-color="#312e81" />
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" rx="12" fill="url(#bg)" />
+
+  <g transform="translate(0 1) translate(32 31) scale(1.15) translate(-32 -31)">
+    <g stroke="#ffffff" fill="none" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M27.5 23.5C22 17 19.5 10 22 5c4.5 3.5 8 11 9 18" />
+      <path d="M36.5 23.5C42 17 44.5 10 42 5c-4.5 3.5-8 11-9 18" />
+      <circle cx="32" cy="40" r="17" />
+    </g>
+    <path d="M29 34 39.5 40 29 46z" fill="#ffffff" stroke="#ffffff" stroke-width="3.6"
+          stroke-linejoin="round" />
+  </g>
+</svg>

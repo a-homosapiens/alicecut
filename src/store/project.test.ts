@@ -3,6 +3,23 @@ import { useProject } from './project'
 
 const LRC = '[00:01.00]hello\n[00:03.00]world'
 
+describe('caption effect duration priority', () => {
+  beforeEach(() => useProject.getState().loadLrc(LRC, 'x.lrc'))
+
+  it('lets the last-edited side overwrite the other side without overlap', () => {
+    const id = useProject.getState().lines[0].id // 2000 ms segment
+    const state = useProject.getState()
+    state.setLineEffectDuration([id], 'in', 1500)
+    state.setLineEffectDuration([id], 'out', 1000)
+    let line = useProject.getState().lines.find((item) => item.id === id)!
+    expect([line.effectInDurationMs, line.effectOutDurationMs]).toEqual([1000, 1000])
+
+    useProject.getState().setLineEffectDuration([id], 'in', 1800)
+    line = useProject.getState().lines.find((item) => item.id === id)!
+    expect([line.effectInDurationMs, line.effectOutDurationMs]).toEqual([1800, 200])
+  })
+})
+
 describe('撤销 / 重做', () => {
   beforeEach(() => {
     useProject.getState().loadLrc(LRC, 'x.lrc') // 载入会清空历史
@@ -131,6 +148,20 @@ describe('字幕组（多语言字幕）', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
+  it('selectAllCaptions selects captions across tracks but excludes standalone text blocks', () => {
+    const text = useProject.getState().addLineAt(500, 'text', 'Title')
+    const track = useProject.getState().addTrack('English')
+    useProject.getState().loadLrcToTrack(track.id, LRC, 'en.lrc')
+
+    useProject.getState().selectAllCaptions()
+
+    const selected = useProject.getState().selectedIds
+    const captions = useProject.getState().lines.filter((line) => line.kind !== 'text')
+    expect(selected).toHaveLength(captions.length)
+    expect(selected).not.toContain(text.id)
+    expect(captions.every((line) => selected.includes(line.id))).toBe(true)
+  })
+
   it('removeTrack 删除该组全部行；主字幕组（0）不可删除', () => {
     const before = useProject.getState().lines.length
     const track = useProject.getState().addTrack()
@@ -156,7 +187,7 @@ describe('字幕组（多语言字幕）', () => {
     expect(after.filter((l) => (l.trackId ?? 0) === 0)).toEqual(primaryBefore) // 主字幕组原样不动
     const trackLines = after.filter((l) => l.trackId === track.id)
     expect(trackLines.length).toBe(1)
-    expect(trackLines[0].text).toBe('helloworld') // 两行的词合并进了同一页，而不是各自打散重排
+    expect(trackLines[0].text).toBe('hello world') // 合并后保留西文词间分隔
   })
 
   it('setTrackOffsetY / setTrackVisible / renameTrack 只影响目标字幕组，对 id 0 无效果', () => {

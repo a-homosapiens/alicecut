@@ -42,26 +42,31 @@ interface RowItem {
   rotate: number
   charWidths: number[]
   width: number
+  letterSpacing: number
 }
 
-/** 把词打包成行（不在词内断行；单词超宽时按字符强拆） */
-function packRows(items: RowItem[], maxWidth: number, gap: number): RowItem[][] {
-  const rows: RowItem[][] = []
-  let row: RowItem[] = []
-  let rowWidth = 0
+/**
+ * 把词按累计尺寸打包成组（行 / 列），不在词内断行。
+ * sizeOf 返回该词沿主轴的尺寸（横排 = 宽度，竖排 = 高度）。
+ */
+function packUnits(items: RowItem[], maxSize: number, gap: number, sizeOf: (it: RowItem) => number): RowItem[][] {
+  const groups: RowItem[][] = []
+  let group: RowItem[] = []
+  let acc = 0
   for (const item of items) {
-    const need = row.length === 0 ? item.width : rowWidth + gap + item.width
-    if (row.length > 0 && need > maxWidth) {
-      rows.push(row)
-      row = [item]
-      rowWidth = item.width
+    const s = sizeOf(item)
+    const need = group.length === 0 ? s : acc + gap + s
+    if (group.length > 0 && need > maxSize) {
+      groups.push(group)
+      group = [item]
+      acc = s
     } else {
-      row.push(item)
-      rowWidth = need
+      group.push(item)
+      acc = need
     }
   }
-  if (row.length > 0) rows.push(row)
-  return rows
+  if (group.length > 0) groups.push(group)
+  return groups
 }
 
 function makeItems(
@@ -75,20 +80,31 @@ function makeItems(
     const fontSize = sizeFor(unitIndex)
     const charWidths = word.chars.map((c) => opts.measure(c.text, fontSize))
     const width = charWidths.reduce((a, b) => a + b, 0) + letterSpacing * Math.max(0, word.chars.length - 1)
-    return { word, unitIndex, fontSize, rotate: rotateFor(unitIndex), charWidths, width }
+    return { word, unitIndex, fontSize, rotate: rotateFor(unitIndex), charWidths, width, letterSpacing }
   })
+}
+
+function scaleItem(item: RowItem, factor: number): RowItem {
+  const f = Number.isFinite(factor) && factor > 0 ? Math.min(1, factor) : 1
+  return {
+    ...item,
+    fontSize: item.fontSize * f,
+    charWidths: item.charWidths.map((width) => width * f),
+    width: item.width * f,
+    letterSpacing: item.letterSpacing * f
+  }
 }
 
 /**
  * 计算一行歌词每个字符的位置。
  * center：统一字号、整体居中——常规歌词构图。
  * staggered：每个词随机大小/角度错落——「文字向」冲击构图。
+ * 竖排（orientation='vertical'）走独立的排版路径：字保持直立、自上而下、多列时从右向左。
  */
 export function layoutLine(line: LrcLine, opts: LayoutOptions): PlacedChar[] {
   if (line.words.length === 0) return []
   const rand = seededRand(line.id + 1)
   const isStaggered = opts.variant === 'staggered'
-  const orientation = opts.orientation
 
   const items = makeItems(
     line,
@@ -97,10 +113,17 @@ export function layoutLine(line: LrcLine, opts: LayoutOptions): PlacedChar[] {
     (i) => (isStaggered ? (rand(i * 13 + 5) - 0.5) * 0.09 : 0)
   )
 
+  return opts.orientation === 'vertical'
+    ? layoutVertical(items, opts, rand, isStaggered)
+    : layoutHorizontal(items, opts, rand, isStaggered)
+}
+
+/** 横排：词按宽度折行，行自上而下堆叠，行内字从左到右。 */
+function layoutHorizontal(items: RowItem[], opts: LayoutOptions, rand: (k: number) => number, isStaggered: boolean): PlacedChar[] {
   const maxWidth = opts.width * (isStaggered ? 0.86 : 0.82)
   const gap = isStaggered ? Math.max(opts.wordSpacing, opts.fontSize * 0.3) : opts.wordSpacing
-  const letterSpacing = opts.letterSpacing
-  const rows = packRows(items, maxWidth, gap)
+  const fitted = items.map((item) => item.width > maxWidth ? scaleItem(item, maxWidth / item.width) : item)
+  const rows = packUnits(fitted, maxWidth, gap, (it) => it.width)
 
   const rowHeights = rows.map(
     (row) => Math.max(...row.map((it) => it.fontSize)) * (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
@@ -128,25 +151,90 @@ export function layoutLine(line: LrcLine, opts: LayoutOptions): PlacedChar[] {
       const jitterY = isStaggered ? (rand(item.unitIndex * 11 + 3) - 0.5) * opts.fontSize * 0.25 : 0
       item.word.chars.forEach((char, ci) => {
         const w = item.charWidths[ci]
-        const charX = x + w / 2
-        const charY = cy + jitterY
         placed.push({
           char,
           word: item.word,
           unitIndex: item.unitIndex,
           charIndexInUnit: ci,
           globalCharIndex: globalCharIndex++,
-          x: orientation === 'vertical' ? opts.width / 2 + (charY - opts.height / 2) : charX,
-          y: orientation === 'vertical' ? opts.height / 2 + (charX - opts.width / 2) : charY,
+          x: x + w / 2,
+          y: cy + jitterY,
           fontSize: item.fontSize,
           w,
-          rotate: item.rotate + (orientation === 'vertical' ? Math.PI / 2 : 0)
+          rotate: item.rotate
         })
-        x += w + letterSpacing
+        x += w + item.letterSpacing
       })
-      x += gap - letterSpacing
+      x += gap - item.letterSpacing
     }
     y += rowHeights[rowIdx]
+  })
+  return placed
+}
+
+/**
+ * 竖排（传统中文竖排）：字保持直立、在一列内自上而下堆叠；一列排满（超过画面高度）
+ * 后换到左边的新列——多列从右向左阅读。整块列组水平居中，字沿列心对齐。
+ * align 映射到纵向：left→顶对齐、center→居中、right→底对齐。
+ */
+function layoutVertical(items: RowItem[], opts: LayoutOptions, rand: (k: number) => number, isStaggered: boolean): PlacedChar[] {
+  const gap = isStaggered ? Math.max(opts.wordSpacing, opts.fontSize * 0.3) : opts.wordSpacing
+  const maxHeight = opts.height * (isStaggered ? 0.86 : 0.82)
+  // 词沿列的高度：每个字的纵向步进≈字号（CJK 方块字），字间距叠加在字之间
+  const itemHeight = (it: RowItem): number =>
+    it.fontSize * it.word.chars.length + it.letterSpacing * Math.max(0, it.word.chars.length - 1)
+  const fitted = items.map((item) => {
+    const height = itemHeight(item)
+    return height > maxHeight ? scaleItem(item, maxHeight / height) : item
+  })
+  const columns = packUnits(fitted, maxHeight, gap, itemHeight)
+
+  // 列的横向步进（列宽，含列间距）——对应横排里的行高
+  const columnWidths = columns.map(
+    (col) => Math.max(...col.map((it) => it.fontSize)) * (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
+  )
+  const blockWidth = columnWidths.reduce((a, b) => a + b, 0)
+  // 列组水平居中；从右向左：第一列（阅读顺序）落在整块的最右侧
+  let xRightEdge = opts.width / 2 + blockWidth / 2
+
+  const placed: PlacedChar[] = []
+  let globalCharIndex = 0
+  columns.forEach((col, colIdx) => {
+    const colWidth = columnWidths[colIdx]
+    const colHeight = col.reduce((a, it) => a + itemHeight(it), 0) + gap * Math.max(0, col.length - 1)
+    // 错落构图：整列加一点横向抖动
+    const jitterX = isStaggered ? (rand(colIdx * 31 + 17) - 0.5) * opts.fontSize * 0.8 : 0
+    const top = opts.height * 0.09
+    const bottom = opts.height * 0.91
+    let y =
+      opts.align === 'left'
+        ? top
+        : opts.align === 'right'
+          ? bottom - colHeight
+          : (opts.height - colHeight) / 2
+    const cx = xRightEdge - colWidth / 2 + jitterX
+
+    for (const item of col) {
+      const jitterY = isStaggered ? (rand(item.unitIndex * 11 + 3) - 0.5) * opts.fontSize * 0.25 : 0
+      item.word.chars.forEach((char, ci) => {
+        const h = item.fontSize // 纵向步进
+        placed.push({
+          char,
+          word: item.word,
+          unitIndex: item.unitIndex,
+          charIndexInUnit: ci,
+          globalCharIndex: globalCharIndex++,
+          x: cx,
+          y: y + h / 2 + jitterY,
+          fontSize: item.fontSize,
+          w: item.charWidths[ci],
+          rotate: item.rotate // 直立，不旋转
+        })
+        y += h + item.letterSpacing
+      })
+      y += gap - item.letterSpacing
+    }
+    xRightEdge -= colWidth
   })
   return placed
 }

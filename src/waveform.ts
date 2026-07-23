@@ -11,6 +11,7 @@ const pending = new Map<string, Promise<number[]>>()
 
 async function decodePeaks(path: string): Promise<number[]> {
   const res = await fetch(mediaUrl(path))
+  if (!res.ok) throw new Error(`Waveform media request failed: HTTP ${res.status}`)
   const buf = await res.arrayBuffer()
   const actx = new AudioContext()
   try {
@@ -58,7 +59,10 @@ export function useWaveform(path: string): number[] | null {
       p.catch(() => pending.delete(path))
       pending.set(path, p)
     }
-    p.then((v) => alive && setPeaks(v)).catch(() => alive && setPeaks(null))
+    p.then((v) => alive && setPeaks(v)).catch((error: unknown) => {
+      console.error(`Waveform decode failed for ${path}`, error)
+      if (alive) setPeaks(null)
+    })
     return () => {
       alive = false
     }

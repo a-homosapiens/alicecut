@@ -129,6 +129,7 @@ export function buildStaticOverlayGraph(backgroundPath: string, fps: number): St
 /** 纯参数构建：编码器名字与是否硬件已由调用方（exporter.ts 的探测/回退逻辑）解析好 */
 export function buildVideoArgs(encode: EncodeSettings, resolved: ResolvedEncoder, dims: VideoDims): string[] {
   const i = TIER[encode.speed]
+  const compatibilityTag = encode.codec === 'hevc' ? ['-tag:v', 'hvc1'] : []
 
   if (encode.codec === 'prores') {
     return ['-c:v', 'prores_ks', '-profile:v', String(PRORES_PROFILE[i]), '-vendor', 'apl0', '-pix_fmt', 'yuv422p10le']
@@ -138,22 +139,22 @@ export function buildVideoArgs(encode: EncodeSettings, resolved: ResolvedEncoder
   if (!resolved.isHardware) {
     const preset = encode.codec === 'h264' ? X264_PRESET[i] : X265_PRESET[i]
     const crf = encode.codec === 'h264' ? X264_CRF[i] : X265_CRF[i]
-    return ['-c:v', name, '-preset', preset, '-crf', String(crf), '-pix_fmt', 'yuv420p']
+    return ['-c:v', name, '-preset', preset, '-crf', String(crf), '-pix_fmt', 'yuv420p', ...compatibilityTag]
   }
 
   if (name.endsWith('_nvenc')) {
-    return ['-c:v', name, '-preset', NVENC_PRESET[i], '-rc', 'vbr', '-cq', String(NVENC_CQ[i]), '-b:v', '0', '-pix_fmt', 'yuv420p']
+    return ['-c:v', name, '-preset', NVENC_PRESET[i], '-rc', 'vbr', '-cq', String(NVENC_CQ[i]), '-b:v', '0', '-pix_fmt', 'yuv420p', ...compatibilityTag]
   }
   if (name.endsWith('_qsv')) {
-    return ['-c:v', name, '-preset', QSV_PRESET[i], '-global_quality', String(QSV_QUALITY[i]), '-pix_fmt', 'yuv420p']
+    return ['-c:v', name, '-preset', QSV_PRESET[i], '-global_quality', String(QSV_QUALITY[i]), '-pix_fmt', 'yuv420p', ...compatibilityTag]
   }
   if (name.endsWith('_amf')) {
-    return ['-c:v', name, '-quality', AMF_QUALITY[i], '-rc', 'qvbr', '-qvbr_quality_level', String(AMF_QVBR[i]), '-pix_fmt', 'yuv420p']
+    return ['-c:v', name, '-quality', AMF_QUALITY[i], '-rc', 'qvbr', '-qvbr_quality_level', String(AMF_QVBR[i]), '-pix_fmt', 'yuv420p', ...compatibilityTag]
   }
   if (name.endsWith('_videotoolbox')) {
     const bpp = (encode.codec === 'h264' ? VT_H264_BPP : VT_HEVC_BPP)[i]
     const bitrate = Math.max(500_000, Math.round(dims.width * dims.height * dims.fps * bpp))
-    return ['-c:v', name, '-b:v', String(bitrate), '-pix_fmt', 'yuv420p']
+    return ['-c:v', name, '-b:v', String(bitrate), '-pix_fmt', 'yuv420p', ...compatibilityTag]
   }
 
   throw new Error(`未知硬件编码器: ${name}`)

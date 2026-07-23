@@ -42,7 +42,7 @@ export function LanguageMenu(): React.JSX.Element {
 
   return (
     <span className="lang-menu">
-      <button className="btn" onClick={() => setOpen((o) => !o)} title={t('lang.title')}>
+      <button className="menu-title" onClick={() => setOpen((o) => !o)} title={t('lang.title')}>
         🌐 {current} ▾
       </button>
       {open && (

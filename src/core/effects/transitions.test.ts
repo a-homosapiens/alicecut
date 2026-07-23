@@ -102,11 +102,12 @@ describe('上移切换 rise（停靠式）', () => {
     }
   })
 
-  it('透明度随深度递减，超出深度后为 0', () => {
-    const alphas = [1, 2, 3, 4].map((d) => trans.pose(d, { ...args, lineId: 0 }).alpha)
+  it('透明度随深度递减，并为可配置的更长历史保留可见姿态', () => {
+    const alphas = [1, 2, 3, 4, 5, 6].map((d) => trans.pose(d, { ...args, lineId: 0 }).alpha)
     expect(alphas[0]).toBeGreaterThan(alphas[1])
     expect(alphas[1]).toBeGreaterThan(alphas[2])
-    expect(alphas[3]).toBe(0)
+    expect(alphas[2]).toBeGreaterThan(alphas[3])
+    expect(alphas[5]).toBeGreaterThan(0)
   })
 
   it('新行从下方缩小渐显进场', () => {

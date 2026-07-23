@@ -1,0 +1,32 @@
+name: Windows beta
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*-beta.*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run smoke:electron
+      - run: npm run dist:win
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AliceCut-Windows-beta
+          path: release/*-setup.exe
+          if-no-files-found: error

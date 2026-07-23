@@ -11,10 +11,14 @@ export const en: Record<keyof typeof zh, string> = {
   'topbar.saveProject': 'Save Project',
   'topbar.exportSrt': 'Export Subtitles',
   'topbar.exportVideo': 'Export Video',
-  'topbar.videoSuffix': '· {n} clips',
-  'topbar.audioSuffix': '· {n} tracks',
+
+  // Menu bar
+  'menu.file': 'File',
+  'menu.view': 'View',
+  'menu.panels': 'Panels',
 
   // Built-in text effect display names (key = effect.<id>; plugins fall back to their own name)
+  'effect.none': 'None',
   'effect.pop': 'Pop In',
   'effect.punch': 'Punch',
   'effect.slide': 'Slide Stagger',
@@ -31,6 +35,26 @@ export const en: Record<keyof typeof zh, string> = {
   'effect.flip': 'Flip',
   'effect.flip-bottom': 'Flip (Bottom)',
   'effect.rise': 'Rise',
+  'effect.float-up': 'Float Up',
+  'effect.cascade-down': 'Cascade Down',
+  'effect.zoom-focus': 'Zoom Focus',
+  'effect.tumble-in': 'Tumble In',
+  'effect.split-in': 'Split In',
+  'effect.whip-in': 'Whip In',
+  'effect.scatter-in': 'Scatter In',
+  'effect.fold-in': 'Fold In',
+  'effect.neon-on': 'Neon On',
+  'effect.wave-in': 'Wave In',
+  'effect.fade-up-out': 'Fade Up',
+  'effect.drop-out': 'Drop Away',
+  'effect.zoom-away-out': 'Zoom Away',
+  'effect.implode-out': 'Implode',
+  'effect.scatter-out': 'Scatter Out',
+  'effect.whip-left-out': 'Whip Left',
+  'effect.tumble-out': 'Tumble Out',
+  'effect.dissolve-out': 'Dissolve',
+  'effect.evaporate-out': 'Evaporate',
+  'effect.sink-out': 'Word Sink',
 
   // Built-in video transition display names (key = vtrans.<id>)
   'vtrans.fade': 'Fade',
@@ -62,6 +86,7 @@ export const en: Record<keyof typeof zh, string> = {
   'style.bgImageScale': 'Image scale',
   'style.bgImageX': 'Image X',
   'style.bgImageY': 'Image Y',
+  'style.bgImageRotate': 'Image rotation',
   'style.bgImageReset': 'Reset image position',
   'style.color': 'Color',
   'style.gradFrom': 'Gradient start',
@@ -82,6 +107,7 @@ export const en: Record<keyof typeof zh, string> = {
   'style.textOrientation': 'Orientation',
   'style.orientationHorizontal': 'Horizontal',
   'style.orientationVertical': 'Vertical',
+  'style.lineRotate': 'Rotate this line',
   'style.strokeWidth': 'Stroke width',
   'style.strokeColor': 'Stroke color',
   'style.strokeAlpha': 'Stroke opacity',
@@ -102,14 +128,30 @@ export const en: Record<keyof typeof zh, string> = {
   'style.shadowOffset': 'Shadow offset',
   'style.shadowBlur': 'Shadow blur',
   'style.restoreDefault': 'Follow global default',
+  'style.contentSection': 'Text content',
+  'style.contentPlaceholder': 'Type this caption / text…',
+  'style.contentHint': 'Edit this line’s text directly; you can also double-click its timeline segment',
+  'edit.title': 'Edit text',
+  'edit.label': 'Text',
+  'edit.placeholder': 'Type this caption / text…',
+  'edit.save': 'Save',
+  'edit.cancel': 'Cancel',
+  'style.effectIn': 'In effect',
   'style.effectOut': 'Out effect',
   'style.effectOutDefault': 'Default fade',
-  'style.effectOutTitle': 'Plays the chosen effect in reverse on exit (selected lines only); default is fade + float up.',
+  'style.effectOutTitle': 'Plays the chosen effect in reverse as each selected caption leaves.',
+  'style.effectOutSelectHint': 'Select one or more captions to choose an out effect.',
+  'style.effectDuration': 'Effect duration (seconds)',
+  'style.effectDurationHint': 'The last-edited In/Out wins; the other side is shortened to stay inside the segment without overlap.',
+  'style.durationFollowGlobal': 'Use global duration',
+  'style.riseHistory': 'Old captions kept',
+  'style.riseHistoryHint': 'How many previous captions remain above the current caption (0–6).',
   'style.pluginTag': 'plugin',
   'style.pluginEffectTitle': 'Plugin effect',
   'style.highlightColor': 'Karaoke highlight',
   'style.intensity': 'Intensity',
   'style.importFont': 'Import font…',
+  'style.fontDownload': 'Download and install font',
   'style.fontLoadFail': 'Failed to load font. Make sure it is a valid ttf/otf file.',
 
   // Timeline · clips & toolbar
@@ -126,6 +168,9 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.enter': 'In',
   'tl.leave': 'Out',
   'tl.removeTrans': 'Remove transition',
+  'tl.junctionAddTitle': 'Add a transition between the two clips at this cut',
+  'tl.junctionEditTitle': 'Edit the transition between the two clips',
+  'tl.junctionDone': 'Done',
   'tl.addTransTitle': 'Add enter/leave transition',
   'tl.transition': 'Transition',
   'tl.enterTrans': 'Enter transition',
@@ -155,6 +200,8 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.moveDown': 'Move down one layer',
   'tl.scaleTitle': 'Scale (1.0 = fill canvas); drag on the canvas to pan.',
   'tl.scale': 'Scale',
+  'tl.rotateTitle': 'Rotate the picture (degrees, around center); corners rotated off-frame reveal black — scale up to fill.',
+  'tl.rotate': 'Rotate',
   'tl.extractAudioTitle': "Extract the video's audio as an audio track",
   'tl.extractAudio': 'Extract Audio',
   'tl.delete': 'Delete',
@@ -179,6 +226,7 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.textDropHint': ' (drop text here to stack)',
   'tl.newText': 'Text',
   'tl.newLyric': 'New subtitle',
+  'tl.dblclickEdit': 'Double-click to edit text',
   'tl.duplicate': 'Duplicate',
   'tl.undo': 'Undo',
   'tl.redo': 'Redo',
@@ -205,7 +253,10 @@ export const en: Record<keyof typeof zh, string> = {
   'tracks.close': 'Close panel',
   'tracks.deleteTrack': 'Delete track',
   'tracks.importInto': 'Import lyrics into this track…',
+  'tracks.selectAllCaptions': 'Select all captions',
+  'tracks.clearSelection': 'Clear',
   'tracks.selectAll': 'Select all lines in track',
+  'tracks.selectAllShort': 'Select all',
   'tracks.selectAllHint': 'Selecting lets you batch-edit this track’s text style in the panel on the right',
   'tracks.renamePlaceholder': 'Track name',
   'tracks.offsetY': 'Vertical position',
@@ -214,6 +265,7 @@ export const en: Record<keyof typeof zh, string> = {
   'tracks.visibleLabel': 'Visible',
   'tracks.addLine': '+ Add line',
   'tracks.emptyHint': 'Click "Import lyrics into this track" below to choose a .lrc / .srt / .vtt file',
+  'tracks.primaryEmptyHint': 'Use Import Lyrics in the toolbar above to choose a .lrc / .srt / .vtt file',
 
   // Resource Library: overview of imported videos/audio/caption tracks/images
   'resourceLibrary.title': 'Resource Library',
@@ -228,19 +280,18 @@ export const en: Record<keyof typeof zh, string> = {
 
   // Command Console: JSON commands, same fields as job.json
   'console.title': 'Command Console',
-  'console.placeholder': '{"style": {"fontSize": 100}}',
+  'console.placeholder': '{"select":"captions","effectIn":"rise"}',
   'console.run': 'Run (Ctrl+Enter)',
   'console.clear': 'Clear log',
   'console.hint':
-    'Same fields as job.json: lrc / tracks / audio / video / texts / style / lineEffects / lineStyles. ' +
+    'Use {"select":"captions"} to select every caption; add effectIn, effectOut, effectInDuration, effectOutDuration, or selectedStyle to batch-edit the selection. ' +
+    'Other fields match job.json: lrc / tracks / audio / video / texts / style / lineEffects / lineEffectsOut / lineEffectDurations / lineStyles. ' +
     'Paths in lrc, tracks[].lrc, and audio/video must be absolute. lrc only replaces the primary track — ' +
     'unlike the CLI, it does not wipe the whole project. tracks / audio / video / texts append on every ' +
     'run rather than updating idempotently — re-running a command adds duplicates.',
 
   // Windows menu: recover closed panels/sections
-  'windows.title': 'Windows',
   'windows.close': 'Close this panel',
-  'windows.empty': '(everything is open)',
 
   // Transport bar
   'transport.playPause': 'Space to play/pause',

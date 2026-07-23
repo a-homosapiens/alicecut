@@ -1,8 +1,19 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron'
-import { createReadStream } from 'fs'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  protocol,
+  shell,
+  type IpcMainInvokeEvent,
+  type OpenDialogOptions,
+  type SaveDialogOptions
+} from 'electron'
+import { createReadStream, existsSync } from 'fs'
 import { access, readFile, stat, writeFile } from 'fs/promises'
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'path'
 import { Readable } from 'stream'
+import { pathToFileURL } from 'url'
 import { registerExportHandlers } from './exporter'
 import {
   hasExportArg,
@@ -16,11 +27,24 @@ import {
   type JobClipSpec
 } from './headless'
 import { readLrcText } from './lrcFile'
-import { buildMenu, loadLocale, saveLocale, type Locale } from './menu'
+import {
+  buildMenu,
+  loadLastProjectDirectory,
+  loadLocale,
+  saveLastProjectDirectory,
+  saveLocale,
+  type AppMenuState,
+  type Locale
+} from './menu'
 import { registerConvertHandlers } from './convert'
+import { portableProjectJson, resolvedProjectJson } from './projectPathsCore'
 
 /** 当前界面语言（registerLocaleHandlers 维护）；文件对话框文案据此本地化 */
 let currentLocale: Locale = 'zh'
+let mainWindow: BrowserWindow | null = null
+let helpWindow: BrowserWindow | null = null
+let aboutWindow: BrowserWindow | null = null
+const closeApproved = new WeakSet<BrowserWindow>()
 
 /** 主进程文件对话框文案（与渲染进程 i18n 分开，主进程自包含） */
 const DIALOG: Record<Locale, Record<string, string>> = {
@@ -55,6 +79,10 @@ const DIALOG: Record<Locale, Record<string, string>> = {
 }
 const dlg = (k: string): string => DIALOG[currentLocale][k] ?? k
 
+const FONT_DOWNLOAD_HOSTS = new Set([
+  'media.githubusercontent.com'
+])
+
 const exportRequested = hasExportArg(process.argv)
 const exportJobPath = parseExportArg(process.argv)
 const saveProjectRequested = hasSaveProjectArg(process.argv)
@@ -65,9 +93,24 @@ const headlessRequested = exportRequested || saveProjectRequested
 // GPU enabled for WebCodecs/hardware export with { "gpu": true }.
 if (headlessRequested && !jobRequestsGpu(exportJobPath)) app.disableHardwareAcceleration()
 
+// AliceCut is a local desktop editor: timeline playback is always explicitly
+// controlled by the user. Allow its local media elements to start without
+// Chromium dropping audio because the actual play call occurs in a render loop.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+
 // media:// 自定义协议：渲染进程用它流式读取本地音视频（支持 seek），无需把大文件读进内存
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'media', privileges: { stream: true, supportFetchAPI: true, bypassCSP: true } }
+  {
+    scheme: 'media',
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      bypassCSP: true
+    }
+  }
 ])
 
 const MEDIA_MIME: Record<string, string> = {
@@ -113,6 +156,8 @@ function registerMediaProtocol(): void {
         headers: {
           'Content-Type': mime,
           'Accept-Ranges': 'bytes',
+          'Access-Control-Allow-Origin': '*',
+          'Cross-Origin-Resource-Policy': 'cross-origin',
           'Content-Length': String(end - start + 1),
           ...(range ? { 'Content-Range': `bytes ${start}-${end}/${size}` } : {})
         }
@@ -120,6 +165,89 @@ function registerMediaProtocol(): void {
     } catch {
       return new Response(null, { status: 404 })
     }
+  })
+}
+
+/** 应用图标：out/main → 仓库根 → resources/。Windows 用 .ico（任务栏有多尺寸可挑） */
+const appIconPath = join(
+  __dirname,
+  '../../resources',
+  process.platform === 'win32' ? 'icon.ico' : 'icon.png'
+)
+
+type InfoPage = 'quick-start' | 'about'
+
+function openCompanyWebsite(url: string): void {
+  try {
+    const target = new URL(url)
+    if (target.protocol !== 'https:' || target.hostname.toLowerCase() !== 'www.artificialhomosapiens.com') return
+    void shell.openExternal(target.toString())
+  } catch {
+    /* Ignore malformed navigation requests from the static page. */
+  }
+}
+
+function openInfoPage(page: InfoPage): void {
+  const existing = page === 'quick-start' ? helpWindow : aboutWindow
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore()
+    existing.show()
+    existing.focus()
+    return
+  }
+
+  const isHelp = page === 'quick-start'
+  const win = new BrowserWindow({
+    width: isHelp ? 900 : 720,
+    height: isHelp ? 760 : 780,
+    minWidth: 440,
+    minHeight: 520,
+    show: false,
+    title: isHelp ? 'AliceCut Help' : 'About AliceCut',
+    icon: appIconPath,
+    backgroundColor: '#111118',
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  })
+  if (isHelp) helpWindow = win
+  else aboutWindow = win
+
+  win.setMenuBarVisibility(false)
+  win.once('ready-to-show', () => win.show())
+  win.on('closed', () => {
+    if (isHelp && helpWindow === win) helpWindow = null
+    if (!isHelp && aboutWindow === win) aboutWindow = null
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    openCompanyWebsite(url)
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.toLowerCase().startsWith('https://')) return
+    event.preventDefault()
+    openCompanyWebsite(url)
+  })
+
+  const version = page === 'about' ? app.getVersion() : null
+  const load = process.env['ELECTRON_RENDERER_URL']
+    ? (() => {
+        const url = new URL(`/help/${page}.html`, process.env['ELECTRON_RENDERER_URL'])
+        if (version) url.hash = new URLSearchParams({ version }).toString()
+        return win.loadURL(url.toString())
+      })()
+    : (() => {
+        const url = pathToFileURL(join(__dirname, `../renderer/help/${page}.html`))
+        if (version) url.hash = new URLSearchParams({ version }).toString()
+        return win.loadURL(url.toString())
+      })()
+  void load.catch((error: unknown) => {
+    console.error(`[help] Failed to load ${page}:`, error)
+    if (!win.isDestroyed()) win.destroy()
+    dialog.showErrorBox('AliceCut', 'The local help page could not be opened. Please reinstall AliceCut.')
   })
 }
 
@@ -131,12 +259,30 @@ function createWindow(headless: boolean): BrowserWindow {
     minHeight: 700,
     show: !headless,
     title: 'AliceCut',
+    icon: appIconPath,
     backgroundColor: '#16161c',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       backgroundThrottling: false
     }
   })
+
+  // Never inherit a muted WebContents state across development reloads or
+  // window recreation. Timeline audio is controlled by AliceCut itself.
+  win.webContents.setAudioMuted(false)
+  win.webContents.on('did-finish-load', () => win.webContents.setAudioMuted(false))
+  win.on('show', () => win.webContents.setAudioMuted(false))
+  if (!headless) {
+    mainWindow = win
+    win.on('close', (event) => {
+      if (closeApproved.has(win)) return
+      event.preventDefault()
+      win.webContents.send('app:request-close')
+    })
+    win.on('closed', () => {
+      if (mainWindow === win) mainWindow = null
+    })
+  }
 
   // 无头导出隐藏菜单栏；GUI 显示原生菜单（含语言切换）
   win.setMenuBarVisibility(headless ? false : true)
@@ -149,10 +295,61 @@ function createWindow(headless: boolean): BrowserWindow {
   return win
 }
 
+/** Attach native file dialogs to their invoking window so the editor stays modal-locked. */
+function showModalOpenDialog(event: IpcMainInvokeEvent, options: OpenDialogOptions) {
+  const parent = BrowserWindow.fromWebContents(event.sender)
+  return parent ? dialog.showOpenDialog(parent, options) : dialog.showOpenDialog(options)
+}
+
+function showModalSaveDialog(event: IpcMainInvokeEvent, options: SaveDialogOptions) {
+  const parent = BrowserWindow.fromWebContents(event.sender)
+  return parent ? dialog.showSaveDialog(parent, options) : dialog.showSaveDialog(options)
+}
+
 /** 打开文件并把内容读给渲染进程（渲染进程无 Node 权限） */
 function registerFileHandlers(): void {
-  ipcMain.handle('file:openLrc', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('app:confirm-unsaved', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      type: 'warning' as const,
+      title: 'AliceCut',
+      message: currentLocale === 'zh' ? '工程有未保存的更改。' : 'This project has unsaved changes.',
+      detail: currentLocale === 'zh' ? '要在继续前保存吗？' : 'Save before continuing?',
+      buttons: currentLocale === 'zh' ? ['保存', '不保存', '取消'] : ['Save', "Don't Save", 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true
+    }
+    const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
+    return (['save', 'discard', 'cancel'] as const)[result.response] ?? 'cancel'
+  })
+  ipcMain.handle('app:confirm-lyrics-import', async (event) => {
+    const parent = BrowserWindow.fromWebContents(event.sender)
+    const options = {
+      type: 'question' as const,
+      title: 'AliceCut',
+      message: currentLocale === 'zh' ? '当前已有字幕。' : 'Captions are already loaded.',
+      detail: currentLocale === 'zh'
+        ? '要覆盖当前主字幕，还是将这份文件导入为新的字幕组？'
+        : 'Replace the current primary captions, or import this file as another caption track?',
+      buttons: currentLocale === 'zh'
+        ? ['覆盖当前字幕', '导入为新字幕组', '取消']
+        : ['Replace Current Captions', 'Add as New Track', 'Cancel'],
+      defaultId: 1,
+      cancelId: 2,
+      noLink: true
+    }
+    const result = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
+    return (['replace', 'add', 'cancel'] as const)[result.response] ?? 'cancel'
+  })
+  ipcMain.handle('app:confirm-close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isDestroyed()) return
+    closeApproved.add(win)
+    win.close()
+  })
+  ipcMain.handle('file:openLrc', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openLrcTitle'),
       filters: [{ name: dlg('lyricFilter'), extensions: ['lrc', 'srt', 'vtt', 'txt'] }],
       properties: ['openFile']
@@ -163,8 +360,8 @@ function registerFileHandlers(): void {
   })
 
   // 音/视频只返回路径，渲染进程经 media:// 协议流式读取
-  ipcMain.handle('file:openAudio', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openAudio', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openAudioTitle'),
       filters: [{ name: dlg('audioFilter'), extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }],
       properties: ['openFile', 'multiSelections']
@@ -173,8 +370,8 @@ function registerFileHandlers(): void {
     return filePaths.map((path) => ({ path, name: basename(path) }))
   })
 
-  ipcMain.handle('file:openVideo', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openVideo', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openVideoTitle'),
       filters: [
         { name: dlg('videoFilter'), extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi', 'flv', 'wmv', 'ts', 'mpg', 'mpeg', '3gp'] }
@@ -185,18 +382,18 @@ function registerFileHandlers(): void {
     return filePaths.map((path) => ({ path, name: basename(path) }))
   })
 
-  ipcMain.handle('file:openImage', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openImage', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openImageTitle'),
-      filters: [{ name: dlg('imageFilter'), extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }],
+      filters: [{ name: dlg('imageFilter'), extensions: ['jpg', 'jpeg', 'png', 'bmp'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
     return { path: filePaths[0], name: basename(filePaths[0]) }
   })
 
-  ipcMain.handle('file:openFont', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openFont', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openFontTitle'),
       filters: [{ name: dlg('fontFilter'), extensions: ['ttf', 'otf', 'woff', 'woff2'] }],
       properties: ['openFile']
@@ -207,19 +404,30 @@ function registerFileHandlers(): void {
     return { path, name: basename(path).replace(/\.[^.]+$/, ''), data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) }
   })
 
-  ipcMain.handle('file:saveProject', async (_e, json: string, defaultName: string) => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
+  ipcMain.handle('font:download', async (_e, source: string) => {
+    const url = new URL(source)
+    if (url.protocol !== 'https:' || !FONT_DOWNLOAD_HOSTS.has(url.hostname)) {
+      throw new Error('Font download host is not allowed')
+    }
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`Font download failed: HTTP ${response.status}`)
+    const data = Buffer.from(await response.arrayBuffer())
+    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+  })
+
+  ipcMain.handle('file:saveProject', async (event, json: string, defaultName: string) => {
+    const { canceled, filePath } = await showModalSaveDialog(event, {
       title: dlg('saveProjectTitle'),
       defaultPath: defaultName,
       filters: [{ name: dlg('projectFilter'), extensions: ['alicecut.json'] }]
     })
     if (canceled || !filePath) return null
-    await writeFile(filePath, json, 'utf-8')
+    await writeFile(filePath, portableProjectJson(json, filePath), 'utf-8')
     return filePath
   })
 
-  ipcMain.handle('file:saveSrt', async (_e, text: string, defaultName: string) => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
+  ipcMain.handle('file:saveSrt', async (event, text: string, defaultName: string) => {
+    const { canceled, filePath } = await showModalSaveDialog(event, {
       title: dlg('saveSrtTitle'),
       defaultPath: defaultName,
       filters: [{ name: dlg('srtFilter'), extensions: ['srt'] }]
@@ -229,8 +437,8 @@ function registerFileHandlers(): void {
     return filePath
   })
 
-  ipcMain.handle('file:openPlugin', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openPlugin', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openPluginTitle'),
       filters: [{ name: dlg('pluginFilter'), extensions: ['mjs', 'js'] }],
       properties: ['openFile']
@@ -243,8 +451,8 @@ function registerFileHandlers(): void {
     }
   })
 
-  ipcMain.handle('file:openLanguage', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openLanguage', async (event) => {
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openLanguageTitle'),
       filters: [{ name: dlg('languageFilter'), extensions: ['json'] }],
       properties: ['openFile']
@@ -253,8 +461,8 @@ function registerFileHandlers(): void {
     return { path: filePaths[0], name: basename(filePaths[0]), text: await readFile(filePaths[0], 'utf-8') }
   })
 
-  ipcMain.handle('file:saveLanguageTemplate', async (_e, text: string, defaultName: string) => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
+  ipcMain.handle('file:saveLanguageTemplate', async (event, text: string, defaultName: string) => {
+    const { canceled, filePath } = await showModalSaveDialog(event, {
       title: dlg('saveLanguageTitle'),
       defaultPath: defaultName,
       filters: [{ name: dlg('languageFilter'), extensions: ['json'] }]
@@ -264,17 +472,34 @@ function registerFileHandlers(): void {
     return filePath
   })
 
-  ipcMain.handle('file:openProject', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('file:openProject', async (event) => {
+    const defaultPath = loadLastProjectDirectory()
+    const { canceled, filePaths } = await showModalOpenDialog(event, {
       title: dlg('openProjectTitle'),
+      ...(defaultPath ? { defaultPath } : {}),
       filters: [{ name: dlg('projectFilter'), extensions: ['json'] }],
       properties: ['openFile']
     })
     if (canceled || filePaths.length === 0) return null
-    return {
-      path: filePaths[0],
-      name: basename(filePaths[0]),
-      text: await readFile(filePaths[0], 'utf-8')
+    const path = filePaths[0]
+    const raw = await readFile(path, 'utf-8')
+    let text = raw
+    try {
+      text = resolvedProjectJson(raw, path, existsSync)
+    } catch {
+      // Preserve the old behavior for malformed JSON so the renderer reports
+      // the normal project-parse error instead of turning Open into an IPC error.
+    }
+    return { path, name: basename(path), text }
+  })
+
+  ipcMain.handle('file:rememberProjectPath', async (_event, path: string) => {
+    if (!isAbsolute(path)) return
+    try {
+      await access(path)
+      saveLastProjectDirectory(dirname(path))
+    } catch {
+      /* The project disappeared before loading completed; keep the previous directory. */
     }
   })
 
@@ -311,10 +536,10 @@ function registerFileHandlers(): void {
       })
   )
 
-  ipcMain.handle('file:saveVideoPath', async (_e, defaultName: string, ext: 'mp4' | 'mov') => {
+  ipcMain.handle('file:saveVideoPath', async (event, defaultName: string, ext: 'mp4' | 'mov') => {
     const filter =
       ext === 'mov' ? { name: dlg('movFilter'), extensions: ['mov'] } : { name: dlg('mp4Filter'), extensions: ['mp4'] }
-    const { canceled, filePath } = await dialog.showSaveDialog({
+    const { canceled, filePath } = await showModalSaveDialog(event, {
       title: dlg('saveVideoTitle'),
       defaultPath: defaultName,
       filters: [filter]
@@ -326,6 +551,7 @@ function registerFileHandlers(): void {
 app.whenReady().then(async () => {
   registerMediaProtocol()
   registerExportHandlers()
+  registerConvertHandlers()
 
   if (headlessRequested) {
     // 无头模式（导出视频 / 保存工程 / 两者兼得）
@@ -361,12 +587,14 @@ app.whenReady().then(async () => {
 
   registerHeadlessHandlers(null)
   registerFileHandlers()
-  registerConvertHandlers()
-  const win = createWindow(false)
-  registerLocaleHandlers(win)
+  registerLocaleHandlers()
+  createWindow(false)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(false)
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow(false)
+      rebuildApplicationMenu()
+    }
   })
 })
 
@@ -375,17 +603,35 @@ app.whenReady().then(async () => {
  * 菜单文案/文件对话框/窗口标题；渲染进程切换时经 app:set-locale 告知，插件语言
  * （非内置 zh/en）则主进程文案回退英文。
  */
-function registerLocaleHandlers(win: BrowserWindow): void {
+let rendererMenuState: AppMenuState | null = null
+function commandWindow(): BrowserWindow | null {
+  return BrowserWindow.getFocusedWindow() ?? mainWindow
+}
+function rebuildApplicationMenu(): void {
+  buildMenu(currentLocale, rendererMenuState, {
+    command: (c) => commandWindow()?.webContents.send('menu:command', c),
+    togglePanel: (id) => commandWindow()?.webContents.send('menu:togglePanel', id),
+    openHelp: () => openInfoPage('quick-start'),
+    openAbout: () => openInfoPage('about')
+  })
+}
+
+function registerLocaleHandlers(): void {
   currentLocale = loadLocale()
   const apply = (locale: Locale): void => {
     currentLocale = locale
     saveLocale(locale)
-    buildMenu(locale)
-    if (!win.isDestroyed()) win.setTitle(dlg('windowTitle'))
+    rebuildApplicationMenu()
+    for (const win of BrowserWindow.getAllWindows()) win.setTitle(dlg('windowTitle'))
   }
   apply(currentLocale)
   ipcMain.handle('app:get-locale', () => currentLocale)
   ipcMain.handle('app:set-locale', (_e, locale: string) => apply(locale === 'zh' || locale === 'en' ? locale : 'en'))
+  // 菜单里的勾选/置灰要跟着界面走：状态一变渲染进程就整份推过来，主进程重建菜单
+  ipcMain.on('menu:state', (_e, s: AppMenuState) => {
+    rendererMenuState = s
+    rebuildApplicationMenu()
+  })
 }
 
 app.on('window-all-closed', () => {

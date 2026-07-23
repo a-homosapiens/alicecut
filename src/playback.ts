@@ -24,6 +24,10 @@ export function play(): void {
   clockBase = t
   clockStartedAt = performance.now()
   st.setPlaying(true)
+  // Start media synchronously in the click/keyboard gesture that requested
+  // playback. Deferring the first HTMLMediaElement.play() to the next RAF can
+  // make Chromium treat it as autoplay and reject audio from opened projects.
+  syncMediaPlayback(st.clips, t * 1000, true, duration * 1000)
 }
 
 export function pause(): void {

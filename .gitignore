@@ -2,15 +2,26 @@
 node_modules/
 out/
 dist/
+coverage/
+release/
+*.tsbuildinfo
 
-# 内置字体（npm run fonts 下载，不进仓库）
+# Local configuration and disposable diagnostics
+.env
+.env.*
+!.env.example
+.probe/
+.claude/
+
+# 首装只打包三款基础字体；其余字体位于 font-assets/，由客户端按需从 GitHub 获取。
 public/fonts/*.ttf
 public/fonts/*.otf
+!public/fonts/SmileySans-Oblique.ttf
+!public/fonts/NotoSansSC[[]wght].ttf
+!public/fonts/Inter[[]opsz,wght].ttf
 
-# Large local sample media belongs outside git history.
-samples/*.mp4
-samples/*.wav
-samples/*.zip
+# Local samples are private development fixtures and never belong in Git.
+/samples/
 
 # 系统与编辑器
 .DS_Store

@@ -1,0 +1,1923 @@
+{
+  "version": 6,
+  "meta": {
+    "offset": 0
+  },
+  "lines": [
+    {
+      "id": 21,
+      "start": 0,
+      "end": 25510,
+      "text": "念奴娇·过洞庭",
+      "words": [
+        {
+          "text": "念",
+          "start": 0,
+          "end": 2673,
+          "chars": [
+            {
+              "text": "念",
+              "start": 0,
+              "end": 2673
+            }
+          ]
+        },
+        {
+          "text": "奴",
+          "start": 2673,
+          "end": 5355,
+          "chars": [
+            {
+              "text": "奴",
+              "start": 2673,
+              "end": 5355
+            }
+          ]
+        },
+        {
+          "text": "娇",
+          "start": 5355,
+          "end": 8031,
+          "chars": [
+            {
+              "text": "娇",
+              "start": 5355,
+              "end": 8031
+            }
+          ]
+        },
+        {
+          "text": "·",
+          "start": 8031,
+          "end": 8559,
+          "chars": [
+            {
+              "text": "·",
+              "start": 8031,
+              "end": 8559
+            }
+          ]
+        },
+        {
+          "text": "过",
+          "start": 8559,
+          "end": 11232,
+          "chars": [
+            {
+              "text": "过",
+              "start": 8559,
+              "end": 11232
+            }
+          ]
+        },
+        {
+          "text": "洞庭",
+          "start": 11232,
+          "end": 16588,
+          "chars": [
+            {
+              "text": "洞",
+              "start": 11232,
+              "end": 13908
+            },
+            {
+              "text": "庭",
+              "start": 13908,
+              "end": 16588
+            }
+          ]
+        }
+      ],
+      "effectId": "blur-in",
+      "dx": 0,
+      "dy": -720,
+      "layer": 1,
+      "kind": "text",
+      "effectOutId": "blur-out",
+      "over": {
+        "fontFamily": "Jinghua Lao Song",
+        "fontSize": 112,
+        "fontWeight": 400,
+        "letterSpacing": 7,
+        "textColor": "#000000",
+        "strokeColor": "#E8F4EE",
+        "strokeWidth": 4,
+        "strokeAlpha": 0.92,
+        "shadowColor": "#080B0B",
+        "shadowAlpha": 0.68,
+        "shadowBlur": 12,
+        "shadowOffset": 4
+      },
+      "effectInDurationMs": 3000,
+      "effectOutDurationMs": 5000
+    },
+    {
+      "id": 22,
+      "start": 639,
+      "end": 26846,
+      "text": "张孝祥",
+      "words": [
+        {
+          "text": "张",
+          "start": 639,
+          "end": 6314,
+          "chars": [
+            {
+              "text": "张",
+              "start": 639,
+              "end": 6314
+            }
+          ]
+        },
+        {
+          "text": "孝",
+          "start": 6314,
+          "end": 12003,
+          "chars": [
+            {
+              "text": "孝",
+              "start": 6314,
+              "end": 12003
+            }
+          ]
+        },
+        {
+          "text": "祥",
+          "start": 12003,
+          "end": 17676,
+          "chars": [
+            {
+              "text": "祥",
+              "start": 12003,
+              "end": 17676
+            }
+          ]
+        }
+      ],
+      "effectId": "glow",
+      "dx": 0,
+      "dy": -570,
+      "layer": 0,
+      "kind": "text",
+      "effectOutId": "dissolve-out",
+      "over": {
+        "fontFamily": "Huiwen Ming",
+        "fontSize": 79,
+        "fontWeight": 400,
+        "letterSpacing": 12,
+        "textColor": "#000000",
+        "strokeColor": "#E8F4EE",
+        "strokeWidth": 3,
+        "strokeAlpha": 0.92,
+        "shadowColor": "#080B0B",
+        "shadowAlpha": 0.68,
+        "shadowBlur": 12,
+        "shadowOffset": 4,
+        "glowColor": "#5D8F8A",
+        "halo": 4
+      },
+      "effectInDurationMs": 2000,
+      "effectOutDurationMs": 3000
+    },
+    {
+      "id": 0,
+      "start": 2118,
+      "end": 6240,
+      "text": "洞庭青草",
+      "words": [
+        {
+          "text": "洞庭",
+          "start": 2118,
+          "end": 3458,
+          "chars": [
+            {
+              "text": "洞",
+              "start": 2118,
+              "end": 2788
+            },
+            {
+              "text": "庭",
+              "start": 2788,
+              "end": 3458
+            }
+          ]
+        },
+        {
+          "text": "青草",
+          "start": 3458,
+          "end": 4797,
+          "chars": [
+            {
+              "text": "青",
+              "start": 3458,
+              "end": 4127
+            },
+            {
+              "text": "草",
+              "start": 4127,
+              "end": 4797
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 1,
+      "start": 7152,
+      "end": 11460,
+      "text": "近中秋",
+      "words": [
+        {
+          "text": "近",
+          "start": 7152,
+          "end": 8085,
+          "chars": [
+            {
+              "text": "近",
+              "start": 7152,
+              "end": 8085
+            }
+          ]
+        },
+        {
+          "text": "中秋",
+          "start": 8085,
+          "end": 9952,
+          "chars": [
+            {
+              "text": "中",
+              "start": 8085,
+              "end": 9019
+            },
+            {
+              "text": "秋",
+              "start": 9019,
+              "end": 9952
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 2,
+      "start": 11612,
+      "end": 29554,
+      "text": "更无一点风色",
+      "words": [
+        {
+          "text": "更",
+          "start": 11612,
+          "end": 12502,
+          "chars": [
+            {
+              "text": "更",
+              "start": 11612,
+              "end": 12502
+            }
+          ]
+        },
+        {
+          "text": "无",
+          "start": 12502,
+          "end": 13395,
+          "chars": [
+            {
+              "text": "无",
+              "start": 12502,
+              "end": 13395
+            }
+          ]
+        },
+        {
+          "text": "一点",
+          "start": 13395,
+          "end": 15178,
+          "chars": [
+            {
+              "text": "一",
+              "start": 13395,
+              "end": 14286
+            },
+            {
+              "text": "点",
+              "start": 14286,
+              "end": 15178
+            }
+          ]
+        },
+        {
+          "text": "风",
+          "start": 15178,
+          "end": 16069,
+          "chars": [
+            {
+              "text": "风",
+              "start": 15178,
+              "end": 16069
+            }
+          ]
+        },
+        {
+          "text": "色",
+          "start": 16069,
+          "end": 16962,
+          "chars": [
+            {
+              "text": "色",
+              "start": 16069,
+              "end": 16962
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 3,
+      "start": 31557,
+      "end": 35047,
+      "text": "玉鉴琼田三万顷",
+      "words": [
+        {
+          "text": "玉",
+          "start": 31557,
+          "end": 31881,
+          "chars": [
+            {
+              "text": "玉",
+              "start": 31557,
+              "end": 31881
+            }
+          ]
+        },
+        {
+          "text": "鉴",
+          "start": 31881,
+          "end": 32205,
+          "chars": [
+            {
+              "text": "鉴",
+              "start": 31881,
+              "end": 32205
+            }
+          ]
+        },
+        {
+          "text": "琼",
+          "start": 32205,
+          "end": 32529,
+          "chars": [
+            {
+              "text": "琼",
+              "start": 32205,
+              "end": 32529
+            }
+          ]
+        },
+        {
+          "text": "田",
+          "start": 32529,
+          "end": 32854,
+          "chars": [
+            {
+              "text": "田",
+              "start": 32529,
+              "end": 32854
+            }
+          ]
+        },
+        {
+          "text": "三万",
+          "start": 32854,
+          "end": 33502,
+          "chars": [
+            {
+              "text": "三",
+              "start": 32854,
+              "end": 33178
+            },
+            {
+              "text": "万",
+              "start": 33178,
+              "end": 33502
+            }
+          ]
+        },
+        {
+          "text": "顷",
+          "start": 33502,
+          "end": 33825,
+          "chars": [
+            {
+              "text": "顷",
+              "start": 33502,
+              "end": 33825
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 4,
+      "start": 35047,
+      "end": 41203,
+      "text": "着我扁舟一叶",
+      "words": [
+        {
+          "text": "着",
+          "start": 35047,
+          "end": 35648,
+          "chars": [
+            {
+              "text": "着",
+              "start": 35047,
+              "end": 35648
+            }
+          ]
+        },
+        {
+          "text": "我",
+          "start": 35648,
+          "end": 36248,
+          "chars": [
+            {
+              "text": "我",
+              "start": 35648,
+              "end": 36248
+            }
+          ]
+        },
+        {
+          "text": "扁舟",
+          "start": 36248,
+          "end": 37451,
+          "chars": [
+            {
+              "text": "扁",
+              "start": 36248,
+              "end": 36850
+            },
+            {
+              "text": "舟",
+              "start": 36850,
+              "end": 37451
+            }
+          ]
+        },
+        {
+          "text": "一",
+          "start": 37451,
+          "end": 38051,
+          "chars": [
+            {
+              "text": "一",
+              "start": 37451,
+              "end": 38051
+            }
+          ]
+        },
+        {
+          "text": "叶",
+          "start": 38051,
+          "end": 38652,
+          "chars": [
+            {
+              "text": "叶",
+              "start": 38051,
+              "end": 38652
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 5,
+      "start": 41212,
+      "end": 43465,
+      "text": "素月分辉",
+      "words": [
+        {
+          "text": "素",
+          "start": 41212,
+          "end": 41578,
+          "chars": [
+            {
+              "text": "素",
+              "start": 41212,
+              "end": 41578
+            }
+          ]
+        },
+        {
+          "text": "月",
+          "start": 41578,
+          "end": 41944,
+          "chars": [
+            {
+              "text": "月",
+              "start": 41578,
+              "end": 41944
+            }
+          ]
+        },
+        {
+          "text": "分",
+          "start": 41944,
+          "end": 42311,
+          "chars": [
+            {
+              "text": "分",
+              "start": 41944,
+              "end": 42311
+            }
+          ]
+        },
+        {
+          "text": "辉",
+          "start": 42311,
+          "end": 42677,
+          "chars": [
+            {
+              "text": "辉",
+              "start": 42311,
+              "end": 42677
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 6,
+      "start": 43679,
+      "end": 46967,
+      "text": "明河共影",
+      "words": [
+        {
+          "text": "明河",
+          "start": 43679,
+          "end": 44748,
+          "chars": [
+            {
+              "text": "明",
+              "start": 43679,
+              "end": 44213
+            },
+            {
+              "text": "河",
+              "start": 44213,
+              "end": 44748
+            }
+          ]
+        },
+        {
+          "text": "共",
+          "start": 44748,
+          "end": 45282,
+          "chars": [
+            {
+              "text": "共",
+              "start": 44748,
+              "end": 45282
+            }
+          ]
+        },
+        {
+          "text": "影",
+          "start": 45282,
+          "end": 45816,
+          "chars": [
+            {
+              "text": "影",
+              "start": 45282,
+              "end": 45816
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 7,
+      "start": 46952,
+      "end": 51171,
+      "text": "表里俱澄澈",
+      "words": [
+        {
+          "text": "表",
+          "start": 46952,
+          "end": 47502,
+          "chars": [
+            {
+              "text": "表",
+              "start": 46952,
+              "end": 47502
+            }
+          ]
+        },
+        {
+          "text": "里",
+          "start": 47502,
+          "end": 48049,
+          "chars": [
+            {
+              "text": "里",
+              "start": 47502,
+              "end": 48049
+            }
+          ]
+        },
+        {
+          "text": "俱",
+          "start": 48049,
+          "end": 48598,
+          "chars": [
+            {
+              "text": "俱",
+              "start": 48049,
+              "end": 48598
+            }
+          ]
+        },
+        {
+          "text": "澄澈",
+          "start": 48598,
+          "end": 49695,
+          "chars": [
+            {
+              "text": "澄",
+              "start": 48598,
+              "end": 49146
+            },
+            {
+              "text": "澈",
+              "start": 49146,
+              "end": 49695
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 8,
+      "start": 51359,
+      "end": 56645,
+      "text": "悠然心会",
+      "words": [
+        {
+          "text": "悠然",
+          "start": 51359,
+          "end": 53077,
+          "chars": [
+            {
+              "text": "悠",
+              "start": 51359,
+              "end": 52218
+            },
+            {
+              "text": "然",
+              "start": 52218,
+              "end": 53077
+            }
+          ]
+        },
+        {
+          "text": "心",
+          "start": 53077,
+          "end": 53936,
+          "chars": [
+            {
+              "text": "心",
+              "start": 53077,
+              "end": 53936
+            }
+          ]
+        },
+        {
+          "text": "会",
+          "start": 53936,
+          "end": 54795,
+          "chars": [
+            {
+              "text": "会",
+              "start": 53936,
+              "end": 54795
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 9,
+      "start": 56735,
+      "end": 65068,
+      "text": "妙处难与君说",
+      "words": [
+        {
+          "text": "妙",
+          "start": 56735,
+          "end": 57379,
+          "chars": [
+            {
+              "text": "妙",
+              "start": 56735,
+              "end": 57379
+            }
+          ]
+        },
+        {
+          "text": "处",
+          "start": 57379,
+          "end": 58021,
+          "chars": [
+            {
+              "text": "处",
+              "start": 57379,
+              "end": 58021
+            }
+          ]
+        },
+        {
+          "text": "难",
+          "start": 58021,
+          "end": 58664,
+          "chars": [
+            {
+              "text": "难",
+              "start": 58021,
+              "end": 58664
+            }
+          ]
+        },
+        {
+          "text": "与",
+          "start": 58664,
+          "end": 59307,
+          "chars": [
+            {
+              "text": "与",
+              "start": 58664,
+              "end": 59307
+            }
+          ]
+        },
+        {
+          "text": "君",
+          "start": 59307,
+          "end": 59950,
+          "chars": [
+            {
+              "text": "君",
+              "start": 59307,
+              "end": 59950
+            }
+          ]
+        },
+        {
+          "text": "说",
+          "start": 59950,
+          "end": 60594,
+          "chars": [
+            {
+              "text": "说",
+              "start": 59950,
+              "end": 60594
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 10,
+      "start": 64971,
+      "end": 68714,
+      "text": "应念岭海经年",
+      "words": [
+        {
+          "text": "应",
+          "start": 64971,
+          "end": 65376,
+          "chars": [
+            {
+              "text": "应",
+              "start": 64971,
+              "end": 65376
+            }
+          ]
+        },
+        {
+          "text": "念",
+          "start": 65376,
+          "end": 65782,
+          "chars": [
+            {
+              "text": "念",
+              "start": 65376,
+              "end": 65782
+            }
+          ]
+        },
+        {
+          "text": "岭",
+          "start": 65782,
+          "end": 66187,
+          "chars": [
+            {
+              "text": "岭",
+              "start": 65782,
+              "end": 66187
+            }
+          ]
+        },
+        {
+          "text": "海",
+          "start": 66187,
+          "end": 66593,
+          "chars": [
+            {
+              "text": "海",
+              "start": 66187,
+              "end": 66593
+            }
+          ]
+        },
+        {
+          "text": "经",
+          "start": 66593,
+          "end": 66998,
+          "chars": [
+            {
+              "text": "经",
+              "start": 66593,
+              "end": 66998
+            }
+          ]
+        },
+        {
+          "text": "年",
+          "start": 66998,
+          "end": 67405,
+          "chars": [
+            {
+              "text": "年",
+              "start": 66998,
+              "end": 67405
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 11,
+      "start": 68536,
+      "end": 71126,
+      "text": "孤光自照",
+      "words": [
+        {
+          "text": "孤",
+          "start": 68536,
+          "end": 68957,
+          "chars": [
+            {
+              "text": "孤",
+              "start": 68536,
+              "end": 68957
+            }
+          ]
+        },
+        {
+          "text": "光",
+          "start": 68957,
+          "end": 69377,
+          "chars": [
+            {
+              "text": "光",
+              "start": 68957,
+              "end": 69377
+            }
+          ]
+        },
+        {
+          "text": "自照",
+          "start": 69377,
+          "end": 70220,
+          "chars": [
+            {
+              "text": "自",
+              "start": 69377,
+              "end": 69799
+            },
+            {
+              "text": "照",
+              "start": 69799,
+              "end": 70220
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 12,
+      "start": 71105,
+      "end": 74642,
+      "text": "肝肺皆冰雪",
+      "words": [
+        {
+          "text": "肝",
+          "start": 71105,
+          "end": 71565,
+          "chars": [
+            {
+              "text": "肝",
+              "start": 71105,
+              "end": 71565
+            }
+          ]
+        },
+        {
+          "text": "肺",
+          "start": 71565,
+          "end": 72024,
+          "chars": [
+            {
+              "text": "肺",
+              "start": 71565,
+              "end": 72024
+            }
+          ]
+        },
+        {
+          "text": "皆",
+          "start": 72024,
+          "end": 72484,
+          "chars": [
+            {
+              "text": "皆",
+              "start": 72024,
+              "end": 72484
+            }
+          ]
+        },
+        {
+          "text": "冰雪",
+          "start": 72484,
+          "end": 73404,
+          "chars": [
+            {
+              "text": "冰",
+              "start": 72484,
+              "end": 72945
+            },
+            {
+              "text": "雪",
+              "start": 72945,
+              "end": 73404
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 13,
+      "start": 75004,
+      "end": 79592,
+      "text": "短发萧骚襟袖冷",
+      "words": [
+        {
+          "text": "短",
+          "start": 75004,
+          "end": 75430,
+          "chars": [
+            {
+              "text": "短",
+              "start": 75004,
+              "end": 75430
+            }
+          ]
+        },
+        {
+          "text": "发",
+          "start": 75430,
+          "end": 75856,
+          "chars": [
+            {
+              "text": "发",
+              "start": 75430,
+              "end": 75856
+            }
+          ]
+        },
+        {
+          "text": "萧",
+          "start": 75856,
+          "end": 76282,
+          "chars": [
+            {
+              "text": "萧",
+              "start": 75856,
+              "end": 76282
+            }
+          ]
+        },
+        {
+          "text": "骚",
+          "start": 76282,
+          "end": 76708,
+          "chars": [
+            {
+              "text": "骚",
+              "start": 76282,
+              "end": 76708
+            }
+          ]
+        },
+        {
+          "text": "襟",
+          "start": 76708,
+          "end": 77135,
+          "chars": [
+            {
+              "text": "襟",
+              "start": 76708,
+              "end": 77135
+            }
+          ]
+        },
+        {
+          "text": "袖",
+          "start": 77135,
+          "end": 77560,
+          "chars": [
+            {
+              "text": "袖",
+              "start": 77135,
+              "end": 77560
+            }
+          ]
+        },
+        {
+          "text": "冷",
+          "start": 77560,
+          "end": 77987,
+          "chars": [
+            {
+              "text": "冷",
+              "start": 77560,
+              "end": 77987
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 14,
+      "start": 79469,
+      "end": 83673,
+      "text": "稳泛沧浪空阔",
+      "words": [
+        {
+          "text": "稳",
+          "start": 79469,
+          "end": 79924,
+          "chars": [
+            {
+              "text": "稳",
+              "start": 79469,
+              "end": 79924
+            }
+          ]
+        },
+        {
+          "text": "泛",
+          "start": 79924,
+          "end": 80380,
+          "chars": [
+            {
+              "text": "泛",
+              "start": 79924,
+              "end": 80380
+            }
+          ]
+        },
+        {
+          "text": "沧浪",
+          "start": 80380,
+          "end": 81291,
+          "chars": [
+            {
+              "text": "沧",
+              "start": 80380,
+              "end": 80836
+            },
+            {
+              "text": "浪",
+              "start": 80836,
+              "end": 81291
+            }
+          ]
+        },
+        {
+          "text": "空",
+          "start": 81291,
+          "end": 81746,
+          "chars": [
+            {
+              "text": "空",
+              "start": 81291,
+              "end": 81746
+            }
+          ]
+        },
+        {
+          "text": "阔",
+          "start": 81746,
+          "end": 82202,
+          "chars": [
+            {
+              "text": "阔",
+              "start": 81746,
+              "end": 82202
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 15,
+      "start": 83798,
+      "end": 86453,
+      "text": "尽挹西江",
+      "words": [
+        {
+          "text": "尽",
+          "start": 83798,
+          "end": 84229,
+          "chars": [
+            {
+              "text": "尽",
+              "start": 83798,
+              "end": 84229
+            }
+          ]
+        },
+        {
+          "text": "挹",
+          "start": 84229,
+          "end": 84661,
+          "chars": [
+            {
+              "text": "挹",
+              "start": 84229,
+              "end": 84661
+            }
+          ]
+        },
+        {
+          "text": "西江",
+          "start": 84661,
+          "end": 85524,
+          "chars": [
+            {
+              "text": "西",
+              "start": 84661,
+              "end": 85092
+            },
+            {
+              "text": "江",
+              "start": 85092,
+              "end": 85524
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 16,
+      "start": 86591,
+      "end": 88647,
+      "text": "细斟北斗",
+      "words": [
+        {
+          "text": "细",
+          "start": 86591,
+          "end": 86925,
+          "chars": [
+            {
+              "text": "细",
+              "start": 86591,
+              "end": 86925
+            }
+          ]
+        },
+        {
+          "text": "斟",
+          "start": 86925,
+          "end": 87259,
+          "chars": [
+            {
+              "text": "斟",
+              "start": 86925,
+              "end": 87259
+            }
+          ]
+        },
+        {
+          "text": "北斗",
+          "start": 87259,
+          "end": 87927,
+          "chars": [
+            {
+              "text": "北",
+              "start": 87259,
+              "end": 87593
+            },
+            {
+              "text": "斗",
+              "start": 87593,
+              "end": 87927
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 17,
+      "start": 89609,
+      "end": 94466,
+      "text": "万象为宾客",
+      "words": [
+        {
+          "text": "万象",
+          "start": 89609,
+          "end": 90871,
+          "chars": [
+            {
+              "text": "万",
+              "start": 89609,
+              "end": 90241
+            },
+            {
+              "text": "象",
+              "start": 90241,
+              "end": 90871
+            }
+          ]
+        },
+        {
+          "text": "为",
+          "start": 90871,
+          "end": 91503,
+          "chars": [
+            {
+              "text": "为",
+              "start": 90871,
+              "end": 91503
+            }
+          ]
+        },
+        {
+          "text": "宾客",
+          "start": 91503,
+          "end": 92767,
+          "chars": [
+            {
+              "text": "宾",
+              "start": 91503,
+              "end": 92135
+            },
+            {
+              "text": "客",
+              "start": 92135,
+              "end": 92767
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 18,
+      "start": 94328,
+      "end": 96327,
+      "text": "扣舷独啸",
+      "words": [
+        {
+          "text": "扣",
+          "start": 94328,
+          "end": 94653,
+          "chars": [
+            {
+              "text": "扣",
+              "start": 94328,
+              "end": 94653
+            }
+          ]
+        },
+        {
+          "text": "舷",
+          "start": 94653,
+          "end": 94978,
+          "chars": [
+            {
+              "text": "舷",
+              "start": 94653,
+              "end": 94978
+            }
+          ]
+        },
+        {
+          "text": "独",
+          "start": 94978,
+          "end": 95303,
+          "chars": [
+            {
+              "text": "独",
+              "start": 94978,
+              "end": 95303
+            }
+          ]
+        },
+        {
+          "text": "啸",
+          "start": 95303,
+          "end": 95628,
+          "chars": [
+            {
+              "text": "啸",
+              "start": 95303,
+              "end": 95628
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 19,
+      "start": 97766.78881214248,
+      "end": 101686.78881214248,
+      "text": "不知今夕何夕！",
+      "words": [
+        {
+          "text": "不知",
+          "start": 97766.78881214248,
+          "end": 98588.78881214248,
+          "chars": [
+            {
+              "text": "不",
+              "start": 97766.78881214248,
+              "end": 98177.78881214248
+            },
+            {
+              "text": "知",
+              "start": 98177.78881214248,
+              "end": 98588.78881214248
+            }
+          ]
+        },
+        {
+          "text": "今夕",
+          "start": 98588.78881214248,
+          "end": 99410.78881214248,
+          "chars": [
+            {
+              "text": "今",
+              "start": 98588.78881214248,
+              "end": 98999.78881214248
+            },
+            {
+              "text": "夕",
+              "start": 98999.78881214248,
+              "end": 99410.78881214248
+            }
+          ]
+        },
+        {
+          "text": "何",
+          "start": 99410.78881214248,
+          "end": 99821.78881214248,
+          "chars": [
+            {
+              "text": "何",
+              "start": 99410.78881214248,
+              "end": 99821.78881214248
+            }
+          ]
+        },
+        {
+          "text": "夕",
+          "start": 99821.78881214248,
+          "end": 100232.78881214248,
+          "chars": [
+            {
+              "text": "夕",
+              "start": 99821.78881214248,
+              "end": 100232.78881214248
+            }
+          ]
+        },
+        {
+          "text": "！",
+          "start": 100232.78881214248,
+          "end": 100314.78881214248,
+          "chars": [
+            {
+              "text": "！",
+              "start": 100232.78881214248,
+              "end": 100314.78881214248
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "fade-up-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 23,
+      "start": 107264,
+      "end": 128266,
+      "text": "不知今夕何夕！",
+      "words": [
+        {
+          "text": "不知",
+          "start": 107264,
+          "end": 111665,
+          "chars": [
+            {
+              "text": "不",
+              "start": 107264,
+              "end": 109465
+            },
+            {
+              "text": "知",
+              "start": 109465,
+              "end": 111665
+            }
+          ]
+        },
+        {
+          "text": "今夕",
+          "start": 111665,
+          "end": 116067,
+          "chars": [
+            {
+              "text": "今",
+              "start": 111665,
+              "end": 113866
+            },
+            {
+              "text": "夕",
+              "start": 113866,
+              "end": 116067
+            }
+          ]
+        },
+        {
+          "text": "何",
+          "start": 116067,
+          "end": 118278,
+          "chars": [
+            {
+              "text": "何",
+              "start": 116067,
+              "end": 118278
+            }
+          ]
+        },
+        {
+          "text": "夕",
+          "start": 118278,
+          "end": 120478,
+          "chars": [
+            {
+              "text": "夕",
+              "start": 118278,
+              "end": 120478
+            }
+          ]
+        },
+        {
+          "text": "！",
+          "start": 120478,
+          "end": 120920,
+          "chars": [
+            {
+              "text": "！",
+              "start": 120478,
+              "end": 120920
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "evaporate-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    },
+    {
+      "id": 20,
+      "start": 130599,
+      "end": 146632,
+      "text": "不知今夕何夕！",
+      "words": [
+        {
+          "text": "不知",
+          "start": 130599,
+          "end": 133961,
+          "chars": [
+            {
+              "text": "不",
+              "start": 130599,
+              "end": 132280
+            },
+            {
+              "text": "知",
+              "start": 132280,
+              "end": 133961
+            }
+          ]
+        },
+        {
+          "text": "今夕",
+          "start": 133961,
+          "end": 137317,
+          "chars": [
+            {
+              "text": "今",
+              "start": 133961,
+              "end": 135636
+            },
+            {
+              "text": "夕",
+              "start": 135636,
+              "end": 137317
+            }
+          ]
+        },
+        {
+          "text": "何",
+          "start": 137317,
+          "end": 139009,
+          "chars": [
+            {
+              "text": "何",
+              "start": 137317,
+              "end": 139009
+            }
+          ]
+        },
+        {
+          "text": "夕",
+          "start": 139009,
+          "end": 140685,
+          "chars": [
+            {
+              "text": "夕",
+              "start": 139009,
+              "end": 140685
+            }
+          ]
+        },
+        {
+          "text": "！",
+          "start": 140685,
+          "end": 141022,
+          "chars": [
+            {
+              "text": "！",
+              "start": 140685,
+              "end": 141022
+            }
+          ]
+        }
+      ],
+      "effectId": "float-up",
+      "dx": 0,
+      "dy": 0,
+      "effectOutId": "evaporate-out",
+      "effectInDurationMs": null,
+      "effectOutDurationMs": null,
+      "layer": 0,
+      "over": {
+        "textColor": "#030303",
+        "fontWeight": 400,
+        "fontSize": 85
+      }
+    }
+  ],
+  "style": {
+    "aspect": "9:16",
+    "fontFamily": "LXGW WenKai",
+    "fontWeight": 500,
+    "fontSize": 80,
+    "textColor": "#173A3C",
+    "letterSpacing": 4,
+    "wordSpacing": 12,
+    "lineSpacing": 1,
+    "textAlign": "center",
+    "textOrientation": "horizontal",
+    "strokeColor": "#E8F4EE",
+    "strokeWidth": 5,
+    "strokeAlpha": 0.94,
+    "glowColor": "#5D8F8A",
+    "highlightColor": "#ffd400",
+    "bgType": "image",
+    "bgFrom": "#0f0c29",
+    "bgTo": "#24243e",
+    "bgAngle": 160,
+    "bgImage": "张孝祥《念奴娇·过洞庭》.jpg",
+    "bgImageRelativePath": "张孝祥《念奴娇·过洞庭》.jpg",
+    "bgImageScale": 1,
+    "bgImageX": 0,
+    "bgImageY": 0,
+    "effectId": "float-up",
+    "effectInDurationMs": 480,
+    "effectOutDurationMs": 320,
+    "intensity": 0.76,
+    "riseHistory": 3,
+    "showMeta": false,
+    "globalDx": 0,
+    "globalDy": 573,
+    "globalRotate": 0,
+    "textAlpha": 0.98,
+    "italic": false,
+    "textBgColor": "#000000",
+    "textBgAlpha": 0,
+    "halo": 2,
+    "shadowColor": "#070A0A",
+    "shadowAlpha": 0.72,
+    "shadowBlur": 11,
+    "shadowOffset": 5
+  },
+  "lrcName": "069_e1fadca1-7ae4-4f82-b79c-e91dc5b63a79.srt",
+  "tracks": [],
+  "images": [
+    {
+      "id": 1,
+      "path": "张孝祥《念奴娇·过洞庭》.jpg",
+      "name": "张孝祥《念奴娇·过洞庭》.jpg"
+    }
+  ],
+  "clips": [
+    {
+      "kind": "audio",
+      "path": "张孝祥《念奴娇·过洞庭》.mp3",
+      "name": "张孝祥《念奴娇·过洞庭》.mp3",
+      "start": 0,
+      "sourceDuration": 147520,
+      "sourceIn": 0,
+      "sourceOut": 147520,
+      "speed": 1,
+      "loop": 1,
+      "layer": 0,
+      "tx": 0,
+      "ty": 0,
+      "scale": 1,
+      "fadeInMs": 0,
+      "fadeOutMs": 0,
+      "transIn": null,
+      "transOut": null
+    }
+  ]
+}

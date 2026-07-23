@@ -1,26 +1,65 @@
 import { useEffect, useState } from 'react'
 import { useProject, RESOLUTIONS, type AspectId } from '../store/project'
 import { EFFECTS } from '../core/effects'
-import { SYSTEM_FONTS, loadBuiltinFonts, registerImportedFont, type FontOption } from '../fonts'
+import {
+  BUILTIN_FONT_OPTIONS,
+  SYSTEM_FONTS,
+  installBuiltinFont,
+  registerImportedFont,
+  restoreImportedFonts,
+  restoreInstalledFonts,
+  type FontOption
+} from '../fonts'
 import { invalidateLayoutCache } from '../core/render'
+import { loadBgImage } from '../mediaPool'
 import type { LineTextOverride } from '../core/types'
 import { ClosableSection } from './ClosableSection'
 import { useT, hasMsg } from '../i18n'
+import { fontSizeToSliderPosition, sliderPositionToFontSize } from '../core/previewTransform'
 
 /** 内联 style 用的 font-family（含空格/中文名加引号） */
 const cssFamily = (family: string): string => `"${family}"`
+
+/**
+ * 选中单句字幕/文字块时，右栏顶部的文字内容编辑框。随输入即时更新预览
+ * （updateLineText 按新文字重插值逐字时间）。用 line.id 作 key 重挂，
+ * 切换选中行时自动载入该行文字。
+ */
+function LineContentEditor({ line }: { line: { id: number; text: string } }): React.JSX.Element {
+  const t = useT()
+  const [draft, setDraft] = useState(line.text)
+  return (
+    <div className="style-content-edit">
+      <span className="style-content-title">{t('style.contentSection')}</span>
+      <input
+        className="text-edit-input"
+        value={draft}
+        placeholder={t('style.contentPlaceholder')}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          useProject.getState().updateLineText(line.id, e.target.value)
+        }}
+      />
+      <p className="hint">{t('style.contentHint')}</p>
+    </div>
+  )
+}
 
 /** 字体可视化选择：点击展开，每个字体用它自身渲染出字体名预览 */
 function FontPicker({
   fonts,
   value,
   onPick,
-  onImport
+  onImport,
+  installed,
+  loadingFamily
 }: {
   fonts: FontOption[]
   value: string
-  onPick: (family: string) => void
+  onPick: (font: FontOption) => Promise<void>
   onImport: () => void
+  installed: ReadonlySet<string>
+  loadingFamily: string | null
 }): React.JSX.Element {
   const t = useT()
   const [open, setOpen] = useState(false)
@@ -36,15 +75,23 @@ function FontPicker({
           {fonts.map((f) => (
             <button
               key={f.family}
-              className={`font-cell${f.family === value ? ' active' : ''}`}
-              style={{ fontFamily: cssFamily(f.family) }}
+              className={`font-cell${f.family === value ? ' active' : ''}${f.builtin && !installed.has(f.family) ? ' downloadable' : ''}`}
               title={f.label}
+              disabled={loadingFamily !== null}
               onClick={() => {
-                onPick(f.family)
-                setOpen(false)
+                void onPick(f).then(() => setOpen(false))
               }}
             >
-              {f.label}
+              {f.previewUrl && !installed.has(f.family) ? (
+                <img className="font-preview" src={f.previewUrl} alt={f.label} />
+              ) : (
+                <span className="font-preview-text" style={{ fontFamily: cssFamily(f.family) }}>{f.label}</span>
+              )}
+              {f.builtin && !installed.has(f.family) && (
+                <span className={`font-download-badge${loadingFamily === f.family ? ' loading' : ''}`} aria-label={t('style.fontDownload')}>
+                  {loadingFamily === f.family ? '…' : '⇩'}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -60,10 +107,18 @@ export function StylePanel(): React.JSX.Element {
   const t = useT()
   const style = useProject((s) => s.style)
   const patchStyle = useProject((s) => s.patchStyle)
+  const setGlobalEffectDuration = useProject((s) => s.setGlobalEffectDuration)
   const selectedIds = useProject((s) => s.selectedIds)
   const lines = useProject((s) => s.lines)
   const pluginEffects = useProject((s) => s.pluginEffects)
-  const [fonts, setFonts] = useState<FontOption[]>(SYSTEM_FONTS)
+  const [fonts, setFonts] = useState<FontOption[]>([...BUILTIN_FONT_OPTIONS, ...SYSTEM_FONTS])
+  const [installedFonts, setInstalledFonts] = useState<Set<string>>(
+    () => new Set([
+      ...SYSTEM_FONTS.map((font) => font.family),
+      ...BUILTIN_FONT_OPTIONS.filter((font) => font.bundled).map((font) => font.family)
+    ])
+  )
+  const [loadingFont, setLoadingFont] = useState<string | null>(null)
 
   // 内置特效名按语言翻译（有 effect.<id> 键）；插件特效无键，回退自带 name
   const effectLabel = (id: string, name: string): string =>
@@ -71,9 +126,21 @@ export function StylePanel(): React.JSX.Element {
 
   // 内置 + 插件特效合并展示（插件项带标记）
   const effectChips = [
-    ...EFFECTS.map((e) => ({ id: e.id, name: effectLabel(e.id, e.name), plugin: false })),
-    ...pluginEffects.map((e) => ({ id: e.id, name: effectLabel(e.id, e.name), plugin: true }))
+    ...EFFECTS.map((e) => ({
+      id: e.id,
+      name: effectLabel(e.id, e.name),
+      plugin: false,
+      picker: e.picker ?? ('both' as const)
+    })),
+    ...pluginEffects.map((e) => ({
+      id: e.id,
+      name: effectLabel(e.id, e.name),
+      plugin: true,
+      picker: 'both' as const
+    }))
   ]
+  const inEffectChips = effectChips.filter((effect) => effect.picker !== 'out')
+  const outEffectChips = effectChips.filter((effect) => effect.picker !== 'in')
 
   const selectedEffects = new Set(
     lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectId ?? style.effectId)
@@ -92,13 +159,22 @@ export function StylePanel(): React.JSX.Element {
 
   // 退场特效（仅对选中行，按行设置；'' = 默认淡出）
   const selectedOut = new Set(lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectOutId ?? ''))
-  const activeOutId = selectedOut.size === 1 ? [...selectedOut][0] : ''
+  const activeOutId = selectedOut.size === 1 ? [...selectedOut][0] : null
+  const firstSelectedLine = lines.find((line) => selectedIds.includes(line.id))
+  const inDurationMs = firstSelectedLine?.effectInDurationMs ?? style.effectInDurationMs
+  const outDurationMs = firstSelectedLine?.effectOutDurationMs ?? style.effectOutDurationMs
+  const setEffectDuration = (which: 'in' | 'out', seconds: number): void => {
+    const durationMs = Math.max(0, Math.round(seconds * 1000))
+    if (selectedIds.length > 0) useProject.getState().setLineEffectDuration(selectedIds, which, durationMs)
+    else setGlobalEffectDuration(which, durationMs)
+  }
 
   // 文字属性：有选中行则改这些行的覆盖，否则改全局；显示值取首个选中行的有效值
   const textSel = selectedIds.length > 0
   const ov = textSel ? lines.find((l) => selectedIds.includes(l.id))?.over : undefined
   const effFamily = ov?.fontFamily ?? style.fontFamily
   const effSize = ov?.fontSize ?? style.fontSize
+  const effLineRotate = ov?.rotate ?? 0
   const effWeight = ov?.fontWeight ?? style.fontWeight
   const effItalic = ov?.italic ?? style.italic
   const effColor = ov?.textColor ?? style.textColor
@@ -124,14 +200,32 @@ export function StylePanel(): React.JSX.Element {
     else patchStyle(patch)
   }
 
+  // 恰好选中一句时，顶部显示文字内容编辑框（多选/未选时不显示）
+  const soleLine = selectedIds.length === 1 ? lines.find((l) => l.id === selectedIds[0]) : undefined
+
   useEffect(() => {
-    void loadBuiltinFonts().then((builtin) => {
-      if (builtin.length > 0) {
-        setFonts((prev) => [...builtin, ...prev])
-        invalidateLayoutCache()
-      }
+    void Promise.all([restoreInstalledFonts(), restoreImportedFonts()]).then(([restored, imported]) => {
+      setInstalledFonts((previous) => new Set([...previous, ...restored, ...imported.map((font) => font.family)]))
+      setFonts((previous) => [...imported, ...previous.filter((font) => !imported.some((item) => item.family === font.family))])
+      if (restored.size > 0 || imported.length > 0) invalidateLayoutCache()
     })
   }, [])
+
+  const pickFont = async (font: FontOption): Promise<void> => {
+    try {
+      if (font.builtin && !installedFonts.has(font.family)) {
+        setLoadingFont(font.family)
+        await installBuiltinFont(font.family)
+        setInstalledFonts((previous) => new Set(previous).add(font.family))
+        invalidateLayoutCache()
+      }
+      applyText({ fontFamily: font.family })
+    } catch {
+      alert(t('style.fontLoadFail'))
+    } finally {
+      setLoadingFont(null)
+    }
+  }
 
   const importFont = async (): Promise<void> => {
     const file = await window.desktop.openFont()
@@ -139,7 +233,8 @@ export function StylePanel(): React.JSX.Element {
     try {
       const opt = await registerImportedFont(file.name, file.data)
       setFonts((prev) => [opt, ...prev.filter((f) => f.family !== opt.family)])
-      patchStyle({ fontFamily: opt.family })
+      setInstalledFonts((previous) => new Set(previous).add(opt.family))
+      applyText({ fontFamily: opt.family })
     } catch {
       alert(t('style.fontLoadFail'))
     }
@@ -148,8 +243,13 @@ export function StylePanel(): React.JSX.Element {
   const chooseBgImage = async (): Promise<void> => {
     const file = await window.desktop.openImage()
     if (!file) return
-    useProject.getState().addImage(file.path, file.name)
-    patchStyle({ bgType: 'image', bgImage: file.path })
+    try {
+      await loadBgImage(file.path)
+      useProject.getState().addImage(file.path, file.name)
+      patchStyle({ bgType: 'image', bgImage: file.path })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    }
   }
 
   const bgName = style.bgImage ? style.bgImage.split(/[\\/]/).pop() : null
@@ -162,6 +262,8 @@ export function StylePanel(): React.JSX.Element {
 
   return (
     <div className="style-panel">
+      {soleLine && <LineContentEditor key={soleLine.id} line={soleLine} />}
+
       <ClosableSection windowId="style.size" title={t('style.sizeSection')}>
         <label>
           <select value={style.aspect} onChange={(e) => patchStyle({ aspect: e.target.value as AspectId })}>
@@ -230,9 +332,19 @@ export function StylePanel(): React.JSX.Element {
                     onChange={(e) => patchStyle({ bgImageY: Number(e.target.value) })}
                   />
                 </label>
+                <label>
+                  {t('style.bgImageRotate')} {style.bgImageRotate}°
+                  <input
+                    type="range"
+                    min={-180}
+                    max={180}
+                    value={style.bgImageRotate}
+                    onChange={(e) => patchStyle({ bgImageRotate: Number(e.target.value) })}
+                  />
+                </label>
                 <button
                   className="btn btn-sm"
-                  onClick={() => patchStyle({ bgImageScale: 1, bgImageX: 0, bgImageY: 0 })}
+                  onClick={() => patchStyle({ bgImageScale: 1, bgImageX: 0, bgImageY: 0, bgImageRotate: 0 })}
                 >
                   {t('style.bgImageReset')}
                 </button>
@@ -281,17 +393,19 @@ export function StylePanel(): React.JSX.Element {
         <FontPicker
           fonts={fonts}
           value={effFamily}
-          onPick={(family) => applyText({ fontFamily: family })}
+          onPick={pickFont}
           onImport={importFont}
+          installed={installedFonts}
+          loadingFamily={loadingFont}
         />
         <label>
           {t('style.fontSize')} {effSize}px
           <input
             type="range"
-            min={40}
-            max={180}
-            value={effSize}
-            onChange={(e) => applyText({ fontSize: Number(e.target.value) })}
+            min={0}
+            max={1000}
+            value={fontSizeToSliderPosition(effSize)}
+            onChange={(e) => applyText({ fontSize: sliderPositionToFontSize(Number(e.target.value)) })}
           />
         </label>
         <label className="row">
@@ -372,6 +486,18 @@ export function StylePanel(): React.JSX.Element {
             <option value="vertical">{t('style.orientationVertical')}</option>
           </select>
         </label>
+        {textSel && (
+          <label>
+            {t('style.lineRotate')} {effLineRotate}°
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              value={effLineRotate}
+              onChange={(e) => applyText({ rotate: Number(e.target.value) })}
+            />
+          </label>
+        )}
         <label>
           {t('style.strokeWidth')} {effStrokeWidth}px{effStrokeWidth === 0 ? t('style.off') : ''}
           <input
@@ -531,8 +657,9 @@ export function StylePanel(): React.JSX.Element {
           selectedIds.length > 0 ? t('style.effectsSelected', { n: selectedIds.length }) : t('style.effectsGlobal')
         }`}
       >
+        <h3 className="effect-group-title">{t('style.effectIn')}</h3>
         <div className="effect-list">
-          {effectChips.map((fx) => (
+          {inEffectChips.map((fx) => (
             <button
               key={fx.id}
               className={`effect-chip${activeEffectId === fx.id ? ' active' : ''}${fx.plugin ? ' plugin' : ''}`}
@@ -549,22 +676,82 @@ export function StylePanel(): React.JSX.Element {
             {t('style.restoreDefault')}
           </button>
         )}
-        {selectedIds.length > 0 && (
-          <label className="row" title={t('style.effectOutTitle')}>
-            {t('style.effectOut')}
-            <select
-              value={activeOutId ?? ''}
-              onChange={(e) => useProject.getState().setLineEffectOut(selectedIds, e.target.value || null)}
-            >
-              <option value="">{t('style.effectOutDefault')}</option>
-              {effectChips.map((fx) => (
-                <option key={fx.id} value={fx.id}>
-                  {fx.name}
-                </option>
-              ))}
-            </select>
+        <label className="effect-setting">
+          <span>{t('style.effectDuration')}</span>
+          <input
+            type="number"
+            min={0}
+            step={0.05}
+            value={(inDurationMs / 1000).toFixed(2)}
+            onChange={(event) => setEffectDuration('in', Number(event.target.value))}
+          />
+          <span className="hint">{t('style.effectDurationHint')}</span>
+        </label>
+        {selectedIds.length > 0 && firstSelectedLine?.effectInDurationMs != null && (
+          <button className="btn btn-sm" onClick={() => useProject.getState().setLineEffectDuration(selectedIds, 'in', null)}>
+            {t('style.durationFollowGlobal')}
+          </button>
+        )}
+        {activeEffectId === 'rise' && (
+          <label className="effect-setting">
+            <span>
+              {t('style.riseHistory')} <strong>{style.riseHistory}</strong>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={6}
+              step={1}
+              value={style.riseHistory}
+              onChange={(e) => patchStyle({ riseHistory: Number(e.target.value) })}
+            />
+            <span className="hint">{t('style.riseHistoryHint')}</span>
           </label>
         )}
+
+        <div className="effect-group-divider" />
+        <h3 className="effect-group-title">{t('style.effectOut')}</h3>
+        <p className="hint effect-group-hint">{t('style.effectOutTitle')}</p>
+        <div className={`effect-list${selectedIds.length === 0 ? ' disabled' : ''}`}>
+          <button
+            className={`effect-chip${activeOutId === '' ? ' active' : ''}`}
+            disabled={selectedIds.length === 0}
+            onClick={() => useProject.getState().setLineEffectOut(selectedIds, null)}
+          >
+            {t('style.effectOutDefault')}
+          </button>
+          {outEffectChips.map((fx) => (
+            <button
+              key={fx.id}
+              className={`effect-chip${activeOutId === fx.id ? ' active' : ''}${fx.plugin ? ' plugin' : ''}`}
+              disabled={selectedIds.length === 0}
+              onClick={() => useProject.getState().setLineEffectOut(selectedIds, fx.id)}
+              title={fx.plugin ? t('style.pluginEffectTitle') : undefined}
+            >
+              {fx.name}
+              {fx.plugin && <span className="effect-chip-tag">{t('style.pluginTag')}</span>}
+            </button>
+          ))}
+        </div>
+        {selectedIds.length === 0 && <p className="hint">{t('style.effectOutSelectHint')}</p>}
+        <label className="effect-setting">
+          <span>{t('style.effectDuration')}</span>
+          <input
+            type="number"
+            min={0}
+            step={0.05}
+            value={(outDurationMs / 1000).toFixed(2)}
+            onChange={(event) => setEffectDuration('out', Number(event.target.value))}
+          />
+          <span className="hint">{t('style.effectDurationHint')}</span>
+        </label>
+        {selectedIds.length > 0 && firstSelectedLine?.effectOutDurationMs != null && (
+          <button className="btn btn-sm" onClick={() => useProject.getState().setLineEffectDuration(selectedIds, 'out', null)}>
+            {t('style.durationFollowGlobal')}
+          </button>
+        )}
+
+        <div className="effect-group-divider" />
         <label className="row">
           {t('style.highlightColor')}
           <input

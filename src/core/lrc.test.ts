@@ -207,4 +207,58 @@ describe('layoutLine', () => {
     const ys = new Set(placed.map((p) => p.y))
     expect(ys.size).toBeGreaterThan(1)
   })
+
+  it('无法断开的超长西文词会缩小到安全区内', () => {
+    const r = parseLrc('[00:01.00]SupercalifragilisticexpialidociousWithoutBreaks')
+    const placed = layoutLine(r.lines[0], {
+      width: 320,
+      height: 240,
+      fontSize: 80,
+      ...layoutDefaults,
+      variant: 'center',
+      measure
+    })
+    expect(placed.length).toBeGreaterThan(0)
+    expect(Math.min(...placed.map((p) => p.x - p.w / 2))).toBeGreaterThanOrEqual(0)
+    expect(Math.max(...placed.map((p) => p.x + p.w / 2))).toBeLessThanOrEqual(320)
+  })
+
+  it('竖排：字直立、自上而下、水平居中', () => {
+    const r = parseLrc(STANDARD)
+    const placed = layoutLine(r.lines[0], {
+      width: 1080,
+      height: 1920,
+      fontSize: 88,
+      ...layoutDefaults,
+      orientation: 'vertical',
+      variant: 'center',
+      measure
+    })
+    expect(placed.length).toBe([...r.lines[0].text].length)
+    // 字保持直立（不旋转）——传统竖排，而非把字侧倒
+    for (const p of placed) expect(p.rotate).toBe(0)
+    // 单列时自上而下：y 依阅读顺序递增
+    for (let i = 1; i < placed.length; i++) expect(placed[i].y).toBeGreaterThan(placed[i - 1].y)
+    // 整列水平居中
+    const xs = placed.map((p) => p.x)
+    const midX = (Math.min(...xs) + Math.max(...xs)) / 2
+    expect(Math.abs(midX - 540)).toBeLessThan(120)
+  })
+
+  it('竖排：多列时从右向左', () => {
+    const r = parseLrc('[00:01.00]这是一句非常非常非常非常非常非常长的歌词需要换行')
+    const placed = layoutLine(r.lines[0], {
+      width: 1080,
+      height: 1920,
+      fontSize: 100,
+      ...layoutDefaults,
+      orientation: 'vertical',
+      variant: 'center',
+      measure
+    })
+    // 至少两列
+    expect(new Set(placed.map((p) => p.x)).size).toBeGreaterThan(1)
+    // 阅读顺序靠前的字在更靠右（x 更大）
+    expect(placed[0].x).toBeGreaterThan(placed[placed.length - 1].x)
+  })
 })

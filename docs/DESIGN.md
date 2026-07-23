@@ -176,6 +176,7 @@ MediaClip { id, kind: 'video'|'audio', path, name,
 `drawLyricFlow`：片头歌名淡入（仅最早可见字幕组）→ 找当前行（该组内最后一个已开始的行）→
 当前行若是停靠式特效则由它统一绘制自己 + 历史行（`drawLineStack`）→
 其余行按各自特效走单元进场路径，默认退场为淡出上浮 → 独立文字块画在最上层（与字幕组无关）。
+In/Out 窗口始终位于行自身 `[start, end)` segment 内：In 从 start 开始，Out 在 end 结束。GUI 修改时后改的一侧优先并缩短另一侧；单条命令同时给出两者时 In 优先。
 每行的特效（`line.effectId ?? style.effectId`）与位置偏移（`line.dx/dy`）在此生效；
 字幕组自己的 `offsetY` 叠加在同一路径上（`renderFrame` 的 `opts.tracks`，缺省 = 单字幕组 `offsetY 0`，
 向后兼容不知道字幕组概念的旧调用方）。排版结果按（行、文本、字号、字体、构图、画布尺寸）缓存。
@@ -298,11 +299,15 @@ alicecut.exe --export job.json
 | `videoFrameMode` | | `"fast"`（默认，背景视频正向连续播放追帧，快很多）/ `"exact"`（逐帧精确 seek，慢但同一次导出重跑字节级一致）；只在有背景视频时有意义 |
 | `style` | | 覆盖默认样式：`aspect`（"9:16"/"16:9"/"1:1"）、`effectId`（全局默认特效）、`fontFamily`、`fontSize`、`fontWeight`、`italic`、`textColor`、`textAlpha`、`letterSpacing`/`wordSpacing`/`lineSpacing`、`textAlign`、`textOrientation`、`strokeColor`/`strokeWidth`/`strokeAlpha`、`textBgColor`/`textBgAlpha`（字幕底色）、`halo`/`glowColor`（光晕）、`shadowColor`/`shadowAlpha`/`shadowBlur`/`shadowOffset`（阴影）、`bgType`（solid/gradient/image）/`bgFrom`/`bgTo`/`bgAngle`/`bgImage`（图片路径）、`globalDx`/`globalDy`/`globalRotate`（全局文字变换）、`intensity`、`showMeta` 等 |
 | `lineEffects` | | 行级特效：`{"0-7": "rise", "9": "punch"}`，键为行序号或区间，值为特效 id |
+| `lineEffectsOut` | | 行级退场特效：`{"0-7": "evaporate-out"}`，键格式与 `lineEffects` 相同 |
+| `lineEffectDurations` | | 行级 In/Out 时长（秒）：`{"0-7":{"in":0.6,"out":0.4}}` |
 | `lineStyles` | | 行级文字样式覆盖：`{"0-7": {"textAlign": "left", "strokeWidth": 5}}`，键为行序号或区间，值为文字样式字段 |
 | `texts` | | 独立文字块数组（不参与歌词流），见 §3 |
-| `tracks` | | 额外字幕组数组（多语言字幕），每项 `{name?, lrc, offsetY?, visible?, lineEffects?, lineStyles?}`；`lrc` 写法同顶层 `lrc`，`lineEffects`/`lineStyles` 的行序号是该字幕组自己的（从 0 数，与顶层行号是两套独立编号）；按数组顺序依次生成，保证与手动在 GUI 里逐个「新增字幕组」得到同样的 trackId |
+| `tracks` | | 额外字幕组数组（多语言字幕），每项 `{name?, lrc, offsetY?, visible?, lineEffects?, lineEffectsOut?, lineStyles?}`；`lrc` 写法同顶层 `lrc`，行级设置的行序号是该字幕组自己的（从 0 数，与顶层行号是两套独立编号）；按数组顺序依次生成，保证与手动在 GUI 里逐个「新增字幕组」得到同样的 trackId |
 
-特效 id：`pop` `punch` `slide` `typewriter` `glow` `karaoke` `flip` `flip-bottom` `rise`。
+内置 47 个特效。通用/停靠类包括 `none`、`pop`、`punch`、`slide`、`typewriter`、`glow`、`karaoke`、
+`highlight-box`、`bounce`、`streak`、`wobble`、`wipe`、`iris`、`clock-wipe`、`flip`、
+`flip-bottom`、`rise`；另有 15 个仅进场和 15 个仅退场的方向性效果，完整 id 见使用手册 §7.2。
 
 ### 输出协议
 
@@ -317,13 +322,13 @@ alicecut.exe --export job.json
 
 - Windows / macOS：直接运行即可（无头时自动 `disableHardwareAcceleration`，无 GPU 环境可用）
 - Linux CI 容器：需要 `xvfb-run electron . --export job.json`（Chromium 需要 display server）
-- 字体：内置字体经 `npm run fonts` 下载到 `public/fonts/`（不进 git，构建时打包）；
+- 字体：三款首装字体位于 `public/fonts/` 并随构建打包；其余字体位于 Git LFS 管理的 `font-assets/`，客户端按需从 GitHub 下载并缓存；
   job 指定系统字体时需保证 pipeline 机器装有该字体，否则回退默认
 
 ### 命令控制台（实时版 CLI）
 
 GUI 底部可展开一个命令控制台（默认收起），接受与 job.json **同名同义**的 JSON 命令
-（`lrc`/`tracks`/`audio`/`video`/`texts`/`style`/`lineEffects`/`lineStyles`，不含
+（`lrc`/`tracks`/`audio`/`video`/`texts`/`style`/`lineEffects`/`lineEffectsOut`/`lineStyles`，不含
 `out`/`fps`/`duration`——那三个是导出专属参数），实时应用到当前打开的工程。选它而不是设计一套
 独立的终端语法，是为了让"控制台效果 == CLI 效果"是代码结构本身保证的，不是靠两边分别实现再
 人工对齐：
@@ -341,8 +346,8 @@ src/consoleCommand.ts   控制台路径：收到的是原始 JSON + 文件路径
 两条路径唯一的差异只在"文件路径怎么变成数据"，一旦拿到数据，落到 store 上的效果由
 `projectCommand.ts` 保证完全一致。
 
-应用顺序固定：`lrc → tracks → audio/video → texts → style → lineEffects → lineStyles`，
-好让 `lineEffects`/`lineStyles` 有机会命中同一条命令里刚 `lrc`/`tracks` 载入的新行。每个顶层
+应用顺序固定：`lrc → tracks → audio/video → texts → style → lineEffects → lineEffectsOut → lineStyles`，
+好让行级设置有机会命中同一条命令里刚 `lrc`/`tracks` 载入的新行。每个顶层
 字段各自 try/catch、各自在回显日志里报告成功/失败，不做"全部成功才生效"的事务——每一步本身
 已经在撤销栈上，一步不对 Ctrl+Z 即可，没必要另建回滚机制。
 
@@ -354,7 +359,7 @@ src/consoleCommand.ts   控制台路径：收到的是原始 JSON + 文件路径
   不该抹掉正在编辑的工程。
 - `tracks`/`audio`/`video`/`texts` 都是追加语义（`addTrack`/`addClip`/`addLineAt` 永远铸造新
   id，命令里没有"按 id 定位已有项"这回事）——重复运行同一条命令会重复新增，不是幂等更新；
-  只有 `style`/`lineEffects`/`lineStyles` 是幂等的"设置"操作。这与 job.json 现有语义完全一致，
+  只有 `style`/`lineEffects`/`lineEffectsOut`/`lineStyles` 是幂等的"设置"操作。这与 job.json 现有语义完全一致，
   只是控制台这种"随手重跑一条命令"的交互方式更容易踩到，在 UI 帮助文案里提示。
 
 ## 8. 测试策略

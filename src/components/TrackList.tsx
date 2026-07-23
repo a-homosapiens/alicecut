@@ -19,8 +19,12 @@ export function TrackList(): React.JSX.Element {
   const tracksArr = useProject((s) => s.tracks)
   const lines = useProject((s) => s.lines)
   const panels = usePanels((s) => s.panels)
+  const selectedIds = useProject((s) => s.selectedIds)
 
   const tracks = allCaptionTracks({ meta, lrcName, tracks: tracksArr })
+  const captionIds = lines.filter((l) => l.kind !== 'text').map((l) => l.id)
+  const selectedCaptionCount = captionIds.filter((id) => selectedIds.includes(id)).length
+  const allCaptionsSelected = captionIds.length > 0 && selectedCaptionCount === captionIds.length
 
   const lineCount = (id: number): number =>
     lines.filter((l) => l.kind !== 'text' && (l.trackId ?? 0) === id).length
@@ -33,6 +37,21 @@ export function TrackList(): React.JSX.Element {
   return (
     <>
       <ClosableSection windowId="captions" title={t('tracks.sectionTitle')}>
+        <div className="caption-select-bar">
+          <button
+            className={`btn btn-sm caption-select-all${allCaptionsSelected ? ' active' : ''}`}
+            disabled={captionIds.length === 0}
+            onClick={() => useProject.getState().selectAllCaptions()}
+          >
+            <span className="caption-select-check">{allCaptionsSelected ? '✓' : '□'}</span>
+            {t('tracks.selectAllCaptions')} ({captionIds.length})
+          </button>
+          {selectedCaptionCount > 0 && (
+            <button className="caption-clear-selection" onClick={() => useProject.getState().clearSelection()}>
+              {t('tracks.clearSelection')}
+            </button>
+          )}
+        </div>
         <button className="btn btn-sm" onClick={addTrack}>
           {t('tracks.addTrack')}
         </button>

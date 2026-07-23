@@ -1,5 +1,5 @@
 import type { LrcLine, LrcMeta } from './types'
-import { layoutLine, type PlacedChar } from './layout'
+import { layoutLine, type PlacedChar, type LayoutVariant } from './layout'
 import { getEffect, type EffectPreset, type LineFx, type CharFx } from './effects'
 import { seededRand, clamp01, easeOutCubic, easeOutBack } from './easing'
 
@@ -26,13 +26,18 @@ export interface RenderStyle {
   bgAngle: number
   /** 背景图片路径；图片本身由调用方（drawBackdrop）绘制 */
   bgImage: string | null
-  /** 背景图片缩放（1 = cover 铺满基准）、画布像素偏移 */
+  /** 背景图片缩放（1 = cover 铺满基准）、画布像素偏移、旋转（度） */
   bgImageScale: number
   bgImageX: number
   bgImageY: number
+  bgImageRotate: number
   /** 全局默认特效；行可用 line.effectId 覆盖 */
   effectId: string
+  effectInDurationMs: number
+  effectOutDurationMs: number
   intensity: number
+  /** Number of old captions kept on screen by the rise transition. */
+  riseHistory: number
   /** 片头显示歌名/歌手 */
   showMeta: boolean
   /** 全局文字变换：所有文字一起平移（画布像素）与旋转（度），绕画面中心 */
@@ -66,14 +71,50 @@ export interface TrackPlacement {
 /** 上一行退场的淡出时长 ms（默认退场；停靠式转场有自己的节奏） */
 const EXIT_MS = 280
 
-/** 该行实际使用的特效：行级覆盖优先，否则全局默认 */
-export function effectFor(line: LrcLine, style: RenderStyle): EffectPreset {
-  return getEffect(line.effectId ?? style.effectId)
-}
-
 /** 该行的退场特效（反向播放其进场）；line.effectOutId 为空则 null = 走默认淡出上浮 */
 export function effectOutFor(line: LrcLine): EffectPreset | null {
   return line.effectOutId ? getEffect(line.effectOutId) : null
+}
+
+export interface EffectTiming {
+  inMs: number
+  outMs: number
+  outStartMs: number
+}
+
+const durationValue = (value: unknown, fallback: number): number => {
+  const n = Number(value)
+  return Number.isFinite(n) ? Math.max(0, n) : Math.max(0, fallback)
+}
+
+/**
+ * Resolve a caption's two animation windows inside its own segment.
+ * Invalid/legacy JSON is normalized with In priority: In is clamped first,
+ * then Out receives only the remaining tail. Interactive setters implement
+ * last-edited-wins before data reaches this final safety boundary.
+ */
+export function resolveEffectTiming(line: LrcLine, style: RenderStyle): EffectTiming {
+  const segmentMs = Math.max(0, line.end - line.start)
+  const baseIn = getEffect(line.effectId ?? style.effectId).enterDuration
+  const baseOut = effectOutFor(line)?.enterDuration ?? EXIT_MS
+  const requestedIn = durationValue(line.effectInDurationMs ?? style.effectInDurationMs, baseIn)
+  const requestedOut = durationValue(line.effectOutDurationMs ?? style.effectOutDurationMs, baseOut)
+  const inMs = Math.min(segmentMs, requestedIn)
+  const outMs = Math.min(requestedOut, Math.max(0, segmentMs - inMs))
+  return { inMs, outMs, outStartMs: line.end - outMs }
+}
+
+/** 该行实际使用的特效：行级覆盖优先，并带入已归一化的 In 时长 */
+export function effectFor(line: LrcLine, style: RenderStyle): EffectPreset {
+  const effect = getEffect(line.effectId ?? style.effectId)
+  const duration = resolveEffectTiming(line, style).inMs
+  return duration === effect.enterDuration ? effect : { ...effect, enterDuration: Math.max(0.001, duration) }
+}
+
+function lineHistoryDepth(effect: EffectPreset, style: RenderStyle): number {
+  if (effect.id !== 'rise') return effect.lineTransition?.maxDepth ?? 0
+  const value = Number(style.riseHistory)
+  return Number.isFinite(value) ? Math.max(0, Math.min(6, Math.round(value))) : 3
 }
 
 /** 把行级文字覆盖（line.over）叠加到全局样式，得到该行实际渲染样式；无覆盖返回原样式 */
@@ -451,6 +492,39 @@ export function getLineBlockRect(
   return { x: b.x + line.dx, y: b.y + line.dy + trackOffsetY, w: b.w, h: b.h }
 }
 
+/**
+ * 若该行设置了 over.rotate（度），绕其文字块中心旋转后再绘制；否则直接绘制。
+ * 覆盖所有绘制路径（逐字特效 / 揭示 / 停靠转场 / 独立文字块）：把叶子绘制放进回调即可。
+ */
+function withLineRotate(
+  ctx: CanvasRenderingContext2D,
+  line: LrcLine,
+  style: RenderStyle,
+  variant: LayoutVariant,
+  lineDy: number,
+  draw: () => void
+): void {
+  const deg = line.over?.rotate ?? 0
+  if (!deg) {
+    draw()
+    return
+  }
+  const placed = getLayout(ctx, line, style, variant)
+  if (placed.length === 0) {
+    draw()
+    return
+  }
+  const b = measureBlock(placed, style.fontSize)
+  const bcx = b.x + b.w / 2 + line.dx
+  const bcy = b.y + b.h / 2 + line.dy + lineDy
+  ctx.save()
+  ctx.translate(bcx, bcy)
+  ctx.rotate((deg * Math.PI) / 180)
+  ctx.translate(-bcx, -bcy)
+  draw()
+  ctx.restore()
+}
+
 /** 整行块绘制：绕画面中心做统一变换，再叠加该行的位置偏移 */
 function drawBlock(
   ctx: CanvasRenderingContext2D,
@@ -504,13 +578,14 @@ function drawLineStack(
   trackOffsetY: number
 ): void {
   const trans = effect.lineTransition!
+  const historyDepth = lineHistoryDepth(effect, style)
   const eased = easeOutCubic(clamp01((tMs - lines[current].start) / effect.enterDuration))
 
   // 实测各深度行的包围盒，停靠位置据此紧靠排布
   const layouts: PlacedChar[][] = []
   const styles: RenderStyle[] = []
   const blocks: { w: number; h: number }[] = []
-  for (let d = 0; d <= trans.maxDepth + 1; d++) {
+  for (let d = 0; d <= historyDepth + 1; d++) {
     const i = current - d
     const lineStyle = i >= 0 ? resolveLineStyle(lines[i], style) : style
     const placed = i >= 0 ? getLayout(ctx, lines[i], lineStyle, effect.layoutVariant) : []
@@ -521,11 +596,14 @@ function drawLineStack(
   }
 
   // 由深到浅绘制，新行盖在最上层
-  for (let d = Math.min(trans.maxDepth + 1, current); d >= 0; d--) {
+  for (let d = Math.min(historyDepth + 1, current); d >= 0; d--) {
     const placed = layouts[d]
     drawn.add(current - d)
     if (placed.length === 0) continue
     const line = lines[current - d]
+    // A caption with an explicit Out effect has already left at its own
+    // segment end; do not resurrect it as parked history for the next line.
+    if (d > 0 && line.effectOutId) continue
     const lineStyle = styles[d]
     const args = {
       lineId: line.id,
@@ -535,13 +613,18 @@ function drawLineStack(
       intensity: lineStyle.intensity,
       blocks
     }
-    const target = trans.pose(d, args)
+    const posedTarget = trans.pose(d, args)
+    // The extra depth is rendered for one transition only so the oldest parked
+    // caption fades away instead of disappearing on a hard frame boundary.
+    const target = d > historyDepth ? { ...posedTarget, alpha: 0 } : posedTarget
     // 进场前一刻所有行都还在浅一级的停靠位（块序整体后移一位）
     const source =
       d === 0 ? trans.enterFrom(args) : trans.pose(d - 1, { ...args, blocks: blocks.slice(1) })
     const fx = lerpLineFx(source, target, eased)
     if (fx.alpha <= 0.003 || fx.scale <= 0.003) continue
-    drawBlock(ctx, placed, line, lineStyle, trackOffsetY === 0 ? fx : { ...fx, dy: fx.dy + trackOffsetY })
+    withLineRotate(ctx, line, lineStyle, effect.layoutVariant, trackOffsetY, () =>
+      drawBlock(ctx, placed, line, lineStyle, trackOffsetY === 0 ? fx : { ...fx, dy: fx.dy + trackOffsetY })
+    )
   }
 }
 
@@ -560,16 +643,23 @@ function charFxAt(
   enterTOverride?: number
 ): CharFx | null {
   const [uStart, uEnd] = effect.unit === 'word' ? [p.word.start, p.word.end] : [p.char.start, p.char.end]
-  const gateStart = effect.appearAtLineStart ? line.start : uStart
+  const lineDuration = Math.max(1, line.end - line.start)
+  // The configured In duration describes the whole entrance window. Preserve
+  // the source word/character ordering, but remap its stagger into the first
+  // 65% so the final unit also settles before the In window ends.
+  const sourceProgress = clamp01((uStart - line.start) / lineDuration)
+  const staggerSpan = effect.appearAtLineStart || effect.unit === 'line' ? 0 : effect.enterDuration * 0.65
+  const gateStart = line.start + sourceProgress * staggerSpan
+  const unitDuration = Math.max(0.001, effect.enterDuration - staggerSpan)
   if (enterTOverride == null && tMs < gateStart) return null
-  const enterT = enterTOverride ?? clamp01((tMs - gateStart) / effect.enterDuration)
+  const enterT = enterTOverride ?? clamp01((tMs - gateStart) / unitDuration)
   return effect.apply({
     unitIndex: p.unitIndex,
     unitCount,
     charIndexInUnit: p.charIndexInUnit,
     enterT,
     timeInLine: tMs - line.start,
-    lineDuration: line.end - line.start,
+    lineDuration,
     unitStart: uStart - line.start,
     unitEnd: uEnd - line.start,
     intensity,
@@ -751,35 +841,47 @@ function drawLineReveal(
 function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: RenderStyle, tMs: number): void {
   const style = resolveLineStyle(line, styleIn) // 行级文字覆盖
   const effect = effectFor(line, style)
-  const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
+  withLineRotate(ctx, line, style, effect.layoutVariant, 0, () => {
+    const timing = resolveEffectTiming(line, style)
+    const exitP = timing.outMs > 0 && tMs >= timing.outStartMs
+      ? easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+      : 0
 
-  if (!effect.lineTransition) {
-    const out = exitP > 0 ? effectOutFor(line) : null
-    if (effect.reveal && exitP === 0) drawLineReveal(ctx, effect, line, style, tMs)
-    else if (out) drawLine(ctx, out, line, style, tMs, 1, 0, exitP)
-    else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
-    return
-  }
+    // Explicit Out always wins over a parking-style In transition.
+    const explicitOut = exitP > 0 ? effectOutFor(line) : null
+    if (explicitOut) {
+      drawLine(ctx, explicitOut, line, style, tMs, 1, 0, exitP)
+      return
+    }
 
-  // 停靠式特效没有"历史行"语义：作为整块用它的进场姿态演绎 enterFrom → 中心位
-  const placed = getLayout(ctx, line, style, effect.layoutVariant)
-  if (placed.length === 0) return
-  const b = measureBlock(placed, style.fontSize)
-  const args = {
-    lineId: line.id,
-    width: style.width,
-    height: style.height,
-    fontSize: style.fontSize,
-    intensity: style.intensity,
-    blocks: [{ w: b.w, h: b.h }]
-  }
-  const trans = effect.lineTransition
-  const eased = easeOutCubic(clamp01((tMs - line.start) / effect.enterDuration))
-  const fx = lerpLineFx(trans.enterFrom(args), trans.pose(0, args), eased)
-  fx.alpha *= 1 - exitP
-  fx.dy -= exitP * style.fontSize * 0.5
-  if (fx.alpha <= 0.003 || fx.scale <= 0.003) return
-  drawBlock(ctx, placed, line, style, fx)
+    if (!effect.lineTransition) {
+      const out = exitP > 0 ? effectOutFor(line) : null
+      if (effect.reveal && exitP === 0) drawLineReveal(ctx, effect, line, style, tMs)
+      else if (out) drawLine(ctx, out, line, style, tMs, 1, 0, exitP)
+      else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+      return
+    }
+
+    // 停靠式特效没有"历史行"语义：作为整块用它的进场姿态演绎 enterFrom → 中心位
+    const placed = getLayout(ctx, line, style, effect.layoutVariant)
+    if (placed.length === 0) return
+    const b = measureBlock(placed, style.fontSize)
+    const args = {
+      lineId: line.id,
+      width: style.width,
+      height: style.height,
+      fontSize: style.fontSize,
+      intensity: style.intensity,
+      blocks: [{ w: b.w, h: b.h }]
+    }
+    const trans = effect.lineTransition
+    const eased = easeOutCubic(clamp01((tMs - line.start) / effect.enterDuration))
+    const fx = lerpLineFx(trans.enterFrom(args), trans.pose(0, args), eased)
+    fx.alpha *= 1 - exitP
+    fx.dy -= exitP * style.fontSize * 0.5
+    if (fx.alpha <= 0.003 || fx.scale <= 0.003) return
+    drawBlock(ctx, placed, line, style, fx)
+  })
 }
 
 /**
@@ -808,15 +910,18 @@ function drawLyricFlow(
   // 当前行 = 最后一个已开始的行（lyric 按 start 排序）
   let current = -1
   for (let i = 0; i < lyric.length; i++) {
-    if (lyric[i].start <= tMs) current = i
+    if (lyric[i].start <= tMs && tMs < lyric[i].end) current = i
     else break
   }
 
   // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
   const drawnByStack = new Set<number>()
   if (current >= 0) {
-    const curEffect = effectFor(lyric[current], style)
-    if (curEffect.lineTransition) {
+    const currentLine = lyric[current]
+    const curEffect = effectFor(currentLine, style)
+    const timing = resolveEffectTiming(currentLine, resolveLineStyle(currentLine, style))
+    const explicitOutActive = !!currentLine.effectOutId && timing.outMs > 0 && tMs >= timing.outStartMs
+    if (curEffect.lineTransition && !explicitOutActive) {
       drawLineStack(ctx, curEffect, lyric, style, tMs, current, drawnByStack, trackOffsetY)
     }
   }
@@ -824,19 +929,22 @@ function drawLyricFlow(
   for (let i = 0; i < lyric.length; i++) {
     if (drawnByStack.has(i)) continue
     const line = lyric[i]
-    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    if (tMs < line.start || tMs >= line.end) continue
     const effect = effectFor(line, style)
     const ls = resolveLineStyle(line, style) // 行级文字覆盖
-    if (tMs < line.end) {
-      if (effect.reveal) drawLineReveal(ctx, effect, line, ls, tMs, trackOffsetY)
-      else drawLine(ctx, effect, line, ls, tMs, 1, trackOffsetY)
-    } else {
-      // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
-      const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
-      const out = effectOutFor(line)
-      if (out) drawLine(ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
-      else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
-    }
+    const timing = resolveEffectTiming(line, ls)
+    withLineRotate(ctx, line, ls, effect.layoutVariant, trackOffsetY, () => {
+      if (timing.outMs <= 0 || tMs < timing.outStartMs) {
+        if (effect.reveal) drawLineReveal(ctx, effect, line, ls, tMs, trackOffsetY)
+        else drawLine(ctx, effect, line, ls, tMs, 1, trackOffsetY)
+      } else {
+        // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
+        const exitP = easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+        const out = effectOutFor(line)
+        if (out) drawLine(ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
+        else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
+      }
+    })
   }
 }
 
@@ -912,7 +1020,7 @@ export function renderFrame(
   // 独立文字块画在最上层；按 layer 升序，高层后画（盖在上面）
   const textBlocks = lines.filter((l) => l.kind === 'text').sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0))
   for (const line of textBlocks) {
-    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    if (tMs < line.start || tMs >= line.end) continue
     drawTextBlock(ctx, line, style, tMs)
   }
 
@@ -1021,13 +1129,21 @@ function fpTextBlock(
 ): void {
   const style = resolveLineStyle(line, styleIn)
   const effect = effectFor(line, style)
-  const exitP = tMs >= line.end ? easeOutCubic((tMs - line.end) / EXIT_MS) : 0
+  const timing = resolveEffectTiming(line, style)
+  const exitP = timing.outMs > 0 && tMs >= timing.outStartMs
+    ? easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+    : 0
 
   if (!effect.lineTransition) {
     const out = exitP > 0 ? effectOutFor(line) : null
     if (effect.reveal && exitP === 0) fpLineReveal(parts, ctx, effect, line, style, tMs)
     else if (out) fpLine(parts, ctx, out, line, style, tMs, 1, 0, exitP)
     else fpLine(parts, ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
+    return
+  }
+
+  if (exitP > 0 && effectOutFor(line)) {
+    fpLine(parts, ctx, effectOutFor(line)!, line, style, tMs, 1, 0, exitP)
     return
   }
 
@@ -1049,19 +1165,23 @@ function fpLyricFlow(
 
   let current = -1
   for (let i = 0; i < lyric.length; i++) {
-    if (lyric[i].start <= tMs) current = i
+    if (lyric[i].start <= tMs && tMs < lyric[i].end) current = i
     else break
   }
 
   const drawnByStack = new Set<number>()
   if (current >= 0) {
-    const curEffect = effectFor(lyric[current], style)
-    if (curEffect.lineTransition) {
+    const currentLine = lyric[current]
+    const curEffect = effectFor(currentLine, style)
+    const timing = resolveEffectTiming(currentLine, resolveLineStyle(currentLine, style))
+    const explicitOutActive = !!currentLine.effectOutId && timing.outMs > 0 && tMs >= timing.outStartMs
+    if (curEffect.lineTransition && !explicitOutActive) {
       // 停靠姿态（pose/enterFrom）只依赖行内容与样式，导出期间不变；
       // 随时间变化的只有当前行序号与进场缓动进度
       const eased = easeOutCubic(clamp01((tMs - lyric[current].start) / curEffect.enterDuration))
-      parts.push(`S${curEffect.id};${current};${eased}`)
-      for (let d = Math.min(curEffect.lineTransition.maxDepth + 1, current); d >= 0; d--) {
+      const historyDepth = lineHistoryDepth(curEffect, style)
+      parts.push(`S${curEffect.id};${current};${eased};${historyDepth}`)
+      for (let d = Math.min(historyDepth + 1, current); d >= 0; d--) {
         drawnByStack.add(current - d)
       }
     }
@@ -1070,14 +1190,15 @@ function fpLyricFlow(
   for (let i = 0; i < lyric.length; i++) {
     if (drawnByStack.has(i)) continue
     const line = lyric[i]
-    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    if (tMs < line.start || tMs >= line.end) continue
     const effect = effectFor(line, style)
     const ls = resolveLineStyle(line, style)
-    if (tMs < line.end) {
+    const timing = resolveEffectTiming(line, ls)
+    if (timing.outMs <= 0 || tMs < timing.outStartMs) {
       if (effect.reveal) fpLineReveal(parts, ctx, effect, line, ls, tMs, trackOffsetY)
       else fpLine(parts, ctx, effect, line, ls, tMs, 1, trackOffsetY)
     } else {
-      const exitP = easeOutCubic((tMs - line.end) / EXIT_MS)
+      const exitP = easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
       const out = effectOutFor(line)
       if (out) fpLine(parts, ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
       else fpLine(parts, ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
@@ -1127,7 +1248,7 @@ export function renderFingerprint(
 
   const textBlocks = lines.filter((l) => l.kind === 'text').sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0))
   for (const line of textBlocks) {
-    if (tMs < line.start || tMs >= line.end + EXIT_MS) continue
+    if (tMs < line.start || tMs >= line.end) continue
     fpTextBlock(parts, ctx, line, style, tMs)
   }
 

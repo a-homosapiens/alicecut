@@ -1,8 +1,9 @@
 import type { CaptionTrack, LineTextOverride } from './core/types'
-import type { HeadlessClip, HeadlessTrackSpec, JobTextSpec } from '../electron/headless'
+import type { EffectDurationSpec, HeadlessClip, HeadlessTrackSpec, JobTextSpec } from '../electron/headless'
 import { useProject, type StyleState } from './store/project'
 import { EFFECTS } from './core/effects'
 import { probeMediaDuration } from './mediaPool'
+import { parseCaptions } from './core/subtitles'
 
 /**
  * 一份 job.json（headless CLI）与命令控制台共用的"把已解析好的数据应用到当前工程"层。
@@ -11,8 +12,27 @@ import { probeMediaDuration } from './mediaPool'
  */
 
 export type CommandLog = (msg: string) => void
+export type CaptionImportMode = 'replace' | 'add'
 
 const KNOWN_EFFECT_IDS = new Set(EFFECTS.map((e) => e.id))
+
+/**
+ * Import from the global Lyrics command without resetting the project.
+ * Returns the affected track id, or null when the file contains no captions.
+ */
+export function importCaptionFile(text: string, name: string, mode: CaptionImportMode): number | null {
+  if (parseCaptions(text, name).lines.length === 0) return null
+  const st = useProject.getState()
+  if (mode === 'replace') {
+    st.loadLrcToTrack(0, text, name)
+    return 0
+  }
+
+  const trackName = name.replace(/\.[^.]+$/, '')
+  const track = st.addTrack(trackName)
+  useProject.getState().loadLrcToTrack(track.id, text, name)
+  return track.id
+}
 
 /** 解析 "3" / "0-7" 这样的行区间键 */
 function parseRange(key: string): [number, number] | null {
@@ -57,6 +77,42 @@ export function applyLineEffects(lineEffects: Record<string, string>, log: Comma
   }
 }
 
+/** Top-level lineEffectsOut: global line id/range → exit effect id. */
+export function applyLineEffectsOut(lineEffectsOut: Record<string, string>, log: CommandLog): void {
+  for (const [key, fxId] of Object.entries(lineEffectsOut)) {
+    const range = parseRange(key)
+    if (!range) {
+      log(`警告：lineEffectsOut 键 "${key}" 不是 "3" 或 "0-7" 格式，已忽略`)
+      continue
+    }
+    if (!KNOWN_EFFECT_IDS.has(fxId)) log(`警告：未知退场特效 "${fxId}"，将回退为默认特效`)
+    const ids = useProject
+      .getState()
+      .lines.filter((line) => line.id >= range[0] && line.id <= range[1])
+      .map((line) => line.id)
+    useProject.getState().setLineEffectOut(ids, fxId)
+  }
+}
+
+/** Per-line duration command. Apply Out first and In last so simultaneous input gives In priority. */
+export function applyLineEffectDurations(
+  specs: Record<string, EffectDurationSpec>,
+  log: CommandLog
+): void {
+  for (const [key, spec] of Object.entries(specs)) {
+    const range = parseRange(key)
+    if (!range) {
+      log(`警告：lineEffectDurations 键 "${key}" 不是 "3" 或 "0-7" 格式，已忽略`)
+      continue
+    }
+    const ids = useProject.getState().lines
+      .filter((line) => line.id >= range[0] && line.id <= range[1])
+      .map((line) => line.id)
+    if (typeof spec.out === 'number') useProject.getState().setLineEffectDuration(ids, 'out', spec.out * 1000)
+    if (typeof spec.in === 'number') useProject.getState().setLineEffectDuration(ids, 'in', spec.in * 1000)
+  }
+}
+
 /** 顶层 lineStyles：键为全局行 id 区间 */
 export function applyLineStyles(lineStyles: Record<string, LineTextOverride>, log: CommandLog): void {
   for (const [key, styleOver] of Object.entries(lineStyles)) {
@@ -98,6 +154,26 @@ export function applyTrack(spec: HeadlessTrackSpec, log: CommandLog): CaptionTra
     useProject.getState().setLineEffect(ids, fxId)
   }
 
+  for (const [key, fxId] of Object.entries(spec.lineEffectsOut ?? {})) {
+    const ids = trackLineIdsInRange(trackLines, key)
+    if (ids.length === 0) {
+      log(`警告：字幕组「${trackLabel}」的 lineEffectsOut 键 "${key}" 无效或超出范围，已忽略`)
+      continue
+    }
+    if (!KNOWN_EFFECT_IDS.has(fxId)) log(`警告：未知退场特效 "${fxId}"，将回退为默认特效`)
+    useProject.getState().setLineEffectOut(ids, fxId)
+  }
+
+  for (const [key, durations] of Object.entries(spec.lineEffectDurations ?? {})) {
+    const ids = trackLineIdsInRange(trackLines, key)
+    if (ids.length === 0) {
+      log(`警告：字幕组「${trackLabel}」的 lineEffectDurations 键 "${key}" 无效或超出范围，已忽略`)
+      continue
+    }
+    if (typeof durations.out === 'number') useProject.getState().setLineEffectDuration(ids, 'out', durations.out * 1000)
+    if (typeof durations.in === 'number') useProject.getState().setLineEffectDuration(ids, 'in', durations.in * 1000)
+  }
+
   for (const [key, styleOver] of Object.entries(spec.lineStyles)) {
     const ids = trackLineIdsInRange(trackLines, key)
     if (ids.length === 0) {
@@ -117,10 +193,15 @@ export function applyTrack(spec: HeadlessTrackSpec, log: CommandLog): CaptionTra
 /** 媒体线段：探测时长后加入 store（与 GUI 同一数据通路） */
 export async function applyClips(clips: HeadlessClip[]): Promise<void> {
   for (const c of clips) {
-    const sourceDuration = await probeMediaDuration(c.path, c.kind)
+    const sourcePath = c.path
+    const path = c.kind === 'video'
+      ? (await window.desktop.ensurePlayable(sourcePath)).path
+      : sourcePath
+    const sourceDuration = await probeMediaDuration(path, c.kind)
     useProject.getState().addClip({
       kind: c.kind,
-      path: c.path,
+      path,
+      sourcePath,
       name: c.name,
       start: c.startMs,
       sourceDuration,
@@ -149,6 +230,17 @@ export function applyTexts(texts: JobTextSpec[], log: CommandLog): void {
       if (!KNOWN_EFFECT_IDS.has(t.effect)) log(`警告：texts 特效 "${t.effect}" 未知，回退默认特效`)
       useProject.getState().setLineEffect([line.id], t.effect)
     }
+    if (t.effectOut) {
+      if (!KNOWN_EFFECT_IDS.has(t.effectOut)) log(`警告：texts 退场特效 "${t.effectOut}" 未知，回退默认特效`)
+      useProject.getState().setLineEffectOut([line.id], t.effectOut)
+    }
+    // Simultaneous command semantics: apply Out first, then In (In wins).
+    if (typeof t.effectOutDuration === 'number') {
+      useProject.getState().setLineEffectDuration([line.id], 'out', t.effectOutDuration * 1000)
+    }
+    if (typeof t.effectInDuration === 'number') {
+      useProject.getState().setLineEffectDuration([line.id], 'in', t.effectInDuration * 1000)
+    }
     if (t.x || t.y) {
       useProject.getState().setLineOffsetsFrom([{ id: line.id, dx: 0, dy: 0 }], t.x ?? 0, t.y ?? 0)
     }
@@ -164,7 +256,11 @@ export function applyStyle(patch: Record<string, unknown>): void {
     const p = patch.bgImage
     useProject.getState().addImage(p, p.split(/[\\/]/).pop() ?? p)
   }
-  useProject.getState().patchStyle(patch as Partial<StyleState>)
+  const { effectInDurationMs, effectOutDurationMs, ...rest } = patch
+  useProject.getState().patchStyle(rest as Partial<StyleState>)
+  // A single style command containing both durations gives In priority.
+  if (typeof effectOutDurationMs === 'number') useProject.getState().setGlobalEffectDuration('out', effectOutDurationMs)
+  if (typeof effectInDurationMs === 'number') useProject.getState().setGlobalEffectDuration('in', effectInDurationMs)
 }
 
 /**

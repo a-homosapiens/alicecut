@@ -5,6 +5,7 @@ import { runHeadlessJob } from './headlessExport'
 import { useProject } from './store/project'
 import { availableLanguages, detectLocale } from './i18n'
 import { registerStoredPacks, loadLocalePref, saveLocalePref } from './i18n/packs'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './styles.css'
 
 async function bootstrap(): Promise<void> {
@@ -23,7 +24,7 @@ async function bootstrap(): Promise<void> {
   void window.desktop.setLocale(initial)
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <App />
+      <ErrorBoundary><App /></ErrorBoundary>
     </React.StrictMode>
   )
 }

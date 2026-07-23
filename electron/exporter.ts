@@ -1,10 +1,10 @@
 import { ipcMain } from 'electron'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { once } from 'events'
-import { mkdtemp, rm, writeFile } from 'fs/promises'
+import { mkdtemp, rename, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
-import { join } from 'path'
-import ffmpegPath from 'ffmpeg-static'
+import { basename, dirname, extname, join } from 'path'
+import { ffmpegPath } from './ffmpegPath'
 import {
   buildStaticOverlayGraph,
   buildVideoInputArgs,
@@ -27,6 +27,7 @@ export interface ExportAudioClip {
   /** 淡入/淡出时长 ms（0 = 无） */
   fadeInMs: number
   fadeOutMs: number
+  volume: number
 }
 
 export interface ExportOptions {
@@ -47,6 +48,8 @@ let proc: ChildProcessWithoutNullStreams | null = null
 let procClose: Promise<number> | null = null
 let stderrTail = ''
 let exportTempDir: string | null = null
+let partialOutputPath: string | null = null
+let finalOutputPath: string | null = null
 let frameWriteChain: Promise<void> = Promise.resolve()
 // export:start 里探测硬件编码器要 await，这段时间窗口 `if (proc) throw` 保护不到——
 // 加一把同步锁，在任何 await 之前立刻生效
@@ -60,7 +63,8 @@ let starting = false
  * （同一台机器上观察到 127、171 两种不同失败原因的退出码）。
  */
 function probeEncoder(codec: 'h264' | 'hevc', name: string): Promise<boolean> {
-  if (!ffmpegPath) return Promise.resolve(false)
+  const executable = ffmpegPath
+  if (!executable) return Promise.resolve(false)
   let videoArgs: string[]
   try {
     videoArgs = buildVideoArgs(
@@ -86,7 +90,7 @@ function probeEncoder(codec: 'h264' | 'hevc', name: string): Promise<boolean> {
       'null',
       '-'
     ]
-    const p = spawn(ffmpegPath as string, args, { windowsHide: true })
+    const p = spawn(executable, args, { windowsHide: true })
     p.on('close', (code) => resolve(code === 0))
     p.on('error', () => resolve(false))
   })
@@ -157,6 +161,7 @@ function audioClipFilter(
     ...atempoChain(clip.speed),
     `aresample=${AUDIO_RATE}`
   ]
+  steps.push(`volume=${Math.min(1, Math.max(0, clip.volume)).toFixed(4)}`)
   if (clip.loop === 'infinite' || clip.loop > 1) {
     const size = Math.ceil(segSec * AUDIO_RATE)
     const loops = clip.loop === 'infinite' ? -1 : clip.loop - 1
@@ -200,12 +205,11 @@ function buildArgs(o: ExportOptions, resolved: ResolvedEncoder | null, staticBac
     filterParts.push(
       ...o.audioClips.map((clip, i) => audioClipFilter(clip, inputOffset + i, `[a${i}]`, o.durationSec))
     )
-    audioMap = '[a0]'
+    audioMap = '[aout]'
     if (o.audioClips.length > 1) {
       const inputs = o.audioClips.map((_c, i) => `[a${i}]`).join('')
-      filterParts.push(`${inputs}amix=inputs=${o.audioClips.length}:duration=longest:normalize=0[aout]`)
-      audioMap = '[aout]'
-    }
+      filterParts.push(`${inputs}amix=inputs=${o.audioClips.length}:duration=longest:normalize=0,alimiter=limit=0.95[aout]`)
+    } else filterParts.push('[a0]alimiter=limit=0.95[aout]')
   }
   if (filterParts.length > 0) {
     args.push('-filter_complex', filterParts.join(';'), '-map', overlayGraph?.videoMap ?? '0:v')
@@ -228,6 +232,18 @@ async function removeExportTempDir(): Promise<void> {
   if (dir) await rm(dir, { recursive: true, force: true })
 }
 
+async function removePartialOutput(): Promise<void> {
+  const path = partialOutputPath
+  partialOutputPath = null
+  if (path) await rm(path, { force: true })
+}
+
+function makePartialOutput(path: string): string {
+  const ext = extname(path)
+  const stem = basename(path, ext)
+  return join(dirname(path), `.${stem}.alicecut-part-${process.pid}-${Date.now()}${ext}`)
+}
+
 async function writeStaticBackground(png: Uint8Array): Promise<string> {
   if (png.byteLength < 8) throw new Error('Static export background PNG is empty')
   const dir = await mkdtemp(join(tmpdir(), 'alicecut-export-'))
@@ -244,7 +260,7 @@ function probeHasAudio(path: string): Promise<boolean> {
       resolve(false)
       return
     }
-    const p = spawn(ffmpegPath as string, ['-hide_banner', '-i', path], { windowsHide: true })
+    const p = spawn(ffmpegPath, ['-hide_banner', '-i', path], { windowsHide: true })
     let err = ''
     p.stderr.on('data', (d: Buffer) => {
       err += d.toString()
@@ -259,9 +275,13 @@ export function registerExportHandlers(): void {
 
   ipcMain.handle('export:start', async (_e, opts: ExportOptions) => {
     if (proc || starting) throw new Error('已有导出任务在进行中')
-    if (!ffmpegPath) throw new Error('未找到 ffmpeg 可执行文件')
+    const executable = ffmpegPath
+    if (!executable) throw new Error('未找到 ffmpeg 可执行文件')
     starting = true // 下面探测硬件编码器要 await；这把锁在此立刻生效，防止并发 export:start 都通过上面的检查
     try {
+      if (!(opts.durationSec > 0) || !Number.isFinite(opts.durationSec)) throw new Error('导出时长必须大于 0')
+      finalOutputPath = opts.outPath
+      partialOutputPath = makePartialOutput(opts.outPath)
       const videoInput = opts.videoInput ?? 'rawvideo'
       if (videoInput !== 'rawvideo' && opts.staticBackgroundPng) {
         throw new Error('Encoded video input cannot use the static alpha-overlay graph')
@@ -271,8 +291,11 @@ export function registerExportHandlers(): void {
         ? await writeStaticBackground(opts.staticBackgroundPng)
         : undefined
       stderrTail = ''
-      proc = spawn(ffmpegPath as string, buildArgs(opts, resolved, staticBackgroundPath), { windowsHide: true })
-      procClose = new Promise((resolve) => proc?.once('close', (code) => resolve(code ?? -1)))
+      proc = spawn(executable, buildArgs({ ...opts, outPath: partialOutputPath }, resolved, staticBackgroundPath), { windowsHide: true })
+      procClose = new Promise((resolve) => {
+        proc?.once('close', (code) => resolve(code ?? -1))
+        proc?.once('error', () => resolve(-1))
+      })
       frameWriteChain = Promise.resolve()
       proc.stderr.on('data', (d: Buffer) => {
         stderrTail = (stderrTail + d.toString()).slice(-4000)
@@ -281,6 +304,8 @@ export function registerExportHandlers(): void {
         /* 错误通过 export:end 的退出码上报 */
       })
     } catch (err) {
+      finalOutputPath = null
+      await removePartialOutput().catch(() => {})
       await removeExportTempDir().catch(() => {})
       throw err
     } finally {
@@ -309,13 +334,24 @@ export function registerExportHandlers(): void {
     if (!proc) throw new Error('导出未开始')
     const p = proc
     const closed = procClose
-    await frameWriteChain
-    p.stdin.end()
-    const code = closed ? await closed : -1
-    proc = null
-    procClose = null
-    await removeExportTempDir().catch(() => {})
-    return { code, log: stderrTail }
+    let code = -1
+    try {
+      await frameWriteChain
+      p.stdin.end()
+      code = closed ? await closed : -1
+      if (code === 0 && partialOutputPath && finalOutputPath) {
+        await rename(partialOutputPath, finalOutputPath)
+        partialOutputPath = null
+      } else await removePartialOutput().catch(() => {})
+      return { code, log: stderrTail }
+    } finally {
+      if (code !== 0 && p.exitCode === null) p.kill('SIGKILL')
+      proc = null
+      procClose = null
+      finalOutputPath = null
+      await removePartialOutput().catch(() => {})
+      await removeExportTempDir().catch(() => {})
+    }
   })
 
   ipcMain.handle('export:cancel', async () => {
@@ -327,6 +363,8 @@ export function registerExportHandlers(): void {
       p.kill('SIGKILL')
       await closed
     }
+    finalOutputPath = null
+    await removePartialOutput().catch(() => {})
     await removeExportTempDir().catch(() => {})
   })
 }

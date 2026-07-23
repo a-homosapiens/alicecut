@@ -51,13 +51,13 @@ function parseVttSegments(content: string, cueStart: number): { time: number; te
   let lastEnd = 0
   let match: RegExpExecArray | null
   while ((match = VTT_INLINE_TS.exec(content)) !== null) {
-    const text = stripTags(content.slice(lastEnd, match.index)).trim()
-    if (text.length > 0) segments.push({ time: lastTime, text })
+    const text = stripTags(content.slice(lastEnd, match.index))
+    if (text.trim().length > 0) segments.push({ time: lastTime, text })
     lastTime = parseTimecode(match[1]) ?? lastTime
     lastEnd = match.index + match[0].length
   }
-  const tail = stripTags(content.slice(lastEnd)).trim()
-  if (tail.length > 0) segments.push({ time: lastTime, text: tail })
+  const tail = stripTags(content.slice(lastEnd))
+  if (tail.trim().length > 0) segments.push({ time: lastTime, text: tail })
   return segments.length > 0 ? segments : null
 }
 
@@ -156,7 +156,12 @@ export function paginateWords(words: LrcWord[], combineWithinMs: number): LrcWor
  * 传入的应为纯歌词行（不含独立文字块）；行级特效/位置因边界改变而重置。
  */
 export function repaginateLines(lyricLines: LrcLine[], combineWithinMs: number): LrcLine[] {
-  const words = lyricLines.flatMap((l) => l.words)
+  const words = lyricLines.flatMap((line, lineIndex) => line.words.map((word, wordIndex) => {
+    if (lineIndex === 0 || wordIndex !== 0 || word.leading) return word
+    const previous = lyricLines[lineIndex - 1].text.trimEnd()
+    const needsSpace = /[\p{L}\p{N}]$/u.test(previous) && /^[\p{L}\p{N}]/u.test(word.text)
+    return needsSpace ? { ...word, leading: ' ' } : word
+  }))
   const pages = paginateWords(words, combineWithinMs)
   return pages.map((pw, i) => {
     const start = pw[0].start
@@ -166,7 +171,7 @@ export function repaginateLines(lyricLines: LrcLine[], combineWithinMs: number):
       id: i,
       start,
       end,
-      text: pw.map((w) => w.text).join(''),
+      text: pw.map((w) => `${w.leading ?? ''}${w.text}`).join('').trim(),
       words: pw,
       effectId: null,
       dx: 0,

@@ -35,11 +35,16 @@ export function CommandConsole({ open }: Props): React.JSX.Element {
     setEntries((prev) => [...prev, { kind: 'command', text: raw }])
     scrollToBottom()
     const collected: LogEntry[] = []
-    await runConsoleCommand(raw, (msg) => collected.push({ kind: msg.startsWith('✗') ? 'error' : 'result', text: msg }))
-    setEntries((prev) => [...prev, ...collected])
-    setInput('')
-    setRunning(false)
-    scrollToBottom()
+    try {
+      await runConsoleCommand(raw, (msg) => collected.push({ kind: msg.startsWith('✗') ? 'error' : 'result', text: msg }))
+      setInput('')
+    } catch (err) {
+      collected.push({ kind: 'error', text: `✗ ${err instanceof Error ? err.message : String(err)}` })
+    } finally {
+      setEntries((prev) => [...prev, ...collected])
+      setRunning(false)
+      scrollToBottom()
+    }
   }
 
   return (

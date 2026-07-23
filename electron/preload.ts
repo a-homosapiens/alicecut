@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { HeadlessClip, HeadlessJobPayload, JobClipSpec } from './headless'
 import type { EncodeSettings, VideoInputKind } from './exporterCore'
+import type { AppMenuState, MenuCommand } from './menu'
 
 export interface OpenedTextFile {
   path: string
@@ -25,6 +26,7 @@ const api = {
   openVideo: (): Promise<PickedMediaFile[] | null> => ipcRenderer.invoke('file:openVideo'),
   openImage: (): Promise<PickedMediaFile | null> => ipcRenderer.invoke('file:openImage'),
   openFont: (): Promise<OpenedBinaryFile | null> => ipcRenderer.invoke('file:openFont'),
+  downloadFont: (url: string): Promise<ArrayBuffer> => ipcRenderer.invoke('font:download', url),
   saveVideoPath: (defaultName: string, ext: 'mp4' | 'mov'): Promise<string | null> =>
     ipcRenderer.invoke('file:saveVideoPath', defaultName, ext),
   saveProject: (json: string, defaultName: string): Promise<string | null> =>
@@ -32,6 +34,16 @@ const api = {
   saveSrt: (text: string, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveSrt', text, defaultName),
   openProject: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openProject'),
+  rememberProjectPath: (path: string): Promise<void> => ipcRenderer.invoke('file:rememberProjectPath', path),
+  confirmUnsaved: (): Promise<'save' | 'discard' | 'cancel'> => ipcRenderer.invoke('app:confirm-unsaved'),
+  confirmLyricsImport: (): Promise<'replace' | 'add' | 'cancel'> =>
+    ipcRenderer.invoke('app:confirm-lyrics-import'),
+  confirmClose: (): Promise<void> => ipcRenderer.invoke('app:confirm-close'),
+  onCloseRequested: (cb: () => void): (() => void) => {
+    const h = (): void => cb()
+    ipcRenderer.on('app:request-close', h)
+    return () => ipcRenderer.removeListener('app:request-close', h)
+  },
   openPlugin: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openPlugin'),
   openLanguage: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openLanguage'),
   saveLanguageTemplate: (text: string, defaultName: string): Promise<string | null> =>
@@ -58,6 +70,21 @@ const api = {
     return () => ipcRenderer.removeListener('media:convertProgress', h)
   },
 
+  /** 把菜单状态（文案/面板清单/勾选/置灰）推给主进程重建原生菜单 */
+  setMenuState: (state: AppMenuState): void => ipcRenderer.send('menu:state', state),
+  /** 原生菜单里点了某条命令 */
+  onMenuCommand: (cb: (cmd: MenuCommand) => void): (() => void) => {
+    const h = (_e: unknown, c: MenuCommand): void => cb(c)
+    ipcRenderer.on('menu:command', h)
+    return () => ipcRenderer.removeListener('menu:command', h)
+  },
+  /** 原生菜单「视图 › 面板」里勾掉/勾上某个面板 */
+  onMenuTogglePanel: (cb: (id: string) => void): (() => void) => {
+    const h = (_e: unknown, id: string): void => cb(id)
+    ipcRenderer.on('menu:togglePanel', h)
+    return () => ipcRenderer.removeListener('menu:togglePanel', h)
+  },
+
   exportStart: (opts: {
     width: number
     height: number
@@ -71,6 +98,7 @@ const api = {
       loop: number | 'infinite'
       fadeInMs: number
       fadeOutMs: number
+      volume: number
     }[]
     durationSec: number
     outPath: string

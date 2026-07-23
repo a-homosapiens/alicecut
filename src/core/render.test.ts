@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { LrcLine, LrcMeta, LrcWord } from './types'
-import { renderFrame, renderFingerprint, getLineBlockRect, type RenderStyle } from './render'
+import { renderFrame, renderFingerprint, getLineBlockRect, resolveEffectTiming, type RenderStyle } from './render'
 
 /** 记录 roundRect 调用的最小 Canvas 2D mock（高亮块就是唯一的圆角矩形来源） */
 class MockCtx {
@@ -111,8 +111,12 @@ const baseStyle: RenderStyle = {
   bgImageScale: 1,
   bgImageX: 0,
   bgImageY: 0,
+  bgImageRotate: 0,
   effectId: 'highlightBox',
+  effectInDurationMs: 480,
+  effectOutDurationMs: 320,
   intensity: 1,
+  riseHistory: 3,
   showMeta: false,
   globalDx: 0,
   globalDy: 0,
@@ -128,6 +132,24 @@ const baseStyle: RenderStyle = {
   shadowBlur: 8,
   shadowOffset: 4
 }
+
+describe('caption effect timing', () => {
+  it('keeps both windows inside the segment and gives In priority for invalid saved data', () => {
+    const short = { ...line, end: 1000, effectInDurationMs: 800, effectOutDurationMs: 700 }
+    expect(resolveEffectTiming(short, baseStyle)).toEqual({ inMs: 800, outMs: 200, outStartMs: 800 })
+  })
+
+  it('uses the remaining segment tail as the Out window', () => {
+    const timed = { ...line, end: 2000, effectInDurationMs: 450, effectOutDurationMs: 600 }
+    expect(resolveEffectTiming(timed, baseStyle)).toEqual({ inMs: 450, outMs: 600, outStartMs: 1400 })
+  })
+
+  it('keeps an explicit None effect fully visible through both In and Out windows', () => {
+    const noEffect = { ...line, effectId: 'none', effectOutId: 'none', effectInDurationMs: 1000, effectOutDurationMs: 1000 }
+    expect(render(1, baseStyle, [noEffect]).fillTextCount).toBe([...line.text].length)
+    expect(render(line.end - 1, baseStyle, [noEffect]).fillTextCount).toBe([...line.text].length)
+  })
+})
 
 /** 渲染一帧，返回高亮块中心 x（无块时返回 null） */
 function boxCenterX(tMs: number, style: RenderStyle): number | null {
@@ -292,7 +314,7 @@ describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
 
   it('静止段落指纹相同：pop 全部进场完成后（退场前）', () => {
     const style = { ...baseStyle, effectId: 'pop' }
-    // 最后一个字符 2500 开始 + 400ms 进场 → 2900 后静止；行 3500 才退场
+    // 入场在前 480ms 内完成；Out 窗口从 3180ms 开始。
     expect(fp(3000, style)).toBe(fp(3100, style))
   })
 
@@ -303,7 +325,20 @@ describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
 
   it('退场期间指纹不同', () => {
     const style = { ...baseStyle, effectId: 'pop' }
-    expect(fp(3550, style)).not.toBe(fp(3600, style))
+    expect(fp(3250, style)).not.toBe(fp(3300, style))
+  })
+
+  it('uses the configured Out duration inside the segment', () => {
+    const style = { ...baseStyle, effectId: 'pop' }
+    const withLongOut = [{ ...line, effectOutId: 'evaporate-out', effectOutDurationMs: 700 }]
+    expect(fp(3000, style, withLongOut)).not.toBe(fp(3300, style, withLongOut))
+    expect(fp(3500, style, withLongOut)).toBe(fp(4000, style, withLongOut))
+  })
+
+  it('plays an explicit Out even when the In effect is a parking transition', () => {
+    const style = { ...baseStyle, effectId: 'rise' }
+    const lines = [{ ...line, effectId: 'rise', effectOutId: 'evaporate-out', effectOutDurationMs: 500 }]
+    expect(fp(3250, style, lines)).toContain('evaporate-out')
   })
 
   it('持续动画特效（wobble 噪声漂移）指纹每帧不同', () => {
@@ -326,14 +361,14 @@ describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
 
   it('打字机光标：同一闪烁相位内指纹相同，相位翻转后不同', () => {
     const style = { ...baseStyle, effectId: 'typewriter' }
-    // 全部字符 3000 前已瞬现；闪烁周期 530ms：[3180,3710) 亮、此前 [2650,3180) 灭
-    expect(fp(3200, style)).toBe(fp(3250, style))
-    expect(fp(3100, style)).not.toBe(fp(3200, style))
+    // In 已完成且尚未进入 Out；700/750 在同一闪烁相位，500/700 跨相位。
+    expect(fp(700, style)).toBe(fp(750, style))
+    expect(fp(500, style)).not.toBe(fp(700, style))
   })
 
   it('行结束后的空档期指纹相同', () => {
     const style = { ...baseStyle, effectId: 'pop' }
-    // 3500 + 280ms 退场 = 3780 之后画面为空
+    // Out 在 3500ms 的 segment end 前完成，之后画面为空。
     expect(fp(4000, style)).toBe(fp(4500, style))
   })
 

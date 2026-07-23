@@ -2,15 +2,34 @@
   "name": "alicecut",
   "version": "0.1.0",
   "description": "AliceCut — 将 .lrc 歌词转换为 Kinetic Typography 动态文字视频",
+  "author": "AliceCut Contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/a-homosapiens/alicecut.git"
+  },
+  "bugs": {
+    "url": "https://github.com/a-homosapiens/alicecut/issues"
+  },
+  "homepage": "https://github.com/a-homosapiens/alicecut#readme",
   "main": "out/main/index.js",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "smoke:electron": "npm run build && node scripts/smoke-electron.js",
+    "smoke:help": "npm run build && electron scripts/smoke-help-pages.js",
+    "package": "npm run build && electron-builder --dir -c.win.signAndEditExecutable=false",
+    "dist:win:unsigned": "npm run build && electron-builder --win nsis --publish never -c.win.signAndEditExecutable=false",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
     "benchmark:export": "node scripts/benchmark-export.js",
+    "icons": "electron scripts/make-icons.js",
     "fonts": "node scripts/download-fonts.js",
+    "font-previews": "electron scripts/generate-font-previews.js",
     "validate-plugin": "node scripts/validate-plugin.ts",
     "start": "electron-vite preview"
   },
@@ -25,10 +44,51 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
-    "electron": "^33.3.1",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.0.12",
     "electron-vite": "^2.3.0",
     "typescript": "^5.7.3",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.alicecut.desktop",
+    "productName": "AliceCut",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "files": [
+      "out/**",
+      "package.json",
+      "node_modules/ffmpeg-static/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "resources/icon.ico",
+      "artifactName": "AliceCut-${version}-${arch}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "a-homosapiens",
+      "repo": "alicecut",
+      "releaseType": "prerelease"
+    }
   }
 }

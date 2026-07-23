@@ -13,10 +13,14 @@ export const zh = {
   'topbar.saveProject': '保存工程',
   'topbar.exportSrt': '导出字幕',
   'topbar.exportVideo': '导出视频',
-  'topbar.videoSuffix': '· {n} 段',
-  'topbar.audioSuffix': '· {n} 条',
+
+  // 菜单栏
+  'menu.file': '文件',
+  'menu.view': '视图',
+  'menu.panels': '面板',
 
   // 内置文字特效显示名（键 = effect.<id>；插件特效无键，回退其自带 name）
+  'effect.none': '无',
   'effect.pop': '逐字弹出',
   'effect.punch': '缩放冲击',
   'effect.slide': '滑动错落',
@@ -33,6 +37,26 @@ export const zh = {
   'effect.flip': '翻转切换',
   'effect.flip-bottom': '翻转·底对齐',
   'effect.rise': '上移切换',
+  'effect.float-up': '轻浮上场',
+  'effect.cascade-down': '瀑布落入',
+  'effect.zoom-focus': '变焦显影',
+  'effect.tumble-in': '翻滚入场',
+  'effect.split-in': '分侧汇入',
+  'effect.whip-in': '疾甩入场',
+  'effect.scatter-in': '星散聚合',
+  'effect.fold-in': '折叠展开',
+  'effect.neon-on': '霓虹点亮',
+  'effect.wave-in': '波浪入场',
+  'effect.fade-up-out': '上浮淡出',
+  'effect.drop-out': '坠落离场',
+  'effect.zoom-away-out': '变焦远去',
+  'effect.implode-out': '向心收缩',
+  'effect.scatter-out': '星散离场',
+  'effect.whip-left-out': '左甩离场',
+  'effect.tumble-out': '翻滚离场',
+  'effect.dissolve-out': '随机溶解',
+  'effect.evaporate-out': '蒸发消散',
+  'effect.sink-out': '逐词下沉',
 
   // 内置视频转场显示名（键 = vtrans.<id>）
   'vtrans.fade': '淡入淡出',
@@ -64,6 +88,7 @@ export const zh = {
   'style.bgImageScale': '图片缩放',
   'style.bgImageX': '图片水平',
   'style.bgImageY': '图片垂直',
+  'style.bgImageRotate': '图片旋转',
   'style.bgImageReset': '重置图片位置',
   'style.color': '颜色',
   'style.gradFrom': '渐变起点',
@@ -84,6 +109,7 @@ export const zh = {
   'style.textOrientation': '方向',
   'style.orientationHorizontal': '横排',
   'style.orientationVertical': '竖排',
+  'style.lineRotate': '本句旋转',
   'style.strokeWidth': '描边宽度',
   'style.strokeColor': '描边颜色',
   'style.strokeAlpha': '描边不透明度',
@@ -104,14 +130,30 @@ export const zh = {
   'style.shadowOffset': '阴影偏移',
   'style.shadowBlur': '阴影模糊',
   'style.restoreDefault': '恢复跟随全局默认',
+  'style.contentSection': '文字内容',
+  'style.contentPlaceholder': '输入这句字幕/文字…',
+  'style.contentHint': '直接改这句的文字；也可在时间轴上双击该片段编辑',
+  'edit.title': '编辑文字内容',
+  'edit.label': '文字',
+  'edit.placeholder': '输入这句字幕/文字…',
+  'edit.save': '保存',
+  'edit.cancel': '取消',
+  'style.effectIn': '进场特效',
   'style.effectOut': '退场特效',
   'style.effectOutDefault': '默认淡出',
-  'style.effectOutTitle': '退场时反向播放所选特效（仅选中行）；默认为淡出上浮',
+  'style.effectOutTitle': '字幕离场时反向播放选中的特效。',
+  'style.effectOutSelectHint': '请先选中一条或多条字幕，再选择退场特效。',
+  'style.effectDuration': '特效时长（秒）',
+  'style.effectDurationHint': '后修改的 In/Out 优先；另一侧会自动缩短，不超出 segment 且不重叠。',
+  'style.durationFollowGlobal': '时长恢复跟随全局',
+  'style.riseHistory': '保留旧字幕',
+  'style.riseHistoryHint': '当前字幕上方保留的历史字幕数（0–6）。',
   'style.pluginTag': '插件',
   'style.pluginEffectTitle': '插件特效',
   'style.highlightColor': '卡拉OK高亮色',
   'style.intensity': '强度',
   'style.importFont': '导入字体文件…',
+  'style.fontDownload': '下载并安装字体',
   'style.fontLoadFail': '字体加载失败，请确认文件是有效的 ttf/otf 字体',
 
   // 时间轴 · 线段与工具条（Timeline 子组件）
@@ -128,6 +170,9 @@ export const zh = {
   'tl.enter': '进场',
   'tl.leave': '退场',
   'tl.removeTrans': '移除转场',
+  'tl.junctionAddTitle': '在接缝处添加两段之间的过渡',
+  'tl.junctionEditTitle': '编辑两段之间的过渡',
+  'tl.junctionDone': '完成',
   'tl.addTransTitle': '为视频添加进/退场转场',
   'tl.transition': '转场',
   'tl.enterTrans': '进场转场',
@@ -157,6 +202,8 @@ export const zh = {
   'tl.moveDown': '下移一层',
   'tl.scaleTitle': '画面缩放（以铺满画布为 1.0），画布上拖动可平移画面',
   'tl.scale': '缩放',
+  'tl.rotateTitle': '画面旋转（度，绕画面中心）；转出画面的角会露出黑底，放大可补满',
+  'tl.rotate': '旋转',
   'tl.extractAudioTitle': '把视频的音频抽取成一条音轨线段',
   'tl.extractAudio': '提取音频',
   'tl.delete': '删除',
@@ -181,6 +228,7 @@ export const zh = {
   'tl.textDropHint': '（拖文字到此叠加）',
   'tl.newText': '文字',
   'tl.newLyric': '新字幕',
+  'tl.dblclickEdit': '双击编辑文字内容',
   'tl.duplicate': '复制',
   'tl.undo': '撤销',
   'tl.redo': '重做',
@@ -207,7 +255,10 @@ export const zh = {
   'tracks.close': '关闭面板',
   'tracks.deleteTrack': '删除字幕组',
   'tracks.importInto': '导入歌词到此组…',
+  'tracks.selectAllCaptions': '选中全部字幕',
+  'tracks.clearSelection': '清除',
   'tracks.selectAll': '选中此组全部行',
+  'tracks.selectAllShort': '全选',
   'tracks.selectAllHint': '选中后可在右侧样式面板批量调整此组文字样式',
   'tracks.renamePlaceholder': '字幕组名称',
   'tracks.offsetY': '纵向位置',
@@ -215,6 +266,7 @@ export const zh = {
   'tracks.visibleLabel': '显示',
   'tracks.addLine': '+ 加一行',
   'tracks.emptyHint': '点击下方「导入歌词到此组」选择 .lrc / .srt / .vtt 文件',
+  'tracks.primaryEmptyHint': '请使用上方工具栏的「导入歌词」选择 .lrc / .srt / .vtt 文件',
 
   // 资源库（ResourceLibrary）：已导入视频/音频/字幕组/图片一览
   'resourceLibrary.title': '资源库',
@@ -229,18 +281,17 @@ export const zh = {
 
   // 命令控制台（CommandConsole）：JSON 命令，字段与 job.json 相同
   'console.title': '命令控制台',
-  'console.placeholder': '{"style": {"fontSize": 100}}',
+  'console.placeholder': '{"select":"captions","effectIn":"rise"}',
   'console.run': '运行 (Ctrl+Enter)',
   'console.clear': '清空日志',
   'console.hint':
-    '字段与 job.json 相同：lrc / tracks / audio / video / texts / style / lineEffects / lineStyles。' +
+    '用 {"select":"captions"} 选中全部字幕；可同时用 effectIn、effectOut、effectInDuration、effectOutDuration 或 selectedStyle 批量编辑。' +
+    '其他字段与 job.json 相同：lrc / tracks / audio / video / texts / style / lineEffects / lineEffectsOut / lineEffectDurations / lineStyles。' +
     'lrc、tracks[].lrc、audio/video 中的路径必须是绝对路径。lrc 只替换主字幕组，不会像命令行那样清空整份工程。' +
     'tracks / audio / video / texts 每次运行都新增，不是幂等更新——重复运行会重复新增。',
 
-  // 窗口菜单（WindowsMenu）：恢复被关闭的面板/区块
-  'windows.title': '窗口',
+  // 可关闭面板：恢复入口在「视图 › 面板」（menu.panels）
   'windows.close': '关闭此面板',
-  'windows.empty': '（全部面板都开着）',
 
   // 播放条（TransportBar）
   'transport.playPause': '空格键播放/暂停',

@@ -1,87 +1,253 @@
 # AliceCut
 
-把 `.lrc` 歌词 + 音频转换成短视频平台风格的「动态歌词视频」（Kinetic Typography 文字向视频）：
-逐字/逐词卡点出现、错落排版、整句翻转/上移停靠转场，导出带音轨的 MP4。桌面应用 + 无头命令行双形态。
+**A caption-first desktop video editor for kinetic typography, lyric videos, and automated content workflows.**
 
-## 特性
+AliceCut combines multi-track caption editing, a layered audio/video timeline, deterministic Canvas rendering, and a JSON-driven agentic workflow in one Electron application. It is designed for projects where captions are not an afterthought—they are the structure of the edit.
 
-- **LRC 全格式解析**：标准行时间戳、增强型逐字标签 `<mm:ss.xx>`、一行多时间戳、`offset`、GBK 自动识别；标准 LRC 自动插值出逐字卡点时间
-- **9 种特效**：逐字弹出 / 缩放冲击 / 滑动错落 / 打字机 / 发光渐显 / 卡拉OK高亮（仿 AE/CapCut 自动字幕，当前词放大染色），以及整句停靠转场——翻转切换、翻转·底对齐、上移切换（旧句不消失，停靠在新句侧边/上方）
-- **时间轴编辑**：每句歌词是一个线段——拖动挪时间、拖边缘微调起止（逐字节奏按比例保持）、多选/全选；**每行可独立选特效**，也可全局统一
-- **背景视频与多音轨**：导入一段或多段视频做背景（**多层叠放/画中画**，竖向拖动换层）、导入多条音频混音；视频/音频都是时间轴上的可拖动线段，支持**循环 n 次 / 无限循环**、**播放头处切割**、**0.25–4 倍变速**（音频变速不变调）、**从视频提取音轨**、**画面平移缩放**（画布上直接拖）
-- **字幕与独立文字**：播放头处一键加一句字幕 / 删除选中字幕；可加**独立文字块**（标题/水印），起止自由拖动，特效与字幕共用全部 9 种
-- **画布内直接拖动**调整每句歌词的画面位置
-- **预览 = 导出**：同一份渲染代码逐帧确定性绘制，预览看到什么导出就是什么
-- **导出**：H.264 MP4，9:16 / 16:9 / 1:1，30/60fps，混入音轨；内置 ffmpeg 无需安装
-- **Pipeline 友好**：`--export job.json` 无头模式，进度走 stdout、退出码 0/1，可无人值守批量产出
-- **背景**：图片（cover 铺满）/ 渐变 / 纯色三选一，可折叠面板
-- **字幕样式**：字幕底色块（颜色 + 透明度）、文字透明度、粗体/斜体、光晕、阴影（颜色/偏移/模糊）、**全局文字平移/旋转**，GUI 与 job.json 均可设置
-- 内置 13 款免费商用中文字体（得意黑、霞鹜文楷、庞门正道系列、站酷系列、江西拙楷、锐字真言体），**可视化字体选择**（每个字体以自身渲染预览），支持导入任意 ttf/otf；工程保存/载入
+> AliceCut is currently in beta. The Windows build is the primary tested distribution.
 
-## 快速开始
+![AliceCut editor showing caption tracks, preview canvas, waveform timeline, and styling controls](docs/assets/ui-v0p1.png)
 
-```bash
-npm install
-npm run fonts        # 可选：下载内置开源字体（否则回退系统字体）
-npm run dev          # 启动桌面应用
+## What AliceCut does
+
+### Caption-first editing
+
+- Import LRC, enhanced LRC, SRT, VTT, and timestamped text files.
+- Preserve precise word/character timing when available and interpolate timing for standard LRC files.
+- Replace the primary captions or import another file as an independent caption track.
+- Edit multiple caption tracks for translations, pronunciation guides, alternate versions, or layered text.
+- Drag caption segments to retime them, trim either edge, edit text directly, and batch-select captions.
+- Add standalone text blocks for titles, watermarks, labels, and annotations.
+- Export an individual caption track as SRT.
+
+### Layered media timeline
+
+- Import multiple video and audio files into independent timeline layers.
+- View audio waveforms and align captions visually with the soundtrack.
+- Move, trim, duplicate, split, loop, and change clip speed from `0.25×` to `4×`.
+- Control audio volume, fades, and mixing; extract an audio track from a video.
+- Stack video layers for backgrounds and picture-in-picture compositions.
+- Pan, scale, and rotate video directly in the composition.
+- Automatically convert media that Chromium cannot decode using the bundled FFmpeg executable.
+
+### Typography and motion design
+
+- Apply entrance and exit effects globally or per caption line.
+- Use 47 built-in effects, including per-character, per-word, karaoke, highlight, directional, glitch, elastic, blur, and docked-history animations.
+- Adjust font, weight, size, spacing, alignment, orientation, fill, stroke, opacity, glow, shadow, and caption background.
+- Drag selected captions directly on the preview canvas.
+- Use solid colors, gradients, images, or video as the visual background.
+- Choose `9:16`, `16:9`, or `1:1` output compositions.
+
+### GUI, agentic, and headless workflows
+
+AliceCut exposes the same editing model through three surfaces:
+
+1. **Desktop editor** — interactive caption, media, style, preview, and export controls.
+2. **Command Console** — apply JSON instructions to the project currently open in the editor.
+3. **Headless jobs** — render or generate projects from `job.json` for batch processing and pipelines.
+
+The console and headless paths share one project-command layer, and all three surfaces ultimately use the same project state, rendering core, and export pipeline. This reduces behavioral drift between manual and automated work.
+
+## Quick start
+
+### Install the Windows beta
+
+Download the latest installer from [GitHub Releases](https://github.com/a-homosapiens/alicecut/releases). The assisted installer allows you to choose the installation directory.
+
+Unsigned development builds may trigger a Windows SmartScreen warning. Production releases should be code-signed before broad distribution.
+
+### Create a video
+
+1. Select **Import Lyrics** and open an LRC, SRT, VTT, or timestamped text file.
+2. Import an audio track and, optionally, one or more videos or background images.
+3. Arrange captions and media on the timeline.
+4. Choose typography, layout, background, entrance effects, and exit effects.
+5. Press `Space` to preview from the playhead.
+6. Save an AliceCut project.
+7. Select **Export Video**, then choose codec, container, quality, frame rate, and output location.
+
+The application includes an offline quick-start page under **Help → Help**.
+
+## Portable project files
+
+AliceCut project files use the `.alicecut.json` extension. Project format v6 records both absolute fallback paths and portable paths relative to the project file.
+
+Keep the project and its resources together when moving work between computers:
+
+```text
+My Project/
+├── project.alicecut.json
+├── media/
+│   ├── music.mp3
+│   └── background.mp4
+└── images/
+    └── cover.png
 ```
 
-导入歌词（`samples/demo.lrc` 可练手）→ 导入音频 → 空格预览 → 右侧调样式特效 → 导出视频。
+For example, the stored relative paths are `media/music.mp3` and `images/cover.png`. AliceCut prefers the relative copy after a project is moved and falls back to the original absolute location when necessary. Media is referenced rather than embedded, so copy the resource folders together with the project file.
 
-## 命令行 / Pipeline
+Projects created with v1–v5 remain supported and are upgraded when saved again.
 
-```bash
-npx electron . --export job.json
-```
+## Supported files
+
+| Purpose | Formats |
+|---|---|
+| Captions | LRC, enhanced LRC, SRT, VTT, timestamped TXT |
+| Audio | MP3, WAV, M4A, AAC, FLAC, OGG |
+| Video | MP4, MOV, M4V, WebM, MKV, AVI, FLV, WMV, TS, MPG, MPEG, 3GP |
+| Images | JPG, JPEG, PNG, BMP |
+| Imported fonts | TTF, OTF, WOFF, WOFF2 |
+| Project | `.alicecut.json` |
+| Caption export | SRT |
+| Video export | H.264 or HEVC in MP4/MOV; ProRes in MOV |
+
+Unsupported editing codecs and containers are normalized to an H.264 MP4 proxy and cached locally. The original source path remains in the project so AliceCut can recreate a proxy on another machine.
+
+## Command Console
+
+Open the Command Console from the toolbar or **View** menu and enter a JSON command. Commands operate on the current project and can be undone like manual edits.
 
 ```json
 {
-  "lrc": "song.lrc",
-  "audio": "song.mp3",
-  "video": [{ "path": "bg.mp4", "start": 0, "loop": "infinite" }],
-  "out": "output/video.mp4",
-  "fps": 30,
-  "style": { "aspect": "9:16", "effectId": "flip-bottom" },
-  "lineEffects": { "0-7": "rise", "8": "punch" }
+  "select": "captions",
+  "effectIn": "wave-in",
+  "effectOut": "evaporate-out",
+  "selectedStyle": {
+    "fontSize": 96,
+    "textAlign": "center",
+    "strokeWidth": 4
+  }
 }
 ```
 
-`audio` / `video` 均支持单个路径或线段数组，每段可设 `start`（秒）与 `loop`（次数或 `"infinite"`）。
+The console can also import captions and media, add caption tracks and text blocks, apply project styles, and assign line-level effects. File paths supplied to the live console must be absolute because there is no job-file directory to use as a relative base.
 
-进度逐行打到 stdout（`[export] 37%`），完成输出 `[export] done: <路径>`，退出码 0/1。
-完整字段表与 CI 注意事项见 [使用手册 §13](docs/MANUAL.md#13-命令行--pipeline-自动化)。
+## Headless rendering and project generation
 
-## 文档
+The same application binary can render without showing the editor:
 
-| 文档 | 内容 |
-|---|---|
-| [docs/MANUAL.md](docs/MANUAL.md) | **使用手册**：全部功能、快捷键、特效详表、job.json 字段、FAQ |
-| [docs/DESIGN.md](docs/DESIGN.md) | **设计文档**：架构、数据模型、特效系统、渲染/导出管线、headless 协议、关键决策 |
+```powershell
+# Installed Windows application
+AliceCut.exe --export job.json
 
-## 开发
+# Save a GUI-compatible project without rendering video
+AliceCut.exe --save-project job.json
+
+# Perform both operations
+AliceCut.exe --export job.json --save-project job.json
+```
+
+Example `job.json`:
+
+```json
+{
+  "lrc": "captions/song.lrc",
+  "audio": "media/song.mp3",
+  "video": [
+    {
+      "path": "media/background.mp4",
+      "start": 0,
+      "loop": "infinite",
+      "scale": 1.1
+    }
+  ],
+  "out": "output/video.mp4",
+  "fps": 30,
+  "codec": "h264",
+  "speed": "balanced",
+  "hwAccel": "auto",
+  "style": {
+    "aspect": "9:16",
+    "effectId": "rise",
+    "fontSize": 92
+  },
+  "lineEffects": {
+    "0-7": "wave-in",
+    "8": "punch"
+  },
+  "lineEffectsOut": {
+    "0-7": "evaporate-out"
+  }
+}
+```
+
+Paths in a headless job are resolved relative to the `job.json` file. Progress is written to stdout as `[export] 37%`; the process exits with code `0` on success and `1` on failure.
+
+See the [manual's automation section](docs/MANUAL.md#13-命令行--pipeline-自动化) for the complete job schema.
+
+## Export pipeline
+
+- H.264, HEVC, and ProRes output.
+- MP4 and MOV containers.
+- 30 or 60 fps from the desktop export dialog; headless jobs accept 10–60 fps.
+- Fast, balanced, and quality presets.
+- Runtime hardware-encoder detection with safe software fallback.
+- AAC audio mixing with clip volume, fades, loops, offsets, and tempo-preserving speed changes.
+- A WebCodecs H.264 path when supported, with a deterministic raw-frame fallback.
+- Static-background optimization and repeated-frame coalescing for caption-heavy projects.
+
+Preview and export share the same Canvas rendering core. Background-video export defaults to a faster forward-decoding mode; an exact frame-seek mode remains available for reproducible pipeline work.
+
+## Development
+
+### Requirements
+
+- Node.js 20 or newer
+- npm
+- Git LFS for repository-managed font assets
+
+### Run locally
 
 ```bash
-npm test                        # 单元测试（LRC 解析/逐字时间/排版/转场姿态）
-npm run typecheck               # TypeScript 检查
-npm run build                   # 生产构建
-node scripts/smoke-export.js    # ffmpeg 编码管线冒烟测试
+git lfs install
+git clone https://github.com/a-homosapiens/alicecut.git
+cd alicecut
+npm ci
+npm run dev
 ```
 
-### 目录速览
+### Verification and packaging
 
+```bash
+npm run typecheck          # TypeScript validation
+npm test                   # Core and state test suite
+npm run build              # Production bundles in out/
+npm run smoke:electron     # Hidden Electron import/project smoke test
+npm run smoke:help         # Render bundled Help and About pages
+npm run dist:win:unsigned  # Assisted unsigned Windows installer
 ```
-electron/   主进程：窗口/文件对话框/ffmpeg 导出/无头模式
-src/core/   纯函数核心：LRC 解析、逐字时间、排版、特效、逐帧渲染（全部可单测）
-src/store/  zustand 应用状态
-src/components/  React UI：预览画布/时间轴/歌词列表/样式面板/导出弹窗
-samples/    示例 LRC 与 job.json 模板
-docs/       使用手册与设计文档
+
+The Windows beta workflow in `.github/workflows/windows-beta.yml` runs type checking, tests, an Electron smoke test, and the signed installer build for beta tags.
+
+## Repository structure
+
+```text
+electron/       Electron main process, IPC, menus, FFmpeg conversion/export, headless jobs
+src/components/ React editor UI
+src/core/       Caption parsing, media math, effects, layout, rendering, subtitles
+src/store/      Project and window state
+public/         Assets bundled with the application: fonts, previews, Help, branding
+font-assets/    Optional on-demand fonts managed with Git LFS
+scripts/        Packaging, asset generation, benchmarks, and smoke tests
+docs/           User manual, design notes, future work, and README assets
 ```
 
-新增一个特效 = 在 `src/core/effects/` 加一个文件并注册进 `EFFECTS` 数组，GUI 与 CLI 自动可用。
+## Documentation
 
-## 字体版权
+| Document | Contents |
+|---|---|
+| [User Manual](docs/MANUAL.md) | Complete editor workflow, timeline behavior, effects, shortcuts, automation schema, and troubleshooting |
+| [Design Document](docs/DESIGN.md) | Architecture, state model, rendering pipeline, effect system, export implementation, and engineering decisions |
+| [Future Tasks](docs/FUTURE_TASKS.md) | Planned relinking, project collection, and media-management improvements |
+| **Help → Help** | Offline quick start bundled with the desktop application |
 
-内置字体均为 SIL OFL 开源协议，可随软件分发与商用：
-[得意黑 Smiley Sans](https://github.com/atelier-anchor/smiley-sans) ·
-[霞鹜文楷 LXGW WenKai](https://github.com/lxgw/LxgwWenKai)
+## Fonts and third-party assets
+
+AliceCut ships Smiley Sans, Noto Sans SC, and Inter as starter fonts, and provides previews for optional fonts that can be downloaded on demand. Font binaries are managed with Git LFS; repository handling requirements are documented in [font-assets/README.md](font-assets/README.md).
+
+Current optional font sources include [Masa Font](https://github.com/max32002/masafont), [Noto Sans SC](https://fonts.google.com/noto/specimen/Noto%2BSans%2BSC), [Noto Serif SC](https://fonts.google.com/noto/specimen/Noto%2BSerif%2BSC), [Inter](https://fonts.google.com/specimen/Inter), [Anton](https://fonts.google.com/specimen/Anton), [Fredoka](https://fonts.google.com/specimen/Fredoka), [Playfair Display](https://fonts.google.com/specimen/Playfair%2BDisplay), [ChongXi Seal](https://xiaoxue.iis.sinica.edu.tw/chongxi/copyright.htm), and [ToronoGlitch](https://github.com/amazusa/ToronoGlitch). Verify each asset's upstream license before adding or redistributing it. ChongXi Seal uses CC BY-ND 3.0 Taiwan and must retain attribution without modification; ToronoGlitch is distributed under the SIL Open Font License according to its upstream repository.
+
+## About
+
+AliceCut is developed by [Artificial Homo Sapiens](https://www.ArtificialHomoSapiens.com/), a company of Homo sapiens, by Homo sapiens, and for Homo sapiens.

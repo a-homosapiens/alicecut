@@ -4,10 +4,10 @@ import { parseCaptions, repaginateLines } from '../core/subtitles'
 import { rebuildLineText, lyricsDuration, shiftLine, retimeLine } from '../core/timing'
 import {
   clampSpeed,
+  clampStartNoOverlap,
   clipEnd,
   clipsDuration,
   normalizeLoop,
-  shiftClip,
   splitClipAt,
   withClipDefaults,
   MAX_LAYER,
@@ -58,8 +58,15 @@ export interface StyleState {
   bgImageScale: number
   bgImageX: number
   bgImageY: number
+  /** 背景图片旋转（度，绕画面中心）；缺省 0 */
+  bgImageRotate: number
   effectId: string
+  /** 全局字幕 In / Out 特效时长（每行会按 segment 时长自动压缩避免重叠） */
+  effectInDurationMs: number
+  effectOutDurationMs: number
   intensity: number
+  /** Rise effect: number of previous captions that remain parked above the current caption. */
+  riseHistory: number
   showMeta: boolean
   /** 全局文字变换：所有文字一起平移（画布像素）与旋转（度），绕画面中心 */
   globalDx: number
@@ -80,6 +87,72 @@ export interface StyleState {
   shadowOffset: number
 }
 
+const STYLE_NUMBER_LIMITS: Partial<Record<keyof StyleState, readonly [number, number]>> = {
+  fontWeight: [100, 900], fontSize: [8, 600], letterSpacing: [-50, 200], wordSpacing: [-50, 400],
+  lineSpacing: [0.1, 10], strokeWidth: [0, 100], strokeAlpha: [0, 1], bgAngle: [-360, 360],
+  bgImageScale: [0.05, 20], bgImageX: [-10000, 10000], bgImageY: [-10000, 10000],
+  bgImageRotate: [-360, 360], effectInDurationMs: [0, 60000], effectOutDurationMs: [0, 60000],
+  intensity: [0, 10], riseHistory: [0, 20], globalDx: [-10000, 10000], globalDy: [-10000, 10000],
+  globalRotate: [-360, 360], textAlpha: [0, 1], textBgAlpha: [0, 1], halo: [0, 200],
+  shadowAlpha: [0, 1], shadowBlur: [0, 200], shadowOffset: [-500, 500]
+}
+
+/** Runtime boundary for project files, console commands, and UI patches. */
+export function normalizeStyle(base: StyleState, patch: unknown): StyleState {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return base
+  const source = patch as Record<string, unknown>
+  const out = { ...base }
+  for (const [key, bounds] of Object.entries(STYLE_NUMBER_LIMITS) as [keyof StyleState, readonly [number, number]][]) {
+    const value = source[key]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      ;(out as unknown as Record<string, unknown>)[key] = Math.min(bounds[1], Math.max(bounds[0], value))
+    }
+  }
+  const strings: (keyof StyleState)[] = [
+    'fontFamily', 'textColor', 'strokeColor', 'glowColor', 'highlightColor', 'bgFrom', 'bgTo', 'effectId',
+    'textBgColor', 'shadowColor'
+  ]
+  for (const key of strings) {
+    const value = source[key]
+    if (typeof value === 'string' && value.length > 0 && value.length <= 500) {
+      ;(out as unknown as Record<string, unknown>)[key] = value
+    }
+  }
+  if (source.bgImage === null || (typeof source.bgImage === 'string' && source.bgImage.length <= 32768)) out.bgImage = source.bgImage
+  if (source.aspect === '9:16' || source.aspect === '16:9' || source.aspect === '1:1') out.aspect = source.aspect
+  if (source.textAlign === 'left' || source.textAlign === 'center' || source.textAlign === 'right') out.textAlign = source.textAlign
+  if (source.textOrientation === 'horizontal' || source.textOrientation === 'vertical') out.textOrientation = source.textOrientation
+  if (source.bgType === 'solid' || source.bgType === 'gradient' || source.bgType === 'image') out.bgType = source.bgType
+  if (typeof source.showMeta === 'boolean') out.showMeta = source.showMeta
+  if (typeof source.italic === 'boolean') out.italic = source.italic
+  return out
+}
+
+function normalizeLinePatch(patch: Partial<LineTextOverride>): Partial<LineTextOverride> {
+  const out: Record<string, unknown> = {}
+  const source = patch as Record<string, unknown>
+  const numeric: Record<string, readonly [number, number]> = {
+    rotate: [-360, 360], fontSize: [8, 600], fontWeight: [100, 900], textAlpha: [0, 1],
+    letterSpacing: [-50, 200], wordSpacing: [-50, 400], lineSpacing: [0.1, 10], strokeWidth: [0, 100],
+    strokeAlpha: [0, 1], textBgAlpha: [0, 1], halo: [0, 200], shadowAlpha: [0, 1],
+    shadowBlur: [0, 200], shadowOffset: [-500, 500]
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) {
+      out[key] = undefined
+      continue
+    }
+    const bounds = numeric[key]
+    if (bounds && typeof value === 'number' && Number.isFinite(value)) {
+      out[key] = Math.min(bounds[1], Math.max(bounds[0], value))
+    } else if (key === 'italic' && typeof value === 'boolean') out[key] = value
+    else if (key === 'textAlign' && (value === 'left' || value === 'center' || value === 'right')) out[key] = value
+    else if (key === 'textOrientation' && (value === 'horizontal' || value === 'vertical')) out[key] = value
+    else if (['fontFamily', 'textColor', 'strokeColor', 'textBgColor', 'glowColor', 'shadowColor'].includes(key) && typeof value === 'string' && value.length <= 500) out[key] = value
+  }
+  return out as Partial<LineTextOverride>
+}
+
 /** 撤销/重做的文档快照（只含可编辑文档字段；播放/选区/历史本身不计入） */
 interface DocSnapshot {
   lines: LrcLine[]
@@ -89,6 +162,7 @@ interface DocSnapshot {
   lrcName: string | null
   tracks: CaptionTrack[]
   images: ImageAsset[]
+  projectDurationSec: number | null
 }
 
 interface ProjectState {
@@ -106,6 +180,12 @@ interface ProjectState {
   selectedIds: number[]
   /** 时间轴上选中的媒体线段 id */
   selectedClipId: number | null
+  /** True when the editable document differs from the last successful save/open. */
+  dirty: boolean
+  markSaved(): void
+  /** Optional duration used when infinite media/backgrounds have no natural end. */
+  projectDurationSec: number | null
+  setProjectDurationSec(seconds: number | null): void
 
   /** 撤销/重做历史栈（文档快照：lines/clips/style/meta/lrcName） */
   past: DocSnapshot[]
@@ -158,6 +238,8 @@ interface ProjectState {
     lrcName: string | null
     tracks?: CaptionTrack[]
     images?: ImageAsset[]
+    clips?: (Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>)[]
+    projectDurationSec?: number | null
   }): void
   /** 加入媒体线段；缺省字段（trim/speed/layer/变换等）自动补默认值 */
   addClip(clip: Parameters<typeof withClipDefaults>[0]): MediaClip
@@ -168,6 +250,8 @@ interface ProjectState {
   setClipLoop(id: number, loop: LoopSpec): void
   setClipSpeed(id: number, speed: number): void
   setClipLayer(id: number, layer: number): void
+  setClipVolume(id: number, volume: number): void
+  replaceClipMedia(id: number, path: string, sourcePath: string, sourceDuration: number): void
   /** 设置音轨淡入/淡出时长 ms（钳到线段时间轴占用时长内） */
   setClipFade(id: number, patch: { in?: number; out?: number }): void
   /** 设置视频进/退场转场（null = 清除） */
@@ -175,6 +259,7 @@ interface ProjectState {
   /** 视频画面变换：从拖拽起始快照平移 / 直接设缩放 */
   setClipTransformFrom(original: { id: number; tx: number; ty: number }, dtx: number, dty: number): void
   setClipScale(id: number, scale: number): void
+  setClipRotate(id: number, deg: number): void
   /** 在 tMs 处切开线段；切点在线段外则不动。返回是否切了 */
   splitClip(id: number, tMs: number): boolean
   setSelectedClip(id: number | null): void
@@ -183,6 +268,8 @@ interface ProjectState {
   removeLines(ids: number[]): void
   updateLineText(id: number, text: string): void
   patchStyle(patch: Partial<StyleState>): void
+  /** 设置全局 In / Out 时长；后设置的一侧优先，另一侧按最短 segment 自动缩短 */
+  setGlobalEffectDuration(which: 'in' | 'out', durationMs: number): void
   setCurrentTime(t: number): void
   setPlaying(p: boolean): void
   setExporting(e: boolean): void
@@ -190,11 +277,14 @@ interface ProjectState {
   setSelection(ids: number[]): void
   toggleSelected(id: number): void
   selectAll(): void
+  selectAllCaptions(): void
   clearSelection(): void
   /** 给选中行设置进场特效；null = 恢复跟随全局默认 */
   setLineEffect(ids: number[], effectId: string | null): void
   /** 给选中行设置退场特效；null = 默认淡出 */
   setLineEffectOut(ids: number[], effectOutId: string | null): void
+  /** 给选中行设置 In / Out 时长覆盖；null = 跟随全局 */
+  setLineEffectDuration(ids: number[], which: 'in' | 'out', durationMs: number | null): void
   /** 给选中行叠加文字属性覆盖（字体/字号/颜色…）；patch 中值为 undefined 的键表示清除该项覆盖 */
   patchLineOver(ids: number[], patch: Partial<LineTextOverride>): void
   /** 清除选中行的全部文字覆盖（恢复跟随全局样式） */
@@ -222,6 +312,23 @@ function sortLines(lines: LrcLine[]): LrcLine[] {
 
 function sortClips(clips: MediaClip[]): MediaClip[] {
   return [...clips].sort((a, b) => a.start - b.start)
+}
+
+/** 无限循环邻居的结束当作很远，视作占满其后（用于不重叠夹取） */
+const NO_OVERLAP_FAR_MS = 1e12
+
+/**
+ * 视频线段同层不重叠时的目标起点：非视频/无限循环线段不受限（原样返回）。
+ * 用线段「当前所在层」判定邻居（拖动中可能已换层）。
+ */
+function videoNoOverlapStart(clips: MediaClip[], clip: MediaClip, desiredStart: number): number {
+  if (clip.kind !== 'video' || clip.loop === 'infinite') return desiredStart
+  const layer = clips.find((c) => c.id === clip.id)?.layer ?? clip.layer
+  const len = clipEnd(clip, 0) - clip.start
+  const neighbors = clips
+    .filter((c) => c.kind === 'video' && c.id !== clip.id && c.layer === layer)
+    .map((c) => [c.start, clipEnd(c, NO_OVERLAP_FAR_MS)] as [number, number])
+  return clampStartNoOverlap(neighbors, clip.start, len, desiredStart)
 }
 
 let nextClipId = 1
@@ -274,8 +381,12 @@ export const useProject = create<ProjectState>((set, get) => ({
     bgImageScale: 1,
     bgImageX: 0,
     bgImageY: 0,
+    bgImageRotate: 0,
     effectId: 'pop',
+    effectInDurationMs: 480,
+    effectOutDurationMs: 320,
     intensity: 1,
+    riseHistory: 3,
     showMeta: true,
     globalDx: 0,
     globalDy: 0,
@@ -295,6 +406,16 @@ export const useProject = create<ProjectState>((set, get) => ({
   exporting: false,
   selectedIds: [],
   selectedClipId: null,
+  dirty: false,
+  markSaved() {
+    cleanSignature = docSignature(get())
+    set({ dirty: false })
+  },
+  projectDurationSec: null,
+  setProjectDurationSec(seconds) {
+    const n = seconds == null ? null : Number(seconds)
+    set({ projectDurationSec: n != null && Number.isFinite(n) && n > 0 ? Math.min(24 * 60 * 60, n) : null })
+  },
   past: [],
   future: [],
   undo() {
@@ -304,6 +425,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     historySuspend = true
     invalidateLayoutCache()
     set({ ...prev, past: past.slice(0, -1), future: [snapshotDoc(get()), ...get().future], selectedIds: [], selectedClipId: null })
+    set({ dirty: docSignature(get()) !== cleanSignature })
     historySuspend = false
   },
   redo() {
@@ -313,6 +435,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     historySuspend = true
     invalidateLayoutCache()
     set({ ...next, future: future.slice(1), past: [...get().past, snapshotDoc(get())], selectedIds: [], selectedClipId: null })
+    set({ dirty: docSignature(get()) !== cleanSignature })
     historySuspend = false
   },
   locale: initialLocale,
@@ -441,7 +564,8 @@ export const useProject = create<ProjectState>((set, get) => ({
       currentTime: 0,
       selectedIds: [],
       past: [],
-      future: []
+      future: [],
+      dirty: true
     })
     historySuspend = false
   },
@@ -466,7 +590,15 @@ export const useProject = create<ProjectState>((set, get) => ({
     invalidateLayoutCache()
     // 兼容旧版工程文件：补齐行级字段默认值
     const lines = sortLines(
-      data.lines.map((l) => ({ ...l, effectId: l.effectId ?? null, dx: l.dx ?? 0, dy: l.dy ?? 0, layer: l.layer ?? 0 }))
+      data.lines.map((l) => ({
+        ...l,
+        effectId: l.effectId ?? null,
+        effectInDurationMs: l.effectInDurationMs ?? null,
+        effectOutDurationMs: l.effectOutDurationMs ?? null,
+        dx: l.dx ?? 0,
+        dy: l.dy ?? 0,
+        layer: l.layer ?? 0
+      }))
     )
     // 兼容无 tracks 字段的旧工程文件（视为只有主字幕组）；补齐字幕组字段默认值
     const tracks = (data.tracks ?? []).map((tr) => ({
@@ -479,22 +611,29 @@ export const useProject = create<ProjectState>((set, get) => ({
     }))
     // 兼容无 images 字段的旧工程文件
     const images = (data.images ?? []).map((img) => ({ id: img.id, path: img.path, name: img.name }))
+    const clips = (data.clips ?? []).map((clip) => ({ ...withClipDefaults(clip), id: nextClipId++ }))
     historySuspend = true // 打开工程是全新文档，清空历史
     set({
       meta: data.meta,
       lines,
-      style: { ...get().style, ...data.style },
+      style: normalizeStyle(get().style, data.style),
       lrcName: data.lrcName,
       tracks,
       images,
-      clips: [],
+      clips: sortClips(clips),
+      projectDurationSec:
+        typeof data.projectDurationSec === 'number' && Number.isFinite(data.projectDurationSec) && data.projectDurationSec > 0
+          ? Math.min(24 * 60 * 60, data.projectDurationSec)
+          : null,
       currentTime: 0,
       playing: false,
       selectedIds: [],
       selectedClipId: null,
       past: [],
-      future: []
+      future: [],
+      dirty: false
     })
+    cleanSignature = docSignature(get())
     historySuspend = false
   },
 
@@ -512,13 +651,18 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   moveClipFrom(original, deltaMs) {
-    const moved = shiftClip(original, deltaMs)
-    set({ clips: sortClips(get().clips.map((c) => (c.id === original.id ? moved : c))) })
+    const clips = get().clips
+    const desired = Math.max(0, Math.round(original.start + deltaMs))
+    const start = videoNoOverlapStart(clips, original, desired)
+    set({ clips: sortClips(clips.map((c) => (c.id === original.id ? { ...original, start } : c))) })
   },
 
   setClipStart(id, startMs) {
-    const start = Math.max(0, Math.round(startMs))
-    set({ clips: sortClips(get().clips.map((c) => (c.id === id ? { ...c, start } : c))) })
+    const clips = get().clips
+    const clip = clips.find((c) => c.id === id)
+    const desired = Math.max(0, Math.round(startMs))
+    const start = clip ? videoNoOverlapStart(clips, clip, desired) : desired
+    set({ clips: sortClips(clips.map((c) => (c.id === id ? { ...c, start } : c))) })
   },
 
   setClipLoop(id, loop) {
@@ -532,8 +676,23 @@ export const useProject = create<ProjectState>((set, get) => ({
   },
 
   setClipLayer(id, layer) {
-    const l = Math.max(0, Math.round(layer))
+    const l = Math.min(MAX_LAYER, Math.max(0, Math.round(layer)))
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, layer: l } : c)) })
+  },
+
+  setClipVolume(id, volume) {
+    const v = Math.min(1, Math.max(0, Number.isFinite(volume) ? volume : 1))
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, volume: v } : c)) })
+  },
+
+  replaceClipMedia(id, path, sourcePath, sourceDuration) {
+    set({
+      clips: get().clips.map((c) =>
+        c.id === id
+          ? { ...withClipDefaults({ ...c, path, sourcePath, sourceDuration, offline: false }), id: c.id }
+          : c
+      )
+    })
   },
 
   setClipFade(id, patch) {
@@ -569,6 +728,11 @@ export const useProject = create<ProjectState>((set, get) => ({
   setClipScale(id, scale) {
     const s = Math.min(10, Math.max(0.1, scale))
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, scale: s } : c)) })
+  },
+
+  setClipRotate(id, deg) {
+    const r = Math.max(-180, Math.min(180, Math.round(deg)))
+    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, rotate: r } : c)) })
   },
 
   splitClip(id, tMs) {
@@ -631,7 +795,27 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   patchStyle(patch) {
     invalidateLayoutCache()
-    set({ style: { ...get().style, ...patch } })
+    set({ style: normalizeStyle(get().style, patch) })
+  },
+
+  setGlobalEffectDuration(which, durationMs) {
+    const state = get()
+    const positiveSegments = state.lines.map((line) => Math.max(0, line.end - line.start)).filter((ms) => ms > 0)
+    const segmentMs = positiveSegments.length > 0 ? Math.min(...positiveSegments) : Infinity
+    const value = Math.min(segmentMs, Math.max(0, Math.round(durationMs)))
+    if (which === 'in') {
+      set({ style: {
+        ...state.style,
+        effectInDurationMs: value,
+        effectOutDurationMs: Math.min(state.style.effectOutDurationMs, Math.max(0, segmentMs - value))
+      } })
+    } else {
+      set({ style: {
+        ...state.style,
+        effectOutDurationMs: value,
+        effectInDurationMs: Math.min(state.style.effectInDurationMs, Math.max(0, segmentMs - value))
+      } })
+    }
   },
 
   setCurrentTime(t) {
@@ -657,6 +841,9 @@ export const useProject = create<ProjectState>((set, get) => ({
   selectAll() {
     set({ selectedIds: get().lines.map((l) => l.id), selectedClipId: null })
   },
+  selectAllCaptions() {
+    set({ selectedIds: get().lines.filter((l) => l.kind !== 'text').map((l) => l.id), selectedClipId: null })
+  },
   clearSelection() {
     set({ selectedIds: [], selectedClipId: null })
   },
@@ -671,13 +858,44 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectOutId } : l)) })
   },
 
+  setLineEffectDuration(ids, which, durationMs) {
+    const idSet = new Set(ids)
+    const state = get()
+    if (durationMs == null) {
+      const key = which === 'in' ? 'effectInDurationMs' : 'effectOutDurationMs'
+      set({ lines: state.lines.map((line) => (idSet.has(line.id) ? { ...line, [key]: null } : line)) })
+      return
+    }
+    const requested = Math.max(0, Math.round(durationMs))
+    set({ lines: state.lines.map((line) => {
+      if (!idSet.has(line.id)) return line
+      const segmentMs = Math.max(0, line.end - line.start)
+      const value = Math.min(segmentMs, requested)
+      if (which === 'in') {
+        const currentOut = line.effectOutDurationMs ?? state.style.effectOutDurationMs
+        return {
+          ...line,
+          effectInDurationMs: value,
+          effectOutDurationMs: Math.min(currentOut, Math.max(0, segmentMs - value))
+        }
+      }
+      const currentIn = line.effectInDurationMs ?? state.style.effectInDurationMs
+      return {
+        ...line,
+        effectInDurationMs: Math.min(currentIn, Math.max(0, segmentMs - value)),
+        effectOutDurationMs: value
+      }
+    }) })
+  },
+
   patchLineOver(ids, patch) {
     const idSet = new Set(ids)
+    const normalized = normalizeLinePatch(patch)
     invalidateLayoutCache()
     set({
       lines: get().lines.map((l) => {
         if (!idSet.has(l.id)) return l
-        const over: LineTextOverride = { ...l.over, ...patch }
+        const over: LineTextOverride = { ...l.over, ...normalized }
         for (const k of Object.keys(over) as (keyof LineTextOverride)[]) {
           if (over[k] === undefined) delete over[k]
         }
@@ -760,6 +978,7 @@ export const useProject = create<ProjectState>((set, get) => ({
 
 /* ---- 撤销/重做：订阅文档字段变化，按时间窗口把连续拖动/滑杆合并为一次编辑 ---- */
 let historySuspend = false
+let cleanSignature = ''
 let historyLastTime = 0
 const HISTORY_CAP = 50
 const HISTORY_COALESCE_MS = 500
@@ -772,8 +991,12 @@ function snapshotDoc(s: ProjectState): DocSnapshot {
     meta: s.meta,
     lrcName: s.lrcName,
     tracks: s.tracks,
-    images: s.images
+    images: s.images,
+    projectDurationSec: s.projectDurationSec
   }
+}
+function docSignature(s: ProjectState): string {
+  return JSON.stringify(snapshotDoc(s))
 }
 function docChanged(a: ProjectState, b: ProjectState): boolean {
   return (
@@ -783,7 +1006,8 @@ function docChanged(a: ProjectState, b: ProjectState): boolean {
     a.meta !== b.meta ||
     a.lrcName !== b.lrcName ||
     a.tracks !== b.tracks ||
-    a.images !== b.images
+    a.images !== b.images ||
+    a.projectDurationSec !== b.projectDurationSec
   )
 }
 
@@ -793,22 +1017,26 @@ useProject.subscribe((state, prev) => {
   historySuspend = true
   // 新的编辑手势（与上次变更间隔够久，或栈为空）才新增一项；同一手势内的连续变更合并
   if (now - historyLastTime >= HISTORY_COALESCE_MS || state.past.length === 0) {
-    useProject.setState({ past: [...state.past, snapshotDoc(prev)].slice(-HISTORY_CAP), future: [] })
+    useProject.setState({
+      past: [...state.past, snapshotDoc(prev)].slice(-HISTORY_CAP),
+      future: [],
+      dirty: docSignature(state) !== cleanSignature
+    })
   } else {
-    useProject.setState({ future: [] }) // 同一手势内的后续编辑仍需作废 redo
+    useProject.setState({ future: [], dirty: docSignature(state) !== cleanSignature })
   }
   historyLastTime = now
   historySuspend = false
 })
 
 /** 项目总时长（秒）：歌词结尾与有限媒体线段结尾取较大者（无限循环线段不计入） */
-export function getProjectDuration(s: { lines: LrcLine[]; clips: MediaClip[] }): number {
-  return Math.max(lyricsDuration(s.lines), clipsDuration(s.clips)) / 1000
+export function getProjectDuration(s: { lines: LrcLine[]; clips: MediaClip[]; projectDurationSec?: number | null }): number {
+  return Math.max(lyricsDuration(s.lines) / 1000, clipsDuration(s.clips.filter((clip) => !clip.offline)) / 1000, s.projectDurationSec ?? 0)
 }
 
 /** 把 store 样式转成渲染器需要的完整样式 */
 export function toRenderStyle(style: StyleState): RenderStyle {
-  const res = RESOLUTIONS[style.aspect]
+  const res = RESOLUTIONS[style.aspect] ?? RESOLUTIONS['9:16']
   return {
     width: res.width,
     height: res.height,
@@ -834,8 +1062,12 @@ export function toRenderStyle(style: StyleState): RenderStyle {
     bgImageScale: style.bgImageScale,
     bgImageX: style.bgImageX,
     bgImageY: style.bgImageY,
+    bgImageRotate: style.bgImageRotate,
     effectId: style.effectId,
+    effectInDurationMs: style.effectInDurationMs,
+    effectOutDurationMs: style.effectOutDurationMs,
     intensity: style.intensity,
+    riseHistory: style.riseHistory,
     showMeta: style.showMeta,
     globalDx: style.globalDx,
     globalDy: style.globalDy,

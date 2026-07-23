@@ -3,6 +3,7 @@ import { readFileSync } from 'fs'
 import { access, readFile, mkdir, writeFile } from 'fs/promises'
 import { basename, dirname, isAbsolute, resolve } from 'path'
 import { readLrcText } from './lrcFile'
+import { portableProjectJson } from './projectPathsCore'
 import {
   outExtension,
   type Container,
@@ -69,6 +70,11 @@ export interface JobTextSpec {
   end: number
   /** 特效 id（缺省跟随全局默认） */
   effect?: string
+  /** Exit effect id; played as the text block leaves. */
+  effectOut?: string
+  /** In/Out effect durations in seconds. If both are present, In has priority. */
+  effectInDuration?: number
+  effectOutDuration?: number
   /** 画面位置偏移（画布像素） */
   x?: number
   y?: number
@@ -86,7 +92,16 @@ export interface JobTrackSpec {
   visible?: boolean
   /** 键为该字幕组自己的行序号（"3"）或区间（"0-7"），与顶层 lineEffects 是各自独立的编号 */
   lineEffects?: Record<string, string>
+  lineEffectsOut?: Record<string, string>
+  lineEffectDurations?: Record<string, EffectDurationSpec>
   lineStyles?: Record<string, LineTextOverride>
+}
+
+export interface EffectDurationSpec {
+  /** Seconds. */
+  in?: number
+  /** Seconds. */
+  out?: number
 }
 
 /**
@@ -125,6 +140,10 @@ export interface ExportJobFile {
   style?: Record<string, unknown>
   /** 行级特效："3" 或 "0-7"（按歌词行序号）→ 特效 id */
   lineEffects?: Record<string, string>
+  /** Per-line exit effects: "3" or "0-7" → out-effect id. */
+  lineEffectsOut?: Record<string, string>
+  /** Per-line In/Out durations; keys are line ids/ranges. In wins when both are supplied. */
+  lineEffectDurations?: Record<string, EffectDurationSpec>
   lineStyles?: Record<string, LineTextOverride>
 }
 
@@ -157,6 +176,8 @@ export interface HeadlessTrackSpec {
   offsetY?: number
   visible?: boolean
   lineEffects: Record<string, string>
+  lineEffectsOut?: Record<string, string>
+  lineEffectDurations?: Record<string, EffectDurationSpec>
   lineStyles: Record<string, LineTextOverride>
 }
 
@@ -174,6 +195,8 @@ export interface HeadlessJobPayload {
   durationSec: number | null
   style: Record<string, unknown>
   lineEffects: Record<string, string>
+  lineEffectsOut: Record<string, string>
+  lineEffectDurations: Record<string, EffectDurationSpec>
   lineStyles: Record<string, LineTextOverride>
   encode: EncodeSettings
   videoFrameMode: VideoFrameMode
@@ -224,7 +247,9 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
   const jobDir = dirname(jobAbs)
   // 容忍 Windows 工具写出的 UTF-8 BOM
   const jobText = (await readFile(jobAbs, 'utf-8')).replace(/^﻿/, '')
-  const job = JSON.parse(jobText) as ExportJobFile
+  const parsed: unknown = JSON.parse(jobText)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('job.json 根节点必须是对象')
+  const job = parsed as ExportJobFile
   const rel = (p: string): string => (isAbsolute(p) ? p : resolve(jobDir, p))
 
   if (!job.lrc) throw new Error('job.lrc 缺失：必须指定歌词文件路径')
@@ -240,8 +265,15 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
   const outPath = job.out ? rel(job.out) : ''
   if (outPath) await mkdir(dirname(outPath), { recursive: true })
 
+  if (job.fps !== undefined && (typeof job.fps !== 'number' || !Number.isFinite(job.fps))) throw new Error('job.fps 必须是有限数字')
+  if (job.duration !== undefined && (typeof job.duration !== 'number' || !Number.isFinite(job.duration) || job.duration <= 0)) {
+    throw new Error('job.duration 必须是正的有限数字')
+  }
+  if (job.texts !== undefined && !Array.isArray(job.texts)) throw new Error('job.texts 必须是数组')
+  if (job.tracks !== undefined && !Array.isArray(job.tracks)) throw new Error('job.tracks 必须是数组')
+  if (job.style !== undefined && (!job.style || typeof job.style !== 'object' || Array.isArray(job.style))) throw new Error('job.style 必须是对象')
   const fps = Math.min(60, Math.max(10, Math.round(job.fps ?? 30)))
-  const durationSec = typeof job.duration === 'number' && job.duration > 0 ? job.duration : null
+  const durationSec = typeof job.duration === 'number' ? job.duration : null
 
   // 编码设置：缺省档位必须与今天的固定行为字节级一致（mp4/h264/balanced/software）。
   // 枚举值写错直接报错，而不是悄悄退回默认——批处理流水线里一个拼错的 codec 静默生效，
@@ -299,6 +331,8 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
       offsetY: t.offsetY,
       visible: t.visible,
       lineEffects: t.lineEffects ?? {},
+      lineEffectsOut: t.lineEffectsOut ?? {},
+      lineEffectDurations: t.lineEffectDurations ?? {},
       lineStyles: t.lineStyles ?? {}
     })
   }
@@ -318,6 +352,8 @@ export async function prepareJob(jobPath: string): Promise<HeadlessJobPayload> {
     durationSec,
     style,
     lineEffects: job.lineEffects ?? {},
+    lineEffectsOut: job.lineEffectsOut ?? {},
+    lineEffectDurations: job.lineEffectDurations ?? {},
     lineStyles: job.lineStyles ?? {},
     encode,
     videoFrameMode,
@@ -337,6 +373,9 @@ export async function normalizeClips(
   const items = Array.isArray(spec) ? spec : [spec]
   const clips: HeadlessClip[] = []
   for (const item of items) {
+    if (typeof item !== 'string' && (!item || typeof item !== 'object' || Array.isArray(item))) {
+      throw new Error(`job.${kind} 的线段必须是路径字符串或对象`)
+    }
     const obj: JobClipSpec = typeof item === 'string' ? { path: item } : item
     if (!obj.path) throw new Error(`job.${kind} 中的线段缺少 path 字段`)
     const path = rel(obj.path)
@@ -354,7 +393,7 @@ export async function normalizeClips(
       sourceInMs: Math.max(0, Math.round((obj.in ?? 0) * 1000)),
       sourceOutMs: obj.out !== undefined ? Math.round(obj.out * 1000) : null,
       speed: obj.speed ?? 1,
-      layer: Math.max(0, Math.round(obj.layer ?? 0)),
+      layer: Math.min(4, Math.max(0, Math.round(obj.layer ?? 0))),
       tx: Math.round(obj.x ?? 0),
       ty: Math.round(obj.y ?? 0),
       scale: obj.scale && obj.scale > 0 ? obj.scale : 1,
@@ -377,7 +416,7 @@ export function registerHeadlessHandlers(payload: HeadlessJobPayload | null): vo
   // 无头模式直接写文件（不弹保存对话框）
   ipcMain.handle('file:saveProjectHeadless', async (_e, json: string, path: string) => {
     await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, json, 'utf-8')
+    await writeFile(path, portableProjectJson(json, path), 'utf-8')
   })
 
   let lastPct = -1

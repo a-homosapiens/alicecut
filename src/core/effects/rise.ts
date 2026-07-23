@@ -6,8 +6,6 @@ function parkedScale(intensity: number): number {
   return 0.4 + 0.35 * intensity
 }
 
-const PARKED_ALPHA = [1, 0.85, 0.6, 0.35]
-
 /**
  * 上移切换：整句从下方进入中心。旧字幕不消失——缩放后向上挪，
  * 紧靠在新字幕上方逐条堆叠成历史；越往上越淡，超出深度后淡出。
@@ -39,7 +37,9 @@ export const rise: EffectPreset = {
       let dy = -(blockH(0) / 2 + gap)
       for (let k = 1; k < depth; k++) dy -= blockH(k) * s + gap
       dy -= (blockH(depth) * s) / 2
-      const alpha = depth < PARKED_ALPHA.length ? PARKED_ALPHA[depth] : 0
+      // Visibility cutoff is controlled by style.riseHistory in the renderer;
+      // pose only describes how a retained caption looks at this depth.
+      const alpha = Math.max(0.18, 1 - depth * 0.22)
       return { dx: 0, dy, rotate: 0, scale: s, alpha, blur: 0 }
     }
   },

@@ -64,8 +64,10 @@ function buildWordsByInterpolation(content: string, start: number, end: number):
   const total = weights.reduce((a, b) => a + b, 0)
   const words: LrcWord[] = []
   let acc = 0
+  let leading = ''
   for (let i = 0; i < tokens.length; i++) {
     if (/^\s+$/.test(tokens[i])) {
+      leading += tokens[i]
       acc += weights[i]
       continue
     }
@@ -74,10 +76,12 @@ function buildWordsByInterpolation(content: string, start: number, end: number):
     const we = total > 0 ? start + (acc / total) * (fillEnd - start) : fillEnd
     words.push({
       text: tokens[i],
+      ...(leading ? { leading } : {}),
       start: Math.round(ws),
       end: Math.round(we),
       chars: distributeChars(tokens[i], Math.round(ws), Math.round(we))
     })
+    leading = ''
   }
   return words
 }
@@ -88,17 +92,23 @@ function buildWordsFromSegments(
   lineEnd: number
 ): LrcWord[] {
   const words: LrcWord[] = []
+  let pendingWhitespace = ''
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i]
-    const text = seg.text.trim()
+    const raw = seg.text
+    const prefix = raw.match(/^\s*/u)?.[0] ?? ''
+    const suffix = raw.match(/\s*$/u)?.[0] ?? ''
+    const text = raw.trim()
     if (text.length === 0) continue
     const segEnd = i + 1 < segments.length ? segments[i + 1].time : Math.min(seg.time + 1000, lineEnd)
     words.push({
       text,
+      ...((pendingWhitespace || prefix) ? { leading: pendingWhitespace + prefix } : {}),
       start: seg.time,
       end: segEnd,
       chars: distributeChars(text, seg.time, segEnd)
     })
+    pendingWhitespace = suffix
   }
   return words
 }
@@ -127,7 +137,7 @@ export function buildLines(entries: RawEntry[]): LrcLine[] {
       id: i,
       start,
       end,
-      text: words.map((w) => w.text).join(''),
+      text: entry.content,
       words,
       effectId: null,
       dx: 0,
@@ -176,8 +186,8 @@ export function retimeLine(line: LrcLine, newStart: number, newEnd: number): Lrc
 export function rebuildLineText(line: LrcLine, newText: string): LrcLine {
   return {
     ...line,
-    text: newText.trim(),
-    words: buildWordsByInterpolation(newText.trim(), line.start, line.end)
+    text: newText,
+    words: buildWordsByInterpolation(newText, line.start, line.end)
   }
 }
 

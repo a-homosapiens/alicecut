@@ -67,7 +67,14 @@ describe('parseSrt', () => {
 
   it('合并多行 cue 文本', () => {
     const r = parseSrt('1\n00:00:01,000 --> 00:00:02,000\n你好\n世界')
-    expect(r.lines[0].text).toBe('你好世界')
+    expect(r.lines[0].text).toBe('你好 世界')
+  })
+
+  it('保留西文词间空格，并在重新分页合并时恢复分隔', () => {
+    const parsed = parseSrt('1\n00:00:01,000 --> 00:00:02,000\nHello world\n\n2\n00:00:02,000 --> 00:00:03,000\nfrom AliceCut')
+    expect(parsed.lines.map((line) => line.text)).toEqual(['Hello world', 'from AliceCut'])
+    expect(repaginateLines(parsed.lines, 5000)[0].text).toBe('Hello world from AliceCut')
+    expect(serializeSrt(parsed.lines)).toContain('\nHello world\n')
   })
 })
 

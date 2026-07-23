@@ -10,8 +10,8 @@ describe('translate', () => {
   })
 
   it('插值 {n}', () => {
-    expect(translate('zh', 'topbar.videoSuffix', { n: 3 })).toBe('· 3 段')
-    expect(translate('en', 'topbar.audioSuffix', { n: 2 })).toBe('· 2 tracks')
+    expect(translate('zh', 'tl.layerN', { n: 3 })).toBe('第 3 层')
+    expect(translate('en', 'tracks.lineCount', { n: 2 })).toBe('2 lines')
   })
 })
 

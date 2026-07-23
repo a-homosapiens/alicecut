@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { useProject } from './store/project'
-import { applyLineEffects, applyLineStyles, applyTrack, applyTexts, applyStyle, applyPrimaryLrc, type CommandLog } from './projectCommand'
+import { applyLineEffects, applyLineEffectsOut, applyLineEffectDurations, applyLineStyles, applyTrack, applyTexts, applyStyle, applyPrimaryLrc, importCaptionFile, type CommandLog } from './projectCommand'
 
 const LRC = '[00:01.00]hello\n[00:03.00]world'
 const noopLog: CommandLog = () => {}
@@ -13,6 +13,30 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
       const [a, b] = useProject.getState().lines
       applyLineEffects({ [`${a.id}-${b.id}`]: 'rise' }, noopLog)
       expect(useProject.getState().lines.every((l) => l.effectId === 'rise')).toBe(true)
+    })
+
+    it('sets direction-specific exit effects by global id range', () => {
+      const [a, b] = useProject.getState().lines
+      applyLineEffectsOut({ [`${a.id}-${b.id}`]: 'evaporate-out' }, noopLog)
+      expect(useProject.getState().lines.every((line) => line.effectOutId === 'evaporate-out')).toBe(true)
+    })
+
+    it('accepts None for both In and Out effects', () => {
+      const [line] = useProject.getState().lines
+      const logs: string[] = []
+      applyLineEffects({ [`${line.id}`]: 'none' }, (message) => logs.push(message))
+      applyLineEffectsOut({ [`${line.id}`]: 'none' }, (message) => logs.push(message))
+      const updated = useProject.getState().lines.find((item) => item.id === line.id)!
+      expect(updated.effectId).toBe('none')
+      expect(updated.effectOutId).toBe('none')
+      expect(logs).toEqual([])
+    })
+
+    it('gives In priority when one command sets both durations', () => {
+      const [line] = useProject.getState().lines // 2000 ms segment
+      applyLineEffectDurations({ [`${line.id}`]: { in: 1.5, out: 1 } }, noopLog)
+      const updated = useProject.getState().lines.find((item) => item.id === line.id)!
+      expect([updated.effectInDurationMs, updated.effectOutDurationMs]).toEqual([1500, 500])
     })
 
     it('无效区间键只警告、不抛错', () => {
@@ -37,6 +61,7 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
           lrcText: '[00:01.00]hi\n[00:02.00]there\n[00:03.00]world',
           lrcName: 'en.lrc',
           lineEffects: { '0-1': 'rise' },
+          lineEffectsOut: { '1-2': 'dissolve-out' },
           lineStyles: { '2': { fontSize: 60 } }
         },
         noopLog
@@ -48,6 +73,7 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
         .lines.filter((l) => l.trackId === track.id)
         .sort((a, b) => a.start - b.start)
       expect(trackLines.map((l) => l.effectId)).toEqual(['rise', 'rise', null])
+      expect(trackLines.map((l) => l.effectOutId ?? null)).toEqual([null, 'dissolve-out', 'dissolve-out'])
       expect(trackLines[2].over).toEqual({ fontSize: 60 })
     })
 
@@ -73,13 +99,14 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
     it('新增独立文字块，套用特效/位置偏移/样式覆盖', () => {
       const before = useProject.getState().lines.length
       applyTexts(
-        [{ text: '标题', start: 0.5, end: 5, effect: 'flip', x: 10, y: -20, style: { fontSize: 80 } }],
+        [{ text: '标题', start: 0.5, end: 5, effect: 'flip', effectOut: 'implode-out', x: 10, y: -20, style: { fontSize: 80 } }],
         noopLog
       )
       const lines = useProject.getState().lines
       expect(lines.length).toBe(before + 1)
       const added = lines.find((l) => l.kind === 'text')!
       expect(added.effectId).toBe('flip')
+      expect(added.effectOutId).toBe('implode-out')
       expect(added.dx).toBe(10)
       expect(added.dy).toBe(-20)
       expect(added.over).toEqual({ fontSize: 80 })
@@ -107,10 +134,46 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
       applyPrimaryLrc('[00:05.00]new lyric', 'new.lrc')
 
       expect(useProject.getState().lrcName).toBe('new.lrc')
-      // .text 由词拼接而成、不保留词间空格（与 buildLines 的既有行为一致）
-      expect(useProject.getState().lines.some((l) => l.text === 'newlyric')).toBe(true)
+      expect(useProject.getState().lines.some((l) => l.text === 'new lyric')).toBe(true)
       expect(useProject.getState().tracks.some((t) => t.id === track.id)).toBe(true)
       expect(useProject.getState().past.length).toBeGreaterThanOrEqual(pastBefore)
+    })
+  })
+
+  describe('importCaptionFile（顶栏导入歌词）', () => {
+    it('replace 只覆盖主字幕，不清空其它字幕组或独立文字', () => {
+      const secondary = applyTrack({ lrcText: LRC, lrcName: 'translation.lrc', lineEffects: {}, lineStyles: {} }, noopLog)
+      const text = useProject.getState().addLineAt(500, 'text', 'Title')
+
+      expect(importCaptionFile('[00:05.00]replacement', 'replacement.lrc', 'replace')).toBe(0)
+
+      const state = useProject.getState()
+      expect(state.lines.filter((line) => line.kind !== 'text' && (line.trackId ?? 0) === 0).map((line) => line.text))
+        .toEqual(['replacement'])
+      expect(state.lines.some((line) => line.trackId === secondary.id && line.text === 'hello')).toBe(true)
+      expect(state.lines.some((line) => line.id === text.id && line.kind === 'text')).toBe(true)
+    })
+
+    it('add 保留主字幕并创建以文件名命名的新字幕组', () => {
+      const originalPrimary = useProject.getState().lines
+        .filter((line) => line.kind !== 'text' && (line.trackId ?? 0) === 0)
+        .map((line) => line.text)
+
+      const trackId = importCaptionFile('[00:05.00]translation', 'English.lrc', 'add')
+      const state = useProject.getState()
+
+      expect(trackId).toBeGreaterThan(0)
+      expect(state.lines.filter((line) => line.kind !== 'text' && (line.trackId ?? 0) === 0).map((line) => line.text))
+        .toEqual(originalPrimary)
+      expect(state.tracks.find((track) => track.id === trackId)).toMatchObject({ name: 'English', lrcName: 'English.lrc' })
+      expect(state.lines.some((line) => line.trackId === trackId && line.text === 'translation')).toBe(true)
+    })
+
+    it('空文件不修改当前字幕', () => {
+      const before = useProject.getState().lines.map((line) => ({ ...line }))
+
+      expect(importCaptionFile('no timestamps here', 'empty.lrc', 'replace')).toBeNull()
+      expect(useProject.getState().lines).toEqual(before)
     })
   })
 })

@@ -1,9 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useProject, toRenderStyle, getProjectDuration, allCaptionTracks } from '../store/project'
-import { renderFrame, getLineBlockRect, applyGlobalTextTransform } from '../core/render'
+import { renderFrame, getLineBlockRect, applyGlobalTextTransform, resolveLineStyle, type BlockRect } from '../core/render'
 import { drawBackgroundImage, drawVideoBackdrop, getClipDrawRect, type ClipRect } from '../mediaPool'
-import { getTime, tick } from '../playback'
+import { getTime, pause, tick } from '../playback'
 import { useT } from '../i18n'
+import {
+  documentToPreviewPoint,
+  previewDeltaToDocument,
+  previewToDocumentPoint,
+  scaledFontSize,
+  type PreviewPoint
+} from '../core/previewTransform'
+import type { LrcLine } from '../core/types'
 
 /**
  * 视图模型（仿 Photoshop / Inkscape）：
@@ -54,30 +62,69 @@ function drawFrame(ctx: CanvasRenderingContext2D, r: ClipRect, color: string): v
   ctx.restore()
 }
 
+interface TextHitBox {
+  id: number
+  line: LrcLine
+  rect: BlockRect
+  corners: PreviewPoint[]
+}
+
+function visibleTextBoxes(ctx: CanvasRenderingContext2D, view: View, tMs: number): TextHitBox[] {
+  const st = useProject.getState()
+  const style = toRenderStyle(st.style)
+  const tracks = allCaptionTracks(st)
+  const offsetById = new Map(tracks.map((track) => [track.id, track.offsetY]))
+  const visibleTrackIds = new Set(tracks.filter((track) => track.visible).map((track) => track.id))
+  const ordered = [
+    ...st.lines.filter((line) => line.kind !== 'text'),
+    ...st.lines
+      .filter((line) => line.kind === 'text')
+      .sort((a, b) => (a.layer ?? 0) - (b.layer ?? 0))
+  ]
+  const boxes: TextHitBox[] = []
+  for (const line of ordered) {
+    if (tMs < line.start || tMs >= line.end) continue
+    if (line.kind !== 'text' && !visibleTrackIds.has(line.trackId ?? 0)) continue
+    const r = getLineBlockRect(ctx, line, style, offsetById.get(line.trackId ?? 0) ?? 0)
+    if (!r) continue
+    const pad = resolveLineStyle(line, style).fontSize * 0.25
+    const rect = { x: r.x - pad, y: r.y - pad, w: r.w + pad * 2, h: r.h + pad * 2 }
+    const corners = [
+      documentToPreviewPoint({ x: rect.x, y: rect.y }, view, style),
+      documentToPreviewPoint({ x: rect.x + rect.w, y: rect.y }, view, style),
+      documentToPreviewPoint({ x: rect.x, y: rect.y + rect.h }, view, style),
+      documentToPreviewPoint({ x: rect.x + rect.w, y: rect.y + rect.h }, view, style)
+    ]
+    boxes.push({ id: line.id, line, rect, corners })
+  }
+  return boxes
+}
+
 /** 选中歌词/文字的虚线框（映射到视口坐标） */
-function drawTextSelection(ctx: CanvasRenderingContext2D, view: View, tMs: number): void {
+function drawTextSelection(ctx: CanvasRenderingContext2D, view: View, boxes: TextHitBox[]): void {
   const st = useProject.getState()
   if (st.selectedIds.length === 0) return
   const style = toRenderStyle(st.style)
   const sel = new Set(st.selectedIds)
-  const offsetById = new Map(allCaptionTracks(st).map((t) => [t.id, t.offsetY]))
+  const selected = boxes.filter((box) => sel.has(box.id))
   ctx.save()
-  // 与文字同一坐标系（含视图变换 + 全局文字变换），框随旋转/平移一起动
   ctx.translate(view.panX, view.panY)
   ctx.scale(view.zoom, view.zoom)
   applyGlobalTextTransform(ctx, style)
   ctx.strokeStyle = '#818cf8'
   ctx.lineWidth = 2 / view.zoom
   ctx.setLineDash([10 / view.zoom, 6 / view.zoom])
-  for (const line of st.lines) {
-    if (!sel.has(line.id)) continue
-    if (tMs < line.start || tMs >= line.end) continue
-    const r = getLineBlockRect(ctx, line, style, offsetById.get(line.trackId ?? 0) ?? 0)
-    if (!r) continue
-    const pad = style.fontSize * 0.25
-    ctx.strokeRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2)
-  }
+  for (const box of selected) ctx.strokeRect(box.rect.x, box.rect.y, box.rect.w, box.rect.h)
   ctx.restore()
+
+  // A single selection gets fixed-size corner handles for proportional resizing.
+  if (selected.length === 1) {
+    const size = 9
+    ctx.save()
+    ctx.fillStyle = '#818cf8'
+    for (const corner of selected[0].corners) ctx.fillRect(corner.x - size / 2, corner.y - size / 2, size, size)
+    ctx.restore()
+  }
 }
 
 /** 预览：视口铺满面板，文档(artboard)按视图变换绘制，周围是灰色画板(pasteboard) */
@@ -94,6 +141,7 @@ export function PreviewCanvas(): React.JSX.Element {
   const [zoomPct, setZoomPct] = useState(100)
   const viewRef = useRef<View>({ zoom: 1, panX: 0, panY: 0 })
   const selRectRef = useRef<ClipRect | null>(null)
+  const textBoxesRef = useRef<TextHitBox[]>([])
   // 拖动文字时的画面中心参考线 + 是否已吸附
   const centerGuideRef = useRef<{ active: boolean; snapX: boolean; snapY: boolean }>({
     active: false,
@@ -146,7 +194,7 @@ export function PreviewCanvas(): React.JSX.Element {
         const endMs = getProjectDuration(st) * 1000
         const drawBackdrop = (c: CanvasRenderingContext2D): void => {
           if (style.bgType === 'image' && style.bgImage)
-            drawBackgroundImage(c, style.bgImage, W, H, style.bgImageScale, style.bgImageX, style.bgImageY)
+            drawBackgroundImage(c, style.bgImage, W, H, style.bgImageScale, style.bgImageX, style.bgImageY, style.bgImageRotate)
           drawVideoBackdrop(c, st.clips, tMs, endMs, W, H)
         }
 
@@ -205,11 +253,12 @@ export function PreviewCanvas(): React.JSX.Element {
 
         // 选中标记
         const r = selRectRef.current
+        textBoxesRef.current = visibleTextBoxes(ctx, view, tMs)
         if (editVideo && r) {
           const [vx, vy] = toView(view, r.x, r.y)
           drawFrame(ctx, { x: vx, y: vy, w: r.w * view.zoom, h: r.h * view.zoom }, '#f97316')
         } else if (!editVideo) {
-          drawTextSelection(ctx, view, tMs)
+          drawTextSelection(ctx, view, textBoxesRef.current)
         }
 
         // 拖动文字时的画面中心参考线（吸附时高亮）
@@ -291,7 +340,7 @@ export function PreviewCanvas(): React.JSX.Element {
 
   /** 左键：命中选中物件→编辑；否则平移。中键/空格→始终平移 */
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>): void => {
-    const st = useProject.getState()
+    let st = useProject.getState()
     // 中键 = 平移
     if (e.button === 1) {
       e.preventDefault()
@@ -299,10 +348,58 @@ export function PreviewCanvas(): React.JSX.Element {
       return
     }
     if (e.button !== 0) return
+    if (st.playing) {
+      pause()
+      st = useProject.getState()
+    }
     const view = viewRef.current
     const [px, py] = toCssPoint(e.clientX, e.clientY)
+    const style = toRenderStyle(st.style)
+    const docPoint = previewToDocumentPoint({ x: px, y: py }, view, style)
+    const hitText = [...textBoxesRef.current]
+      .reverse()
+      .find(
+        (box) =>
+          docPoint.x >= box.rect.x &&
+          docPoint.x <= box.rect.x + box.rect.w &&
+          docPoint.y >= box.rect.y &&
+          docPoint.y <= box.rect.y + box.rect.h
+      )
 
-    const selClip = !st.playing ? st.clips.find((c) => c.id === st.selectedClipId) : undefined
+    // A single selected text block can be resized proportionally from any corner.
+    const selectedTextBox =
+      st.selectedIds.length === 1 ? textBoxesRef.current.find((box) => box.id === st.selectedIds[0]) : undefined
+    if (selectedTextBox) {
+      const handle = selectedTextBox.corners.find((corner) => Math.hypot(px - corner.x, py - corner.y) <= 12)
+      if (handle) {
+        const center = documentToPreviewPoint(
+          {
+            x: selectedTextBox.rect.x + selectedTextBox.rect.w / 2,
+            y: selectedTextBox.rect.y + selectedTextBox.rect.h / 2
+          },
+          view,
+          style
+        )
+        const startDistance = Math.max(1, Math.hypot(handle.x - center.x, handle.y - center.y))
+        const originalSize = resolveLineStyle(selectedTextBox.line, style).fontSize
+        const id = selectedTextBox.id
+        const onMove = (ev: MouseEvent): void => {
+          const [mx, my] = toCssPoint(ev.clientX, ev.clientY)
+          useProject
+            .getState()
+            .patchLineOver([id], { fontSize: scaledFontSize(originalSize, startDistance, Math.hypot(mx - center.x, my - center.y)) })
+        }
+        const onUp = (): void => {
+          window.removeEventListener('mousemove', onMove)
+          window.removeEventListener('mouseup', onUp)
+        }
+        window.addEventListener('mousemove', onMove)
+        window.addEventListener('mouseup', onUp)
+        return
+      }
+    }
+
+    const selClip = st.clips.find((c) => c.id === st.selectedClipId)
     if (selClip && selClip.kind === 'video') {
       const rect = selRectRef.current
       // 命中四角把手 → 等比缩放（围绕视频中心，恒为 W/2+tx, H/2+ty）
@@ -319,7 +416,6 @@ export function PreviewCanvas(): React.JSX.Element {
           return Math.hypot(px - cx, py - cy) < hit
         })
         if (onCorner) {
-          const style = toRenderStyle(st.style)
           const [ccx, ccy] = toView(view, style.width / 2 + selClip.tx, style.height / 2 + selClip.ty)
           const startDist = Math.max(1, Math.hypot(px - ccx, py - ccy))
           const origScale = selClip.scale
@@ -338,7 +434,15 @@ export function PreviewCanvas(): React.JSX.Element {
         }
       }
       // 命中视频内部 → 平移画面；否则平移视图
-      if (rect && px >= rect.x && px <= rect.x + rect.w && py >= rect.y && py <= rect.y + rect.h) {
+      const [rectX, rectY] = rect ? toView(view, rect.x, rect.y) : [0, 0]
+      if (
+        !hitText &&
+        rect &&
+        px >= rectX &&
+        px <= rectX + rect.w * view.zoom &&
+        py >= rectY &&
+        py <= rectY + rect.h * view.zoom
+      ) {
         const original = { id: selClip.id, tx: selClip.tx, ty: selClip.ty }
         const sx = e.clientX
         const sy = e.clientY
@@ -355,15 +459,24 @@ export function PreviewCanvas(): React.JSX.Element {
         window.addEventListener('mouseup', onUp)
         return
       }
-      startPan(e)
-      return
+      if (!hitText) {
+        startPan(e)
+        return
+      }
     }
 
-    // 选中字幕/文字：拖动平移文字位置；未选中：平移视图
-    if (selClip || st.selectedIds.length === 0) {
+    // Click visible caption/Text to select it directly, then drag the current selection.
+    if (!hitText) {
       startPan(e)
       return
     }
+    if (e.ctrlKey || e.metaKey) {
+      useProject.getState().toggleSelected(hitText.id)
+      if (!useProject.getState().selectedIds.includes(hitText.id)) return
+    } else if (!st.selectedIds.includes(hitText.id)) {
+      useProject.getState().setSelection([hitText.id])
+    }
+    st = useProject.getState()
     const sel = new Set(st.selectedIds)
     const originals = st.lines
       .filter((l) => sel.has(l.id))
@@ -372,9 +485,8 @@ export function PreviewCanvas(): React.JSX.Element {
     const sy = e.clientY
 
     // 以首个选中行为吸附基准：算出它在偏移=0 时的块中心（中心+偏移 = 该行所属字幕组的中心 → 居中）
-    const style = toRenderStyle(st.style)
     const ctx = canvasRef.current?.getContext('2d')
-    const primary = st.lines.find((l) => sel.has(l.id))
+    const primary = hitText.line
     const primaryOffsetY = primary
       ? (allCaptionTracks(st).find((t) => t.id === (primary.trackId ?? 0))?.offsetY ?? 0)
       : 0
@@ -388,8 +500,9 @@ export function PreviewCanvas(): React.JSX.Element {
     centerGuideRef.current = { active: true, snapX: false, snapY: false }
 
     const onMove = (ev: MouseEvent): void => {
-      let ddx = (ev.clientX - sx) / view.zoom
-      let ddy = (ev.clientY - sy) / view.zoom
+      const delta = previewDeltaToDocument(ev.clientX - sx, ev.clientY - sy, view, style)
+      let ddx = delta.x
+      let ddy = delta.y
       let snapX = false
       let snapY = false
       if (baseCx !== null && Math.abs(baseCx + p0dx + ddx - style.width / 2) < snapDoc) {

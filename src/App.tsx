@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
-import { useProject } from './store/project'
+import { useEffect, useRef, useState } from 'react'
+import { allCaptionTracks, useProject } from './store/project'
 import { serializeSrt } from './core/subtitles'
 import { loadPluginSource, installPlugin } from './plugins'
 import { validatePlugin } from './core/effects/validator'
-import { clipEnd, MAX_LAYER, type MediaClip } from './core/media'
+import { clipEnd, MAX_LAYER } from './core/media'
 import { probeMediaDuration } from './mediaPool'
-import { serializeProject, loadSession, enableSessionAutosave } from './session'
+import { parseProjectData, serializeProject } from './projectFile'
 import { toggle } from './playback'
 import { PreviewCanvas } from './components/PreviewCanvas'
 import { TransportBar } from './components/TransportBar'
@@ -16,16 +16,27 @@ import { ExportDialog } from './components/ExportDialog'
 import { CommandConsole } from './components/CommandConsole'
 import { ResourceLibrary } from './components/ResourceLibrary'
 import { LanguageMenu } from './components/LanguageMenu'
-import { WindowsMenu } from './components/WindowsMenu'
+import { Logo } from './components/Logo'
+import { Toolbar, type AppCommands } from './components/Toolbar'
+import { useWindows, WINDOW_REGISTRY } from './store/windows'
+import { usePanels } from './store/panels'
 import { useT } from './i18n'
+import { importCaptionFile } from './projectCommand'
+
+function activeEditorTarget(): Element | null {
+  const target = document.activeElement
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement ||
+    !!target?.closest('[contenteditable="true"]') ? target : null
+}
 
 export function App(): React.JSX.Element {
   const t = useT()
-  const lrcName = useProject((s) => s.lrcName)
-  const clips = useProject((s) => s.clips)
-  const hasLines = useProject((s) => s.lines.length > 0)
-  const videoCount = clips.filter((c) => c.kind === 'video').length
-  const audioCount = clips.filter((c) => c.kind === 'audio').length
+  const hasProject = useProject((s) => s.lines.length > 0 || s.clips.length > 0 || s.images.length > 0)
+  const canSave = useProject((s) => s.dirty || s.lines.length > 0 || s.clips.length > 0 || s.images.length > 0)
+  const hasCaptions = useProject((s) => s.lines.some((line) => line.kind !== 'text'))
+  const canExport = hasProject
+  const locale = useProject((s) => s.locale)
+  const hiddenPanels = useWindows((s) => s.hidden)
   const [showExport, setShowExport] = useState(false)
   const [showConsole, setShowConsole] = useState(false)
   const [convertStatus, setConvertStatus] = useState<{ name: string; frac: number } | null>(null)
@@ -33,31 +44,19 @@ export function App(): React.JSX.Element {
   // 导入归一化进度（主进程转视频时推送）
   useEffect(() => window.desktop.onConvertProgress((p) => setConvertStatus(p)), [])
 
-  // 会话自动恢复：刷新/热重载/崩溃后恢复上次工程（工程仅存内存，重载会丢失），随后开启自动保存
-  useEffect(() => {
-    const data = loadSession()
-    const st = useProject.getState()
-    if (data && st.lines.length === 0 && st.clips.length === 0) {
-      void loadProjectData(data, true)
-        .catch(() => {})
-        .finally(enableSessionAutosave)
-    } else {
-      enableSessionAutosave()
-    }
-    // 仅挂载时运行一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // 快捷键：空格播放/暂停，Ctrl+A 全选线段，Esc 取消选择
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.target instanceof HTMLInputElement) return
+      const target = e.target instanceof Element ? e.target : null
+      const editable = activeEditorTarget() !== null
+      if (editable || target?.closest('.modal-backdrop')) return
+      if (useProject.getState().exporting) return
       if (e.code === 'Space') {
         e.preventDefault()
         toggle()
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') {
         e.preventDefault()
-        useProject.getState().selectAll()
+        useProject.getState().selectAllCaptions()
       } else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
         e.preventDefault()
         if (e.shiftKey) useProject.getState().redo()
@@ -80,10 +79,15 @@ export function App(): React.JSX.Element {
   const importLrc = async (): Promise<void> => {
     const file = await window.desktop.openLrc()
     if (!file) return
-    useProject.getState().loadLrc(file.text, file.name)
-    if (useProject.getState().lines.length === 0) {
+    const hasExistingCaptions = useProject.getState().lines.some((line) => line.kind !== 'text')
+    const choice = hasExistingCaptions ? await window.desktop.confirmLyricsImport() : 'replace'
+    if (choice === 'cancel') return
+    const trackId = importCaptionFile(file.text, file.name, choice)
+    if (trackId === null) {
       alert(t('app.noLyrics'))
+      return
     }
+    if (trackId > 0) usePanels.getState().openPanel(trackId, true)
   }
 
   /**
@@ -131,6 +135,7 @@ export function App(): React.JSX.Element {
         const clip = st.addClip({
           kind,
           path: mediaPath,
+          sourcePath: file.path,
           name: file.name,
           start: cursor,
           sourceDuration,
@@ -155,22 +160,65 @@ export function App(): React.JSX.Element {
     if (files) await addMediaClips('audio', files)
   }
 
-  const saveProject = async (): Promise<void> => {
+  const saveProject = async (): Promise<boolean> => {
     const st = useProject.getState()
     const json = JSON.stringify(serializeProject(st), null, 2)
     const base = (st.lrcName ?? t('app.untitled')).replace(/\.[^.]+$/, '')
-    await window.desktop.saveProject(json, `${base}.alicecut.json`)
+    try {
+      const path = await window.desktop.saveProject(json, `${base}.alicecut.json`)
+      if (!path) return false
+      useProject.getState().markSaved()
+      alert(`Project saved:\n${path}`)
+      return true
+    } catch (err) {
+      alert(`Could not save project:\n${err instanceof Error ? err.message : String(err)}`)
+      return false
+    }
+  }
+
+  const confirmReplaceProject = async (): Promise<boolean> => {
+    if (!useProject.getState().dirty) return true
+    const choice = await window.desktop.confirmUnsaved()
+    if (choice === 'cancel') return false
+    return choice === 'discard' || await saveProject()
   }
 
   const exportSrt = async (): Promise<void> => {
     const st = useProject.getState()
-    const srt = serializeSrt(st.lines)
+    const tracks = allCaptionTracks(st).filter((track) =>
+      st.lines.some((line) => line.kind !== 'text' && (line.trackId ?? 0) === track.id)
+    )
+    if (tracks.length === 0) {
+      alert(t('app.noSubtitles'))
+      return
+    }
+    let chosen = tracks[0]
+    if (tracks.length > 1) {
+      const answer = prompt(
+        `Choose a subtitle track to export:\n${tracks.map((track, i) => `${i + 1}. ${track.name || track.lrcName || `Track ${track.id + 1}`}${track.visible ? '' : ' (hidden)'}`).join('\n')}`,
+        '1'
+      )
+      if (answer == null) return
+      const index = Number(answer) - 1
+      if (!Number.isInteger(index) || !tracks[index]) {
+        alert('Invalid subtitle track selection.')
+        return
+      }
+      chosen = tracks[index]
+    }
+    const selectedLines = st.lines.filter((line) => line.kind !== 'text' && (line.trackId ?? 0) === chosen.id)
+    const srt = serializeSrt(selectedLines)
     if (!srt) {
       alert(t('app.noSubtitles'))
       return
     }
     const base = (st.lrcName ?? t('app.subtitleDefault')).replace(/\.[^.]+$/, '')
-    await window.desktop.saveSrt(srt, `${base}.srt`)
+    try {
+      const path = await window.desktop.saveSrt(srt, `${base}.srt`)
+      if (path) alert(`Subtitles exported:\n${path}`)
+    } catch (err) {
+      alert(`Could not export subtitles:\n${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   const importPlugin = async (): Promise<void> => {
@@ -211,82 +259,145 @@ export function App(): React.JSX.Element {
     }
   }
 
-  // 把工程数据（v2 / v1）加载进 store；silent=true 时不弹缺失媒体提示（用于会话自动恢复）
-  const loadProjectData = async (data: unknown, silent = false): Promise<void> => {
-    const d = data as { lines?: unknown; clips?: unknown; audioPath?: unknown }
-    if (!Array.isArray(d.lines)) throw new Error('bad project')
-    useProject.getState().hydrate(data as Parameters<ReturnType<typeof useProject.getState>['hydrate']>[0])
-
-    // v1 工程的 audioPath → 一条 0 起点的音轨线段；旧版缺的字段由 addClip 补默认值
-    type SavedClip = Partial<MediaClip> & Pick<MediaClip, 'kind' | 'path' | 'name' | 'start' | 'sourceDuration'>
-    const saved: SavedClip[] = Array.isArray(d.clips)
-      ? (d.clips as SavedClip[])
-      : typeof d.audioPath === 'string'
-        ? [{ kind: 'audio' as const, path: d.audioPath, name: d.audioPath, start: 0, sourceDuration: 0 }]
-        : []
-
-    const missing: string[] = []
-    for (const c of saved) {
-      if (!(await window.desktop.fileExists(c.path))) {
-        missing.push(c.path)
-        continue
-      }
-      // 重新探测时长，文件被替换过也能保持一致
-      const sourceDuration = await probeMediaDuration(c.path, c.kind).catch(() => c.sourceDuration)
-      useProject.getState().addClip({ ...c, sourceDuration })
+  // 把工程数据（v2 / v1）加载进 store。启动时不自动打开任何工程。
+  const loadProjectData = async (data: unknown): Promise<void> => {
+    const project = parseProjectData(data)
+    const staticImage = (path: string): boolean => /\.(?:jpe?g|png|bmp)$/i.test(path)
+    const unsupportedImages = project.images.filter((image) => !staticImage(image.path)).map((image) => image.path)
+    project.images = project.images.filter((image) => staticImage(image.path))
+    if (project.style.bgImage && !staticImage(project.style.bgImage)) {
+      unsupportedImages.push(project.style.bgImage)
+      project.style = { ...project.style, bgType: 'solid', bgImage: null }
     }
-    if (missing.length > 0 && !silent) {
+    const missing: string[] = []
+    const clips: Parameters<ReturnType<typeof useProject.getState>['hydrate']>[0]['clips'] = []
+    for (const saved of project.clips) {
+      const sourcePath = saved.sourcePath ?? saved.path
+      let path = saved.path
+      if (!(await window.desktop.fileExists(path)) && sourcePath !== path && await window.desktop.fileExists(sourcePath)) {
+        path = saved.kind === 'video' ? (await window.desktop.ensurePlayable(sourcePath)).path : sourcePath
+      }
+      const exists = await window.desktop.fileExists(path)
+      const sourceDuration = exists ? await probeMediaDuration(path, saved.kind).catch(() => saved.sourceDuration) : saved.sourceDuration
+      if (!exists) missing.push(sourcePath)
+      clips.push({ ...saved, path, sourcePath, sourceDuration, offline: !exists })
+    }
+    const imageChecks = await Promise.all(project.images.map(async (image) => ({ image, exists: await window.desktop.fileExists(image.path) })))
+    const absentImages = imageChecks.filter((item) => !item.exists).map((item) => item.image.path)
+    useProject.getState().hydrate({ ...project, clips })
+    if (missing.length > 0) {
       alert(t('app.mediaMissing', { list: missing.join('\n') }))
     }
+    if (absentImages.length > 0) alert(`Missing background images:\n${absentImages.join('\n')}`)
+    if (unsupportedImages.length > 0) alert(`Animated or unsupported background images were not loaded:\n${[...new Set(unsupportedImages)].join('\n')}`)
   }
 
   const openProject = async (): Promise<void> => {
     const file = await window.desktop.openProject()
     if (!file) return
+    if (!(await confirmReplaceProject())) return
     try {
       await loadProjectData(JSON.parse(file.text))
     } catch {
       alert(t('app.projectParseFail'))
+      return
     }
+    // Remember only a project that parsed and loaded successfully. Persistence
+    // failure must not turn an otherwise successful open into a parse error.
+    await window.desktop.rememberProjectPath(file.path).catch(() => {})
   }
+
+  // 原生菜单与工具条共用同一份命令，保证两处行为完全一致
+  const commands: AppCommands = {
+    importLrc: () => void importLrc(),
+    importVideo: () => void importVideo(),
+    importAudio: () => void importAudio(),
+    importPlugin: () => void importPlugin(),
+    openProject: () => void openProject(),
+    saveProject: () => void saveProject(),
+    exportSrt: () => void exportSrt(),
+    exportVideo: () => setShowExport(true)
+  }
+  // 命令每次渲染都是新对象；用 ref 兜住最新的一份，菜单监听只挂一次
+  const commandsRef = useRef(commands)
+  commandsRef.current = commands
+
+  useEffect(
+    () =>
+      window.desktop.onMenuCommand((cmd) => {
+        if (cmd === 'toggleConsole') setShowConsole((v) => !v)
+        else if (cmd === 'undo' || cmd === 'redo' || cmd === 'selectAll') {
+          const editable = activeEditorTarget()
+          if (editable) {
+            if (cmd === 'selectAll' && (editable instanceof HTMLInputElement || editable instanceof HTMLTextAreaElement)) editable.select()
+            else document.execCommand(cmd)
+          } else if (cmd === 'undo') useProject.getState().undo()
+          else if (cmd === 'redo') useProject.getState().redo()
+          else useProject.getState().selectAllCaptions()
+        }
+        else commandsRef.current[cmd]()
+      }),
+    []
+  )
+
+  useEffect(() => window.desktop.onMenuTogglePanel((id) => useWindows.getState().toggle(id)), [])
+
+  // 勾选/置灰跟着界面走：这些一变就把整份菜单状态推给主进程重建原生菜单。
+  // 文案在这边解析（渲染进程才有用户装的语言包），所以语言一换也要重推。
+  useEffect(() => {
+    window.desktop.setMenuState({
+      labels: {
+        openProject: t('topbar.openProject'),
+        saveProject: t('topbar.saveProject'),
+        importLrc: t('topbar.importLyrics'),
+        importVideo: t('topbar.importVideo'),
+        importAudio: t('topbar.importAudio'),
+        importPlugin: t('topbar.importPlugin'),
+        exportSrt: t('topbar.exportSrt'),
+        exportVideo: t('topbar.exportVideo'),
+        toggleConsole: t('console.title'),
+        panels: t('menu.panels'),
+        undo: locale === 'zh' ? '撤销' : 'Undo',
+        redo: locale === 'zh' ? '重做' : 'Redo',
+        selectAll: locale === 'zh' ? '全选' : 'Select All'
+      },
+      panels: WINDOW_REGISTRY.map((w) => ({
+        id: w.id,
+        label: t(w.labelKey as Parameters<typeof t>[0]),
+        visible: !hiddenPanels[w.id]
+      })),
+      consoleOpen: showConsole,
+      hasProject: canSave,
+      hasCaptions,
+      canExport
+    })
+    // t 每次渲染都是新函数，改依赖 locale
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale, hiddenPanels, showConsole, canSave, hasCaptions, canExport])
+
+  useEffect(() => window.desktop.onCloseRequested(() => {
+    void (async () => {
+      if (!(await confirmReplaceProject())) return
+      await window.desktop.confirmClose()
+    })()
+  }), [])
 
   return (
     <div className="app">
       <header className="topbar">
-        <h1>{t('topbar.title')}</h1>
-        <button className="btn" onClick={() => void importLrc()}>
-          {t('topbar.importLyrics')} {lrcName ? `· ${lrcName}` : ''}
-        </button>
-        <button className="btn" onClick={() => void importVideo()}>
-          {t('topbar.importVideo')} {videoCount > 0 ? t('topbar.videoSuffix', { n: videoCount }) : ''}
-        </button>
-        <button className="btn" onClick={() => void importAudio()}>
-          {t('topbar.importAudio')} {audioCount > 0 ? t('topbar.audioSuffix', { n: audioCount }) : ''}
-        </button>
+        <span className="brand">
+          <Logo />
+          <h1>{t('topbar.title')}</h1>
+        </span>
+        <Toolbar
+          commands={commands}
+          hasProject={canSave}
+          hasCaptions={hasCaptions}
+          canExport={canExport}
+          consoleOpen={showConsole}
+          toggleConsole={() => setShowConsole((v) => !v)}
+        />
         <div className="spacer" />
-        <button className="btn" onClick={() => void importPlugin()} title={t('app.importPluginTitle')}>
-          {t('topbar.importPlugin')}
-        </button>
-        <button className="btn" onClick={() => void openProject()}>
-          {t('topbar.openProject')}
-        </button>
-        <button className="btn" disabled={!hasLines} onClick={() => void saveProject()}>
-          {t('topbar.saveProject')}
-        </button>
-        <button className="btn" disabled={!hasLines} onClick={() => void exportSrt()}>
-          {t('topbar.exportSrt')}
-        </button>
-        <button className="btn btn-primary" disabled={!hasLines} onClick={() => setShowExport(true)}>
-          {t('topbar.exportVideo')}
-        </button>
-        <button
-          className={`btn${showConsole ? ' active' : ''}`}
-          onClick={() => setShowConsole((v) => !v)}
-          title={t('console.hint')}
-        >
-          {t('console.title')}
-        </button>
-        <WindowsMenu />
         <LanguageMenu />
       </header>
 

@@ -9,6 +9,7 @@ import {
   explodeLoops,
   normalizeLoop,
   shiftClip,
+  clampStartNoOverlap,
   splitClipAt,
   withClipDefaults,
   sanitizeVideoFx,
@@ -33,6 +34,7 @@ function clip(over: Partial<MediaClip> = {}): MediaClip {
     tx: 0,
     ty: 0,
     scale: 1,
+    rotate: 0,
     fadeInMs: 0,
     fadeOutMs: 0,
     ...over
@@ -329,5 +331,31 @@ describe('splitClipAt', () => {
   it('切点在外部返回 null', () => {
     expect(splitClipAt(clip(), 1000, 0)).toBeNull()
     expect(splitClipAt(clip(), 5000, 0)).toBeNull()
+  })
+})
+
+describe('clampStartNoOverlap 同层视频不重叠', () => {
+  // 一个长 2000 的段，右邻居 [5000, 8000]，左邻居 [0, 1000]
+  const neighbors: [number, number][] = [
+    [0, 1000],
+    [5000, 8000]
+  ]
+  it('空隙内自由移动', () => {
+    expect(clampStartNoOverlap(neighbors, 2000, 2000, 2500)).toBe(2500)
+  })
+  it('向右拖过头贴住右邻居左缘（不重叠）', () => {
+    // desired 4000 → end 6000 会盖住右邻居；夹到 5000-2000=3000
+    expect(clampStartNoOverlap(neighbors, 2000, 2000, 4000)).toBe(3000)
+  })
+  it('向左拖过头贴住左邻居右缘', () => {
+    expect(clampStartNoOverlap(neighbors, 2000, 2000, -500)).toBe(1000)
+  })
+  it('无邻居时只受 0 下限约束', () => {
+    expect(clampStartNoOverlap([], 2000, 2000, 9000)).toBe(9000)
+    expect(clampStartNoOverlap([], 2000, 2000, -100)).toBe(0)
+  })
+  it('恰好贴边不算重叠', () => {
+    // end 恰等于右邻居 start = 5000 允许
+    expect(clampStartNoOverlap(neighbors, 2000, 2000, 3000)).toBe(3000)
   })
 })
