@@ -25,8 +25,10 @@ main {
 .product-heading {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 16px;
   margin-bottom: 34px;
+  text-align: center;
 }
 
 .product-heading img {
@@ -37,7 +39,7 @@ main {
 }
 
 h1, h2, p { margin-top: 0; }
-h1 { margin-bottom: 4px; font-size: 30px; letter-spacing: -0.02em; }
+h1 { margin: 0; font-size: 30px; letter-spacing: -0.02em; }
 h2 { margin: 34px 0 14px; font-size: 19px; color: #fff; }
 .eyebrow { color: #a5b4fc; font-size: 13px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 .muted { color: #a5a5b5; }
@@ -89,6 +91,17 @@ td { color: #d2d2db; }
 a { color: #a5b4fc; text-decoration: none; }
 a:hover { color: #c7d2fe; text-decoration: underline; }
 
+.company-identity { text-align: center; }
+.powered-by {
+  margin: 0 0 3px;
+  color: #a5a5b5;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.company-identity h2 { margin: 0 0 6px; }
+.company-website { margin: 0 0 22px; }
 .company-copy { color: #d7d7e0; font-size: 16px; line-height: 1.72; }
 .company-copy.lead { color: #fff; font-weight: 650; }
 .company-logo {

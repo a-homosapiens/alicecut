@@ -22,6 +22,14 @@ async function inspectPage(file, query) {
       version: document.querySelector('#app-version')?.textContent ?? '',
       company: document.querySelector('.company-copy.lead')?.textContent ?? '',
       website: document.querySelector('a')?.href ?? '',
+      poweredBy: document.querySelector('.powered-by')?.textContent ?? '',
+      productAlignment: document.querySelector('.product-heading')
+        ? getComputedStyle(document.querySelector('.product-heading')).justifyContent
+        : '',
+      companyAlignment: document.querySelector('.company-identity')
+        ? getComputedStyle(document.querySelector('.company-identity')).textAlign
+        : '',
+      hasRemovedMissionCopy: document.body.textContent.includes("we don't just build technology"),
       images: [...document.images].map((image) => ({
         complete: image.complete,
         width: image.naturalWidth,
@@ -62,6 +70,12 @@ app.whenReady().then(async () => {
   }
   if (about.website !== 'https://www.artificialhomosapiens.com/') {
     throw new Error(`About page website is incorrect: ${JSON.stringify(about)}`)
+  }
+  if (about.poweredBy !== 'Powered by' || about.productAlignment !== 'center' || about.companyAlignment !== 'center') {
+    throw new Error(`About page identity alignment is incorrect: ${JSON.stringify(about)}`)
+  }
+  if (about.hasRemovedMissionCopy) {
+    throw new Error(`About page still contains the removed mission paragraph: ${JSON.stringify(about)}`)
   }
   for (const result of [help, about]) {
     if (result.images.length === 0 || result.images.some((image) => !image.complete || image.width === 0 || image.height === 0)) {

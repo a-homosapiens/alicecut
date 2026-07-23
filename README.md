@@ -248,6 +248,10 @@ AliceCut ships Smiley Sans, Noto Sans SC, and Inter as starter fonts, and provid
 
 Current optional font sources include [Masa Font](https://github.com/max32002/masafont), [Noto Sans SC](https://fonts.google.com/noto/specimen/Noto%2BSans%2BSC), [Noto Serif SC](https://fonts.google.com/noto/specimen/Noto%2BSerif%2BSC), [Inter](https://fonts.google.com/specimen/Inter), [Anton](https://fonts.google.com/specimen/Anton), [Fredoka](https://fonts.google.com/specimen/Fredoka), [Playfair Display](https://fonts.google.com/specimen/Playfair%2BDisplay), [ChongXi Seal](https://xiaoxue.iis.sinica.edu.tw/chongxi/copyright.htm), and [ToronoGlitch](https://github.com/amazusa/ToronoGlitch). Verify each asset's upstream license before adding or redistributing it. ChongXi Seal uses CC BY-ND 3.0 Taiwan and must retain attribution without modification; ToronoGlitch is distributed under the SIL Open Font License according to its upstream repository.
 
+## AI assistance
+
+AliceCut's development has been assisted by Anthropic Claude and OpenAI Codex. This acknowledgement describes development tooling only; neither AI system is treated as a formal repository contributor or commit co-author.
+
 ## About
 
 AliceCut is developed by [Artificial Homo Sapiens](https://www.ArtificialHomoSapiens.com/), a company of Homo sapiens, by Homo sapiens, and for Homo sapiens.
