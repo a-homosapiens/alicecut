@@ -249,6 +249,7 @@ interface ProjectState {
   setClipStart(id: number, startMs: number): void
   setClipLoop(id: number, loop: LoopSpec): void
   setClipSpeed(id: number, speed: number): void
+  setClipReverse(id: number, reverse: boolean): void
   setClipLayer(id: number, layer: number): void
   setClipVolume(id: number, volume: number): void
   replaceClipMedia(id: number, path: string, sourcePath: string, sourceDuration: number): void
@@ -675,6 +676,10 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, speed: s } : c)) })
   },
 
+  setClipReverse(id, reverse) {
+    set({ clips: get().clips.map((c) => (c.id === id && c.kind === 'video' ? { ...c, reverse } : c)) })
+  },
+
   setClipLayer(id, layer) {
     const l = Math.min(MAX_LAYER, Math.max(0, Math.round(layer)))
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, layer: l } : c)) })
@@ -801,7 +806,10 @@ export const useProject = create<ProjectState>((set, get) => ({
   setGlobalEffectDuration(which, durationMs) {
     const state = get()
     const positiveSegments = state.lines.map((line) => Math.max(0, line.end - line.start)).filter((ms) => ms > 0)
-    const segmentMs = positiveSegments.length > 0 ? Math.min(...positiveSegments) : Infinity
+    // A global default must remain usable by longer captions. Each caption is
+    // clamped independently at render time, so the shortest segment must not
+    // silently cap the entire project.
+    const segmentMs = positiveSegments.length > 0 ? Math.max(...positiveSegments) : Infinity
     const value = Math.min(segmentMs, Math.max(0, Math.round(durationMs)))
     if (which === 'in') {
       set({ style: {

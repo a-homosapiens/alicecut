@@ -208,6 +208,7 @@ export async function applyClips(clips: HeadlessClip[]): Promise<void> {
       sourceIn: c.sourceInMs,
       sourceOut: Math.min(c.sourceOutMs ?? sourceDuration, sourceDuration),
       speed: c.speed,
+      reverse: c.reverse,
       loop: c.loop,
       layer: c.layer,
       tx: c.tx,

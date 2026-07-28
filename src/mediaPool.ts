@@ -3,6 +3,7 @@ import {
   clipGain,
   clipTransition,
   clipRenderSourceTime,
+  clipPlaybackStartSourceTime,
   junctionLeadMs,
   junctionInFxAt,
   type MediaClip,
@@ -86,6 +87,16 @@ export function drawBackgroundImage(
 }
 
 const pool = new Map<number, HTMLVideoElement | HTMLAudioElement>()
+/** Avoid flooding the console every animation frame for one persistent media failure. */
+const reportedMediaErrors = new Set<string>()
+
+function reportMediaErrorOnce(clip: MediaClip, phase: 'sync' | 'draw', error: unknown): void {
+  const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  const key = `${clip.id}:${phase}:${message}`
+  if (reportedMediaErrors.has(key)) return
+  reportedMediaErrors.add(key)
+  console.error(`Media ${phase} failed for clip ${clip.id} (${clip.path})`, error)
+}
 // clip id → 最近一次真正 seeked 成功时的源时间(秒);seekClipExact 用它跳过连续请求同一源帧的重复 seek。
 // 必须和 pool 一起在 disposeEl 里清理,否则长会话里条目会一直攒着
 const lastSeekedSec = new Map<number, number>()
@@ -136,6 +147,9 @@ function disposeEl(id: number): void {
   lastSeekedSec.delete(id)
   forwardMediaTime.delete(id)
   forwardLastTarget.delete(id)
+  for (const key of [...reportedMediaErrors]) {
+    if (key.startsWith(`${id}:`)) reportedMediaErrors.delete(key)
+  }
 }
 
 /** 探测媒体文件时长（ms）；无法解码时 reject */
@@ -176,36 +190,43 @@ export function syncMediaPlayback(
 
   for (const clip of clips) {
     if (clip.offline) continue
-    const el = getMediaEl(clip)
-    // 音轨淡入淡出：每帧按时间轴位置设音量
-    if (clip.kind === 'audio') el.volume = Math.min(1, (clip.volume ?? 1) * clipGain(clip, tMs, projectEndMs))
-    const normalSrc = clipSourceTime(clip, tMs, projectEndMs)
-    const lead = clip.kind === 'video' ? junctionLeadMs(clip, clips) : 0
-    // junction 预卷窗口：本段还没到自己的时间，冻结在首帧（暂停并 seek 到 sourceIn），
-    // 好让 drawVideoBackdrop 把它叠加在前一段之上做过渡
-    const inLead = normalSrc === null && lead > 0 && tMs >= clip.start - lead && tMs < clip.start
-    const srcT = inLead ? clip.sourceIn : normalSrc
-    if (srcT === null || !playing || inLead) {
-      if (!el.paused) el.pause()
-      // 暂停态/预卷把画面停在目标源位置（拖动播放头时也实时跟随，半帧容差）；
-      // seek 进行中不打断，seeked 后下一帧自然跟进最新位置
-      if (srcT !== null && !el.seeking && Math.abs(el.currentTime - srcT / 1000) > 0.05) {
+    try {
+      const el = getMediaEl(clip)
+      // 音轨淡入淡出：每帧按时间轴位置设音量
+      if (clip.kind === 'audio') el.volume = Math.min(1, (clip.volume ?? 1) * clipGain(clip, tMs, projectEndMs))
+      const normalSrc = clipSourceTime(clip, tMs, projectEndMs)
+      const lead = clip.kind === 'video' ? junctionLeadMs(clip, clips) : 0
+      // junction 预卷窗口：本段还没到自己的时间，冻结在首帧（暂停并 seek 到 sourceIn），
+      // 好让 drawVideoBackdrop 把它叠加在前一段之上做过渡
+      const inLead = normalSrc === null && lead > 0 && tMs >= clip.start - lead && tMs < clip.start
+      const srcT = inLead ? clipPlaybackStartSourceTime(clip) : normalSrc
+      const reverseVideo = clip.kind === 'video' && clip.reverse
+      if (srcT === null || !playing || inLead || reverseVideo) {
+        if (!el.paused) el.pause()
+        // HAVE_NOTHING media cannot be sought reliably on every Chromium/codec
+        // combination. Metadata will load asynchronously and the next frame
+        // will perform the seek.
+        const seekThreshold = reverseVideo ? 0.005 : 0.05
+        if (srcT !== null && el.readyState > 0 && !el.seeking && Math.abs(el.currentTime - srcT / 1000) > seekThreshold) {
+          el.currentTime = srcT / 1000
+        }
+        continue
+      }
+      if (el.playbackRate !== clip.speed) el.playbackRate = clip.speed
+      if (el.paused) {
+        if (clip.kind === 'audio') {
+          el.defaultMuted = false
+          el.muted = false
+        }
+        if (el.readyState > 0) el.currentTime = srcT / 1000
+        void el.play().catch((error: unknown) => {
+          reportMediaErrorOnce(clip, 'sync', error)
+        })
+      } else if (!el.seeking && Math.abs(el.currentTime - srcT / 1000) > DRIFT_SEC) {
         el.currentTime = srcT / 1000
       }
-      continue
-    }
-    if (el.playbackRate !== clip.speed) el.playbackRate = clip.speed
-    if (el.paused) {
-      if (clip.kind === 'audio') {
-        el.defaultMuted = false
-        el.muted = false
-      }
-      el.currentTime = srcT / 1000
-      void el.play().catch((error: unknown) => {
-        console.error(`Audio/video playback failed for ${clip.path}`, error)
-      })
-    } else if (!el.seeking && Math.abs(el.currentTime - srcT / 1000) > DRIFT_SEC) {
-      el.currentTime = srcT / 1000
+    } catch (error) {
+      reportMediaErrorOnce(clip, 'sync', error)
     }
   }
 }
@@ -406,31 +427,38 @@ export function drawVideoBackdrop(
     .filter((c) => c.kind === 'video' && !c.offline)
     .sort((a, b) => a.layer - b.layer || a.start - b.start)
   for (const clip of videos) {
-    const lead = junctionLeadMs(clip, clips)
-    // junction 预卷窗口内本段也算可见（叠加在前一段之上）
-    if (clipRenderSourceTime(clip, tMs, projectEndMs, lead) === null) continue
-    const el = getMediaEl(clip)
-    if (!(el instanceof HTMLVideoElement)) continue
-    const inLead = lead > 0 && tMs < clip.start
-    // 预卷窗口用 junction 入场姿态；否则正常转场（junction 段跳过自身进场，避免重复）
-    const fx = inLead ? junctionInFxAt(clip, tMs, lead) : clipTransition(clip, tMs, projectEndMs, lead > 0)
-    if (fx.alpha <= 0.004) continue
-    // 无转场时走快路径，避免每帧 save/restore
-    if (fx.alpha === 1 && fx.dxFrac === 0 && fx.dyFrac === 0 && fx.scale === 1 && !fx.wipe) {
-      drawCover(ctx, el, clip, width, height)
-      continue
+    try {
+      const lead = junctionLeadMs(clip, clips)
+      // junction 预卷窗口内本段也算可见（叠加在前一段之上）
+      if (clipRenderSourceTime(clip, tMs, projectEndMs, lead) === null) continue
+      const el = getMediaEl(clip)
+      if (!(el instanceof HTMLVideoElement)) continue
+      const inLead = lead > 0 && tMs < clip.start
+      // 预卷窗口用 junction 入场姿态；否则正常转场（junction 段跳过自身进场，避免重复）
+      const fx = inLead ? junctionInFxAt(clip, tMs, lead) : clipTransition(clip, tMs, projectEndMs, lead > 0)
+      if (fx.alpha <= 0.004) continue
+      // 无转场时走快路径，避免每帧 save/restore
+      if (fx.alpha === 1 && fx.dxFrac === 0 && fx.dyFrac === 0 && fx.scale === 1 && !fx.wipe) {
+        drawCover(ctx, el, clip, width, height)
+        continue
+      }
+      ctx.save()
+      try {
+        ctx.globalAlpha = fx.alpha
+        if (fx.dxFrac !== 0 || fx.dyFrac !== 0) ctx.translate(fx.dxFrac * width, fx.dyFrac * height)
+        if (fx.scale !== 1) {
+          ctx.translate(width / 2, height / 2)
+          ctx.scale(fx.scale, fx.scale)
+          ctx.translate(-width / 2, -height / 2)
+        }
+        if (fx.wipe) applyWipeClip(ctx, fx.wipe, width, height)
+        drawCover(ctx, el, clip, width, height)
+      } finally {
+        ctx.restore()
+      }
+    } catch (error) {
+      reportMediaErrorOnce(clip, 'draw', error)
     }
-    ctx.save()
-    ctx.globalAlpha = fx.alpha
-    if (fx.dxFrac !== 0 || fx.dyFrac !== 0) ctx.translate(fx.dxFrac * width, fx.dyFrac * height)
-    if (fx.scale !== 1) {
-      ctx.translate(width / 2, height / 2)
-      ctx.scale(fx.scale, fx.scale)
-      ctx.translate(-width / 2, -height / 2)
-    }
-    if (fx.wipe) applyWipeClip(ctx, fx.wipe, width, height)
-    drawCover(ctx, el, clip, width, height)
-    ctx.restore()
   }
 }
 

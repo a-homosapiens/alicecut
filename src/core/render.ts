@@ -70,6 +70,8 @@ export interface TrackPlacement {
 
 /** 上一行退场的淡出时长 ms（默认退场；停靠式转场有自己的节奏） */
 const EXIT_MS = 280
+/** Typewriter cursor stays lit for one final pulse after the last character. */
+const TYPEWRITER_FINAL_CURSOR_MS = 530
 
 /** 该行的退场特效（反向播放其进场）；line.effectOutId 为空则 null = 走默认淡出上浮 */
 export function effectOutFor(line: LrcLine): EffectPreset | null {
@@ -640,10 +642,32 @@ function charFxAt(
   intensity: number,
   rand: (key: number) => number,
   unitCount: number,
+  charCount: number,
   enterTOverride?: number
 ): CharFx | null {
   const [uStart, uEnd] = effect.unit === 'word' ? [p.word.start, p.word.end] : [p.char.start, p.char.end]
   const lineDuration = Math.max(1, line.end - line.start)
+  // Typewriter is a synthetic character sequence: its speed must depend only
+  // on character order and the configured In duration. Using LRC character
+  // timestamps here double-compresses ordinary LRC timing and makes the
+  // duration control appear ineffective.
+  if (effect.id === 'typewriter' && enterTOverride == null) {
+    const progress = charCount <= 1 ? 0 : p.globalCharIndex / (charCount - 1)
+    const gateStart = line.start + progress * effect.enterDuration
+    if (tMs < gateStart) return null
+    return effect.apply({
+      unitIndex: p.unitIndex,
+      unitCount,
+      charIndexInUnit: p.charIndexInUnit,
+      enterT: 1,
+      timeInLine: tMs - line.start,
+      lineDuration,
+      unitStart: uStart - line.start,
+      unitEnd: uEnd - line.start,
+      intensity,
+      rand
+    })
+  }
   // The configured In duration describes the whole entrance window. Preserve
   // the source word/character ordering, but remap its stagger into the first
   // 65% so the final unit also settles before the In window ends.
@@ -667,6 +691,26 @@ function charFxAt(
   })
 }
 
+/**
+ * Cursor visibility shared by drawing and frame fingerprints. While typing it
+ * uses the regular blink cadence. Once the final character appears, the phase
+ * resets for exactly one visible pulse and then the cursor is gone.
+ */
+function typewriterCursorVisible(
+  effect: EffectPreset,
+  line: LrcLine,
+  tMs: number,
+  lineAlpha: number,
+  hasVisibleChar: boolean,
+  placedCount: number,
+  exitT?: number
+): boolean {
+  if (!effect.cursor || !hasVisibleChar || lineAlpha < 0.999 || exitT != null || tMs >= line.end) return false
+  const finalTypedAt = line.start + (placedCount <= 1 ? 0 : effect.enterDuration)
+  if (tMs >= finalTypedAt) return tMs < finalTypedAt + TYPEWRITER_FINAL_CURSOR_MS
+  return ((tMs - line.start) / TYPEWRITER_FINAL_CURSOR_MS) % 2 < 1
+}
+
 /** 运动残影：按更早时刻的姿态画 count 枚淡出残影（仅在字符相对当前帧有位移时） */
 function drawCharTrail(
   ctx: CanvasRenderingContext2D,
@@ -679,12 +723,13 @@ function drawCharTrail(
   lineDy: number,
   mainFx: CharFx,
   rand: (key: number) => number,
-  unitCount: number
+  unitCount: number,
+  charCount: number
 ): void {
   const trail = effect.trail!
   const decay = trail.decay ?? 0.5
   for (let i = trail.count; i >= 1; i--) {
-    const gf = charFxAt(effect, p, line, tMs - i * trail.stepMs, style.intensity, rand, unitCount)
+    const gf = charFxAt(effect, p, line, tMs - i * trail.stepMs, style.intensity, rand, unitCount, charCount)
     if (!gf) continue
     // 与当前帧几乎重合 = 没在动，不画残影，避免静止时字符变粗
     if (Math.abs(gf.dx - mainFx.dx) < 0.5 && Math.abs(gf.dy - mainFx.dy) < 0.5) continue
@@ -716,7 +761,6 @@ function drawLine(
   if (placed.length === 0) return
   const rand = seededRand(line.id + 1)
   const unitCount = line.words.length
-  const timeInLine = tMs - line.start
   // 退场：反向播放 effect 的进场（enterT 1→0），所有字一起退；进场用逐字门限
   const enterOverride = exitT != null ? 1 - clamp01(exitT) : undefined
 
@@ -736,14 +780,16 @@ function drawLine(
 
   let lastVisible: PlacedChar | null = null
   for (const p of placed) {
-    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount, enterOverride)
+    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount, placed.length, enterOverride)
     if (!fx) continue
     const alpha = fx.alpha * lineAlpha
     if (alpha <= 0.003 || fx.scale <= 0.003) continue
     lastVisible = p
 
     // 运动残影画在主体之下
-    if (effect.trail && exitT == null) drawCharTrail(ctx, effect, p, line, style, tMs, lineAlpha, lineDy, fx, rand, unitCount)
+    if (effect.trail && exitT == null) {
+      drawCharTrail(ctx, effect, p, line, style, tMs, lineAlpha, lineDy, fx, rand, unitCount, placed.length)
+    }
 
     ctx.save()
     ctx.translate(p.x + fx.dx + line.dx, p.y + fx.dy + lineDy + line.dy)
@@ -772,18 +818,15 @@ function drawLine(
   }
 
   // 打字机光标：跟在最后一个已出现字符后面闪烁
-  if (effect.cursor && lineAlpha > 0.5 && lastVisible && tMs < line.end) {
-    const blink = (timeInLine / 530) % 2 < 1
-    if (blink) {
-      const fs = lastVisible.fontSize
-      ctx.globalAlpha = 0.85 * lineAlpha * style.textAlpha
-      ctx.fillRect(
-        lastVisible.x + line.dx + lastVisible.w / 2 + fs * 0.12,
-        lastVisible.y + line.dy + lineDy - fs * 0.42,
-        fs * 0.07,
-        fs * 0.84
-      )
-    }
+  if (lastVisible && typewriterCursorVisible(effect, line, tMs, lineAlpha, true, placed.length, exitT)) {
+    const fs = lastVisible.fontSize
+    ctx.globalAlpha = 0.85 * lineAlpha * style.textAlpha
+    ctx.fillRect(
+      lastVisible.x + line.dx + lastVisible.w / 2 + fs * 0.12,
+      lastVisible.y + line.dy + lineDy - fs * 0.42,
+      fs * 0.07,
+      fs * 0.84
+    )
   }
   ctx.restore()
 }
@@ -1074,7 +1117,7 @@ function fpLine(
   let lastVisible = -1
   for (let i = 0; i < placed.length; i++) {
     const p = placed[i]
-    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount, enterOverride)
+    const fx = charFxAt(effect, p, line, tMs, style.intensity, rand, unitCount, placed.length, enterOverride)
     if (!fx) continue
     const alpha = fx.alpha * lineAlpha
     if (alpha <= 0.003 || fx.scale <= 0.003) continue
@@ -1087,7 +1130,7 @@ function fpLine(
       const trail = effect.trail
       const decay = trail.decay ?? 0.5
       for (let k = trail.count; k >= 1; k--) {
-        const gf = charFxAt(effect, p, line, tMs - k * trail.stepMs, style.intensity, rand, unitCount)
+        const gf = charFxAt(effect, p, line, tMs - k * trail.stepMs, style.intensity, rand, unitCount, placed.length)
         if (!gf) continue
         if (Math.abs(gf.dx - fx.dx) < 0.5 && Math.abs(gf.dy - fx.dy) < 0.5) continue
         const a = gf.alpha * lineAlpha * (1 - k / (trail.count + 1)) * decay
@@ -1098,9 +1141,8 @@ function fpLine(
   }
 
   // 打字机光标：位置由最后一个可见字符决定，闪烁相位随时间翻转
-  if (effect.cursor && lineAlpha > 0.5 && lastVisible >= 0 && tMs < line.end) {
-    const blink = ((tMs - line.start) / 530) % 2 < 1
-    if (blink) parts.push(`c${lastVisible}`)
+  if (typewriterCursorVisible(effect, line, tMs, lineAlpha, lastVisible >= 0, placed.length, exitT)) {
+    parts.push(`c${lastVisible}`)
   }
 }
 

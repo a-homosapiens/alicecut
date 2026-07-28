@@ -11,7 +11,9 @@ release/
 .env.*
 !.env.example
 .probe/
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # 首装只打包三款基础字体；其余字体位于 font-assets/，由客户端按需从 GitHub 获取。
 public/fonts/*.ttf

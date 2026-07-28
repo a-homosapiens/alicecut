@@ -169,9 +169,11 @@ export function PreviewCanvas(): React.JSX.Element {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     let raf = 0
+    let lastFrameError = ''
     const loop = (): void => {
-      const st = useProject.getState()
-      if (!st.exporting) {
+      try {
+        const st = useProject.getState()
+        if (!st.exporting) {
         tick()
         const style = toRenderStyle(st.style)
         const trackPlacements = allCaptionTracks(st)
@@ -278,6 +280,14 @@ export function PreviewCanvas(): React.JSX.Element {
           ctx.lineTo(ax + aw, gcy)
           ctx.stroke()
           ctx.restore()
+        }
+        }
+        lastFrameError = ''
+      } catch (error) {
+        const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        if (message !== lastFrameError) {
+          lastFrameError = message
+          console.error('AliceCut preview frame failed; the render loop will continue.', error)
         }
       }
       raf = requestAnimationFrame(loop)

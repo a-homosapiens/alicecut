@@ -15,7 +15,8 @@ interface Props {
 }
 
 /**
- * 一个字幕组的内容：歌词行列表（点击跳转、双击编辑文本）、分页粒度、导入/改名/删除、
+ * 一个字幕组的内容：歌词行列表（点击跳转、双击编辑文本）、导入/改名/删除、
+ * 收在更多菜单里的重新分页工具、
  * 竖直位置与可见性（id 0 主字幕组没有这些，位置固定居中、不可删除/隐藏）。
  * 由 TrackList 决定把它渲染在停靠栏里还是 FloatingPanelFrame 内。
  */
@@ -107,6 +108,36 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
         </button>
       )}
 
+      {trackLines.length > 0 && (
+        <details className="caption-panel-more">
+          <summary title={t('tracks.moreActions')} aria-label={t('tracks.moreActions')}>⋯</summary>
+          <div className="caption-panel-more-content">
+            <div className="caption-panel-more-title">{t('lyrics.pagination')}</div>
+            <div className="repaginate">
+              <div className="repaginate-row">
+                <span className="repaginate-label">{t('lyrics.granularity')}</span>
+                <span className="repaginate-count">{t('lyrics.pages', { n: previewPages })}</span>
+              </div>
+              <input
+                type="range"
+                min={200}
+                max={4000}
+                step={100}
+                value={gran}
+                onChange={(e) => setGran(Number(e.target.value))}
+              />
+              <div className="repaginate-row repaginate-ends">
+                <span>{t('lyrics.perWord')}</span>
+                <button className="btn btn-sm" onClick={() => useProject.getState().repaginate(trackId, gran)}>
+                  {t('lyrics.applyPaging')}
+                </button>
+                <span>{t('lyrics.perLine')}</span>
+              </div>
+            </div>
+          </div>
+        </details>
+      )}
+
       {trackId !== 0 && (
         <div className="track-panel-offset">
           <label>
@@ -142,27 +173,6 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
         </p>
       ) : (
         <>
-          <div className="repaginate">
-            <div className="repaginate-row">
-              <span className="repaginate-label">{t('lyrics.granularity')}</span>
-              <span className="repaginate-count">{t('lyrics.pages', { n: previewPages })}</span>
-            </div>
-            <input
-              type="range"
-              min={200}
-              max={4000}
-              step={100}
-              value={gran}
-              onChange={(e) => setGran(Number(e.target.value))}
-            />
-            <div className="repaginate-row repaginate-ends">
-              <span>{t('lyrics.perWord')}</span>
-              <button className="btn btn-sm" onClick={() => useProject.getState().repaginate(trackId, gran)}>
-                {t('lyrics.applyPaging')}
-              </button>
-              <span>{t('lyrics.perLine')}</span>
-            </div>
-          </div>
           {trackLines.map((line) => (
             <div
               key={line.id}

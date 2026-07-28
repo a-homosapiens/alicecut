@@ -120,14 +120,16 @@ MediaClip { id, kind: 'video'|'audio', path, name,
             start,                 ← 时间轴起点 ms
             sourceDuration,        ← 素材总时长 ms
             sourceIn, sourceOut,   ← 源修剪区间 ms（切割产生）
-            speed,                 ← 0.25–4 倍速
+            speed,                 ← 0.01–100 倍速
+            reverse,               ← 视频是否在修剪区间内倒放
             loop: n | 'infinite',  ← 重复次数 / 循环到项目结束
             layer,                 ← 视频层序（高层盖低层，画中画）
             tx, ty, scale }        ← 视频画面平移/缩放（cover 适配为基准）
 ```
 
   核心是 `clipSourceTime(clip, tMs, projectEndMs)`：tMs 在线段激活窗口内时返回
-  `sourceIn + ((tMs - start) % segLen) × speed`（segLen = 修剪区间 ÷ speed），
+  正放为 `sourceIn + ((tMs - start) % segLen) × speed`，倒放从 `sourceOut` 内侧反向映射
+  （segLen = 修剪区间 ÷ speed），
   预览同步、导出取帧、ffmpeg 参数都从它派生。
   切割（`splitClipAt`）：循环线段先按圈展开成 loop=1 的段，再在切点把源区间一分为二。
   项目时长 = max(歌词结尾 + 2s, 有限线段最晚结束)；无限循环线段不参与时长计算。

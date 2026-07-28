@@ -18,6 +18,13 @@ describe('caption effect duration priority', () => {
     line = useProject.getState().lines.find((item) => item.id === id)!
     expect([line.effectInDurationMs, line.effectOutDurationMs]).toEqual([1800, 200])
   })
+
+  it('does not let the shortest caption cap the global duration for longer captions', () => {
+    useProject.getState().loadLrc('[00:00.00]long caption\n[00:04.00]short', 'x.lrc')
+    useProject.getState().setGlobalEffectDuration('in', 3500)
+
+    expect(useProject.getState().style.effectInDurationMs).toBe(3500)
+  })
 })
 
 describe('撤销 / 重做', () => {
@@ -203,6 +210,21 @@ describe('字幕组（多语言字幕）', () => {
     useProject.getState().setTrackOffsetY(0, 999)
     useProject.getState().setTrackVisible(0, false)
     expect(useProject.getState().tracks).toEqual([updated]) // 没有产生 id 0 的记录
+  })
+})
+
+describe('媒体倒放', () => {
+  it('只允许视频线段启用倒放', () => {
+    const video = useProject.getState().addClip({
+      kind: 'video', path: 'v.mp4', name: 'v', start: 0, sourceDuration: 1000
+    })
+    const audio = useProject.getState().addClip({
+      kind: 'audio', path: 'a.mp3', name: 'a', start: 0, sourceDuration: 1000
+    })
+    useProject.getState().setClipReverse(video.id, true)
+    useProject.getState().setClipReverse(audio.id, true)
+    expect(useProject.getState().clips.find((clip) => clip.id === video.id)?.reverse).toBe(true)
+    expect(useProject.getState().clips.find((clip) => clip.id === audio.id)?.reverse).toBe(false)
   })
 })
 

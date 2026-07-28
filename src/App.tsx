@@ -6,6 +6,7 @@ import { validatePlugin } from './core/effects/validator'
 import { clipEnd, MAX_LAYER } from './core/media'
 import { probeMediaDuration } from './mediaPool'
 import { parseProjectData, serializeProject } from './projectFile'
+import { saveProjectDocument, type ProjectSaveMode } from './projectSave'
 import { toggle } from './playback'
 import { PreviewCanvas } from './components/PreviewCanvas'
 import { TransportBar } from './components/TransportBar'
@@ -40,6 +41,8 @@ export function App(): React.JSX.Element {
   const [showExport, setShowExport] = useState(false)
   const [showConsole, setShowConsole] = useState(false)
   const [convertStatus, setConvertStatus] = useState<{ name: string; frac: number } | null>(null)
+  /** The active project file. Save writes here; Save As replaces it only after a successful write. */
+  const projectPathRef = useRef<string | null>(null)
 
   // 导入归一化进度（主进程转视频时推送）
   useEffect(() => window.desktop.onConvertProgress((p) => setConvertStatus(p)), [])
@@ -160,21 +163,31 @@ export function App(): React.JSX.Element {
     if (files) await addMediaClips('audio', files)
   }
 
-  const saveProject = async (): Promise<boolean> => {
+  const projectJson = (): string => JSON.stringify(serializeProject(useProject.getState()), null, 2)
+
+  const persistProject = async (mode: ProjectSaveMode): Promise<boolean> => {
     const st = useProject.getState()
-    const json = JSON.stringify(serializeProject(st), null, 2)
     const base = (st.lrcName ?? t('app.untitled')).replace(/\.[^.]+$/, '')
     try {
-      const path = await window.desktop.saveProject(json, `${base}.alicecut.json`)
-      if (!path) return false
+      const result = await saveProjectDocument(
+        mode,
+        projectPathRef.current,
+        projectJson(),
+        `${base}.alicecut.json`,
+        window.desktop
+      )
+      if (!result.saved) return false
+      projectPathRef.current = result.path
       useProject.getState().markSaved()
-      alert(`Project saved:\n${path}`)
       return true
     } catch (err) {
       alert(`Could not save project:\n${err instanceof Error ? err.message : String(err)}`)
       return false
     }
   }
+
+  const saveProjectAs = (): Promise<boolean> => persistProject('saveAs')
+  const saveProject = (): Promise<boolean> => persistProject('save')
 
   const confirmReplaceProject = async (): Promise<boolean> => {
     if (!useProject.getState().dirty) return true
@@ -304,6 +317,7 @@ export function App(): React.JSX.Element {
     }
     // Remember only a project that parsed and loaded successfully. Persistence
     // failure must not turn an otherwise successful open into a parse error.
+    projectPathRef.current = file.path
     await window.desktop.rememberProjectPath(file.path).catch(() => {})
   }
 
@@ -315,6 +329,7 @@ export function App(): React.JSX.Element {
     importPlugin: () => void importPlugin(),
     openProject: () => void openProject(),
     saveProject: () => void saveProject(),
+    saveProjectAs: () => void saveProjectAs(),
     exportSrt: () => void exportSrt(),
     exportVideo: () => setShowExport(true)
   }
@@ -349,6 +364,7 @@ export function App(): React.JSX.Element {
       labels: {
         openProject: t('topbar.openProject'),
         saveProject: t('topbar.saveProject'),
+        saveProjectAs: t('topbar.saveProjectAs'),
         importLrc: t('topbar.importLyrics'),
         importVideo: t('topbar.importVideo'),
         importAudio: t('topbar.importAudio'),

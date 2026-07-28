@@ -68,6 +68,7 @@ export function saveLastProjectDirectory(directory: string): void {
 export type MenuCommand =
   | 'openProject'
   | 'saveProject'
+  | 'saveProjectAs'
   | 'importLrc'
   | 'importVideo'
   | 'importAudio'
@@ -111,16 +112,18 @@ export function buildMenu(locale: Locale, state: AppMenuState | null = null, emi
 
   if (isMac) template.push({ role: 'appMenu' })
 
-  const cmd = (key: MenuCommand, enabled = true): MenuItemConstructorOptions => ({
+  const cmd = (key: MenuCommand, enabled = true, accelerator?: string): MenuItemConstructorOptions => ({
     label: state?.labels[key] ?? key,
     enabled,
+    accelerator,
     click: () => emit?.command(key)
   })
 
   const fileItems: MenuItemConstructorOptions[] = state
     ? [
         cmd('openProject'),
-        cmd('saveProject', state.hasProject),
+        cmd('saveProject', state.hasProject, 'CommandOrControl+S'),
+        cmd('saveProjectAs', state.hasProject, 'CommandOrControl+Shift+S'),
         { type: 'separator' },
         cmd('importLrc'),
         cmd('importVideo'),

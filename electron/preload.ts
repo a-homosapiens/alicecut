@@ -29,8 +29,10 @@ const api = {
   downloadFont: (url: string): Promise<ArrayBuffer> => ipcRenderer.invoke('font:download', url),
   saveVideoPath: (defaultName: string, ext: 'mp4' | 'mov'): Promise<string | null> =>
     ipcRenderer.invoke('file:saveVideoPath', defaultName, ext),
-  saveProject: (json: string, defaultName: string): Promise<string | null> =>
-    ipcRenderer.invoke('file:saveProject', json, defaultName),
+  writeProject: (json: string, path: string): Promise<void> =>
+    ipcRenderer.invoke('file:writeProject', json, path),
+  saveProjectAs: (json: string, defaultName: string): Promise<string | null> =>
+    ipcRenderer.invoke('file:saveProjectAs', json, defaultName),
   saveSrt: (text: string, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:saveSrt', text, defaultName),
   openProject: (): Promise<OpenedTextFile | null> => ipcRenderer.invoke('file:openProject'),

@@ -462,6 +462,85 @@ function ClipAudioFx({ clip }: { clip: MediaClip }): React.JSX.Element {
 }
 
 /** 选中媒体线段时的工具条控件：切割/起点/循环/速度/提取音频/缩放/删除 */
+function ClipSpeedControl({ clip }: { clip: MediaClip }): React.JSX.Element {
+  const t = useT()
+  const editing = useRef(false)
+  const [draft, setDraft] = useState(clip.speed.toFixed(2))
+  const [sliderMax, setSliderMax] = useState(Math.max(3, Math.ceil(clip.speed)))
+
+  useEffect(() => {
+    if (!editing.current) setDraft(clip.speed.toFixed(2))
+  }, [clip.speed])
+
+  useEffect(() => {
+    editing.current = false
+    setDraft(clip.speed.toFixed(2))
+    setSliderMax(Math.max(3, Math.ceil(clip.speed)))
+  }, [clip.id])
+
+  const normalize = (value: number): number =>
+    Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(value * 100) / 100))
+
+  const applyDraft = (final: boolean): void => {
+    const parsed = Number(draft)
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      if (final) setDraft(clip.speed.toFixed(2))
+      return
+    }
+    const speed = normalize(parsed)
+    useProject.getState().setClipSpeed(clip.id, speed)
+    if (speed > 3) setSliderMax((max) => Math.max(max, Math.ceil(speed)))
+    if (final) setDraft(speed.toFixed(2))
+  }
+
+  return (
+    <label className="tl-speed-ctl" title={t('tl.speedTitle')}>
+      {t('tl.speed')}
+      <input
+        aria-label={t('tl.speed')}
+        className="tl-speed-input"
+        type="text"
+        inputMode="decimal"
+        value={draft}
+        onFocus={() => { editing.current = true }}
+        onChange={(e) => {
+          const next = e.target.value
+          if (!/^\d*(?:\.\d{0,2})?$/.test(next)) return
+          setDraft(next)
+          const parsed = Number(next)
+          if (Number.isFinite(parsed) && parsed > 0) {
+            const speed = normalize(parsed)
+            useProject.getState().setClipSpeed(clip.id, speed)
+            if (speed > 3) setSliderMax((max) => Math.max(max, Math.ceil(speed)))
+          }
+        }}
+        onBlur={() => {
+          applyDraft(true)
+          editing.current = false
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+      />
+      ×
+      <input
+        aria-label={t('tl.speedSlider')}
+        type="range"
+        min={0}
+        max={sliderMax}
+        step={0.01}
+        value={clip.speed}
+        onChange={(e) => {
+          const speed = normalize(Number(e.target.value))
+          setDraft(speed.toFixed(2))
+          useProject.getState().setClipSpeed(clip.id, speed)
+        }}
+      />
+      <span className="tl-speed-max">{sliderMax.toFixed(0)}×</span>
+    </label>
+  )
+}
+
 function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
   const t = useT()
   const st = useProject.getState
@@ -531,19 +610,17 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
         />
         ∞
       </label>
-      <label title={t('tl.speedTitle')}>
-        {t('tl.speed')} {clip.speed}x
-        <input
-          type="range"
-          min={MIN_SPEED}
-          max={MAX_SPEED}
-          step={0.25}
-          value={clip.speed}
-          onChange={(e) => st().setClipSpeed(clip.id, Number(e.target.value))}
-        />
-      </label>
+      <ClipSpeedControl clip={clip} />
       {clip.kind === 'video' && (
         <>
+          <label title={t('tl.reverseTitle')}>
+            <input
+              type="checkbox"
+              checked={clip.reverse}
+              onChange={(e) => st().setClipReverse(clip.id, e.target.checked)}
+            />
+            {t('tl.reverse')}
+          </label>
           <label className="tl-layer-ctl" title={t('tl.layerTitle')}>
             {t('tl.layer')} {clip.layer + 1}
             {/* 界面上层在上方（layer 小），▲ 上移 = 减小层序，▼ 下移 = 增大层序 */}

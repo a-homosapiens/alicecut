@@ -12,6 +12,7 @@ export interface AppCommands {
   importPlugin(): void
   openProject(): void
   saveProject(): void
+  saveProjectAs(): void
   exportSrt(): void
   exportVideo(): void
 }

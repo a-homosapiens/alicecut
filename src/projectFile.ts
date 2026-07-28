@@ -113,6 +113,9 @@ export function parseProjectData(value: unknown): ProjectFileData {
         throw new Error(`clips[${index}].${key} must be a finite number`)
       }
     }
+    if (clip.reverse !== undefined && typeof clip.reverse !== 'boolean') {
+      throw new Error(`clips[${index}].reverse must be a boolean`)
+    }
     return {
       ...clip,
       kind: clip.kind,

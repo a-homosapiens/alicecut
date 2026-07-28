@@ -46,8 +46,10 @@ export interface JobClipSpec {
   /** 源入点/出点（秒）：只取素材的这一段 */
   in?: number
   out?: number
-  /** 播放速度倍率 0.25–4（音轨变速不变调） */
+  /** 播放速度倍率 0.01–100（音轨变速不变调） */
   speed?: number
+  /** Reverse video playback inside the selected in/out interval. */
+  reverse?: boolean
   /** 视频层序：0 在最下，高层画面盖在低层上 */
   layer?: number
   /** 视频画面平移（画布像素）与缩放（cover 适配为 1.0） */
@@ -158,6 +160,7 @@ export interface HeadlessClip {
   /** null = 到素材末尾（时长由渲染进程探测后回填） */
   sourceOutMs: number | null
   speed: number
+  reverse: boolean
   layer: number
   tx: number
   ty: number
@@ -378,6 +381,9 @@ export async function normalizeClips(
     }
     const obj: JobClipSpec = typeof item === 'string' ? { path: item } : item
     if (!obj.path) throw new Error(`job.${kind} 中的线段缺少 path 字段`)
+    if (obj.reverse !== undefined && typeof obj.reverse !== 'boolean') {
+      throw new Error(`job.${kind} reverse must be true/false`)
+    }
     const path = rel(obj.path)
     await access(path).catch(() => {
       throw new Error(`job.${kind} 文件不存在: ${path}`)
@@ -393,6 +399,7 @@ export async function normalizeClips(
       sourceInMs: Math.max(0, Math.round((obj.in ?? 0) * 1000)),
       sourceOutMs: obj.out !== undefined ? Math.round(obj.out * 1000) : null,
       speed: obj.speed ?? 1,
+      reverse: kind === 'video' && obj.reverse === true,
       layer: Math.min(4, Math.max(0, Math.round(obj.layer ?? 0))),
       tx: Math.round(obj.x ?? 0),
       ty: Math.round(obj.y ?? 0),

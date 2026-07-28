@@ -5,6 +5,7 @@ import {
   clipTransition,
   clipSegmentMs,
   clipSourceTime,
+  clipRenderSourceTime,
   clipsDuration,
   explodeLoops,
   normalizeLoop,
@@ -29,6 +30,7 @@ function clip(over: Partial<MediaClip> = {}): MediaClip {
     sourceIn: 0,
     sourceOut: 4000,
     speed: 1,
+    reverse: false,
     loop: 1,
     layer: 0,
     tx: 0,
@@ -224,13 +226,19 @@ describe('withClipDefaults', () => {
     expect(c.sourceIn).toBe(0)
     expect(c.sourceOut).toBe(5000)
     expect(c.speed).toBe(1)
+    expect(c.reverse).toBe(false)
     expect(c.layer).toBe(0)
     expect(c.scale).toBe(1)
   })
-  it('speed 钳制到 0.25–4', () => {
-    expect(withClipDefaults({ ...clip(), speed: 10 }).speed).toBe(4)
-    expect(withClipDefaults({ ...clip(), speed: 0.1 }).speed).toBe(0.25)
+  it('speed 支持两位小数并钳制到有效范围', () => {
+    expect(withClipDefaults({ ...clip(), speed: 1000 }).speed).toBe(100)
+    expect(withClipDefaults({ ...clip(), speed: 0.001 }).speed).toBe(0.01)
+    expect(withClipDefaults({ ...clip(), speed: 3.14 }).speed).toBe(3.14)
     expect(withClipDefaults({ ...clip(), speed: NaN }).speed).toBe(1)
+  })
+  it('only enables reverse for video clips', () => {
+    expect(withClipDefaults({ ...clip(), reverse: true }).reverse).toBe(true)
+    expect(withClipDefaults({ ...clip({ kind: 'audio' }), reverse: true }).reverse).toBe(false)
   })
 })
 
@@ -262,6 +270,16 @@ describe('clipSourceTime', () => {
     expect(clipSourceTime(c, 1000, 0)).toBe(1000)
     expect(clipSourceTime(c, 1500, 0)).toBe(2000) // 0.5s × 2 倍速 = 源 1s 处
     expect(clipSourceTime(c, 2000, 0)).toBeNull() // 已结束
+  })
+  it('maps reverse playback from sourceOut back to sourceIn, including loops', () => {
+    const c = clip({ sourceIn: 1000, sourceOut: 3000, speed: 2, reverse: true, loop: 2 })
+    expect(clipSourceTime(c, 1000, 0)).toBeCloseTo(3000, 2)
+    expect(clipSourceTime(c, 1500, 0)).toBe(2000)
+    expect(clipSourceTime(c, 2000, 0)).toBeCloseTo(3000, 2)
+  })
+  it('freezes a reverse junction pre-roll on the reverse first frame', () => {
+    const c = clip({ sourceIn: 1000, sourceOut: 3000, reverse: true })
+    expect(clipRenderSourceTime(c, 500, 99999, 500)).toBeCloseTo(3000, 2)
   })
   it('范围外返回 null', () => {
     expect(clipSourceTime(clip(), 999, 0)).toBeNull()
@@ -307,6 +325,10 @@ describe('explodeLoops', () => {
     expect(pieces.map((p) => p.start)).toEqual([1000, 5000, 9000])
     expect(pieces[2].sourceOut).toBe(1000) // 9s–10s 只放源的前 1s
   })
+  it('trims a partial reverse loop from the low end of the source interval', () => {
+    const pieces = explodeLoops(clip({ loop: 'infinite', reverse: true }), 10000)
+    expect(pieces[2]).toMatchObject({ sourceIn: 3000, sourceOut: 4000, reverse: true })
+  })
 })
 
 describe('splitClipAt', () => {
@@ -320,6 +342,11 @@ describe('splitClipAt', () => {
     const r = splitClipAt(clip({ speed: 2 }), 2000, 0)! // 时间轴 1 秒处 = 源 2 秒
     expect(r[0].sourceOut).toBe(2000)
     expect(r[1].sourceIn).toBe(2000)
+  })
+  it('keeps the correct source halves when splitting reverse playback', () => {
+    const r = splitClipAt(clip({ reverse: true }), 2500, 0)!
+    expect(r[0]).toMatchObject({ start: 1000, sourceIn: 2500, sourceOut: 4000, reverse: true })
+    expect(r[1]).toMatchObject({ start: 2500, sourceIn: 0, sourceOut: 2500, reverse: true })
   })
   it('循环线段先展开再切', () => {
     const r = splitClipAt(clip({ loop: 2 }), 6000, 0)! // 第二圈 1 秒处

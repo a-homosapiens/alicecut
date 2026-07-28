@@ -359,11 +359,25 @@ describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
     expect(fp(1950, style)).not.toBe(fp(2050, style))
   })
 
-  it('打字机光标：同一闪烁相位内指纹相同，相位翻转后不同', () => {
+  it('uses the complete configured In duration for the Typewriter sequence', () => {
+    const fast = { ...baseStyle, effectId: 'typewriter', effectInDurationMs: 500 }
+    const slow = { ...baseStyle, effectId: 'typewriter', effectInDurationMs: 2000 }
+
+    expect(render(300, fast).fillTextCount).toBeGreaterThan(render(300, slow).fillTextCount)
+    expect(render(1999, slow).fillTextCount).toBe([...line.text].length - 1)
+    expect(render(2000, slow).fillTextCount).toBe([...line.text].length)
+  })
+
+  it('removes the Typewriter cursor after one final flash', () => {
     const style = { ...baseStyle, effectId: 'typewriter' }
-    // In 已完成且尚未进入 Out；700/750 在同一闪烁相位，500/700 跨相位。
-    expect(fp(700, style)).toBe(fp(750, style))
-    expect(fp(500, style)).not.toBe(fp(700, style))
+    const lastIndex = [...line.text].length - 1
+
+    // The last character lands at 480 ms. The cursor then stays on for one
+    // reset 530 ms pulse: [480, 1010), after which it never returns.
+    expect(fp(480, style)).toContain(`c${lastIndex}`)
+    expect(fp(1009, style)).toContain(`c${lastIndex}`)
+    expect(fp(1010, style)).not.toContain(`c${lastIndex}`)
+    expect(render(1009, style).fillRectCount).toBe(render(1010, style).fillRectCount + 1)
   })
 
   it('行结束后的空档期指纹相同', () => {

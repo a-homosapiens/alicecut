@@ -11,6 +11,7 @@ export const zh = {
   'topbar.importPlugin': '导入插件',
   'topbar.openProject': '打开工程',
   'topbar.saveProject': '保存工程',
+  'topbar.saveProjectAs': '工程另存为…',
   'topbar.exportSrt': '导出字幕',
   'topbar.exportVideo': '导出视频',
 
@@ -196,6 +197,9 @@ export const zh = {
   'tl.loopInfiniteTitle': '一直循环到项目结束',
   'tl.speedTitle': '播放速度（音轨导出时变速不变调）',
   'tl.speed': '速度',
+  'tl.speedSlider': '播放速度滑杆',
+  'tl.reverse': '倒放',
+  'tl.reverseTitle': '反向播放此视频片段',
   'tl.layer': '图层',
   'tl.layerTitle': '图层：高层画面盖在低层上（画中画）。也可在时间轴上竖向拖动线段换层',
   'tl.moveUp': '上移一层',
@@ -235,6 +239,7 @@ export const zh = {
 
   // 字幕组内容（CaptionTrackPanel）
   'lyrics.empty1': '尚未导入歌词',
+  'lyrics.pagination': '字幕分页',
   'lyrics.granularity': '分页粒度',
   'lyrics.pages': '≈ {n} 页',
   'lyrics.perWord': '逐词',
@@ -260,6 +265,7 @@ export const zh = {
   'tracks.selectAll': '选中此组全部行',
   'tracks.selectAllShort': '全选',
   'tracks.selectAllHint': '选中后可在右侧样式面板批量调整此组文字样式',
+  'tracks.moreActions': '更多字幕工具',
   'tracks.renamePlaceholder': '字幕组名称',
   'tracks.offsetY': '纵向位置',
   'tracks.offsetHint': '与其它字幕组错开，避免叠在一起；用了停靠式转场（翻转/上移）且历史句数较多时建议加大',

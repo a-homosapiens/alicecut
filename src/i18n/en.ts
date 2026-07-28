@@ -9,6 +9,7 @@ export const en: Record<keyof typeof zh, string> = {
   'topbar.importPlugin': 'Import Plugin',
   'topbar.openProject': 'Open Project',
   'topbar.saveProject': 'Save Project',
+  'topbar.saveProjectAs': 'Save Project As…',
   'topbar.exportSrt': 'Export Subtitles',
   'topbar.exportVideo': 'Export Video',
 
@@ -194,6 +195,9 @@ export const en: Record<keyof typeof zh, string> = {
   'tl.loopInfiniteTitle': 'Loop until the project ends',
   'tl.speedTitle': 'Playback speed (audio keeps pitch on export)',
   'tl.speed': 'Speed',
+  'tl.speedSlider': 'Playback speed slider',
+  'tl.reverse': 'Reverse',
+  'tl.reverseTitle': 'Play this video clip backwards',
   'tl.layer': 'Layer',
   'tl.layerTitle': 'Layer: higher layers cover lower ones (picture-in-picture). Drag a clip vertically to change.',
   'tl.moveUp': 'Move up one layer',
@@ -233,6 +237,7 @@ export const en: Record<keyof typeof zh, string> = {
 
   // Lyrics panel
   'lyrics.empty1': 'No lyrics imported yet',
+  'lyrics.pagination': 'Caption pagination',
   'lyrics.granularity': 'Paging granularity',
   'lyrics.pages': '≈ {n} pages',
   'lyrics.perWord': 'Per word',
@@ -258,6 +263,7 @@ export const en: Record<keyof typeof zh, string> = {
   'tracks.selectAll': 'Select all lines in track',
   'tracks.selectAllShort': 'Select all',
   'tracks.selectAllHint': 'Selecting lets you batch-edit this track’s text style in the panel on the right',
+  'tracks.moreActions': 'More caption tools',
   'tracks.renamePlaceholder': 'Track name',
   'tracks.offsetY': 'Vertical position',
   'tracks.offsetHint':

@@ -125,7 +125,7 @@ async function resolveEncoderForSettings(encode: EncodeSettings): Promise<Resolv
   return resolveEncoder(encode.codec, encode.hwAccel)
 }
 
-/** 变速 → atempo 链：atempo 单级限 [0.5, 2]，超出的分解成多级（0.25–4 至多两级） */
+/** 变速 → atempo 链：atempo 单级限 [0.5, 2]，超出的倍率分解成多级。 */
 function atempoChain(speed: number): string[] {
   const chain: string[] = []
   let f = speed

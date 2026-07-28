@@ -49,8 +49,10 @@ export interface MediaClip {
   /** 源入点/出点 ms（切割产生的修剪区间），0 ≤ in < out ≤ sourceDuration */
   sourceIn: number
   sourceOut: number
-  /** 播放速度倍率（0.25–4），时间轴长度 = 修剪区间 / speed */
+  /** 播放速度倍率（0.01–100），时间轴长度 = 修剪区间 / speed */
   speed: number
+  /** Play the trimmed source interval backwards. Currently exposed for video clips. */
+  reverse: boolean
   /** 重复次数（≥1）；'infinite' = 一直循环到项目结束 */
   loop: LoopSpec
   /** 轨道层序（同类内 0 在最下；视频高层画面盖在低层上） */
@@ -76,8 +78,8 @@ export interface MediaClip {
 /** 媒体线段最大层序（视频/音频共用）；层 0 为最底 */
 export const MAX_LAYER = 4
 
-export const MIN_SPEED = 0.25
-export const MAX_SPEED = 4
+export const MIN_SPEED = 0.01
+export const MAX_SPEED = 100
 
 /** 规范化 loop：非法值回退为 1，数字向下取整且至少 1 */
 export function normalizeLoop(loop: unknown): LoopSpec {
@@ -114,6 +116,7 @@ export function withClipDefaults(
     sourceIn,
     sourceOut,
     speed,
+    reverse: c.kind === 'video' && c.reverse === true,
     loop,
     layer: Math.min(MAX_LAYER, Math.max(0, Math.round(c.layer ?? 0))),
     tx: c.tx ?? 0,
@@ -304,7 +307,7 @@ export function junctionLeadMs(clip: MediaClip, clips: readonly MediaClip[]): nu
 
 /**
  * 渲染用源时间：正常窗口内 = clipSourceTime；junction 预卷窗口 [start−lead, start) 内冻结在首帧
- * （sourceIn）；两者都不在时返回 null。
+ * （正放为 sourceIn，倒放为 sourceOut 内侧）；两者都不在时返回 null。
  */
 export function clipRenderSourceTime(
   clip: MediaClip,
@@ -314,7 +317,7 @@ export function clipRenderSourceTime(
 ): number | null {
   const normal = clipSourceTime(clip, tMs, projectEndMs)
   if (normal !== null) return normal
-  if (leadMs > 0 && tMs >= clip.start - leadMs && tMs < clip.start) return clip.sourceIn
+  if (leadMs > 0 && tMs >= clip.start - leadMs && tMs < clip.start) return clipPlaybackStartSourceTime(clip)
   return null
 }
 
@@ -363,7 +366,16 @@ export function clipSourceTime(clip: MediaClip, tMs: number, projectEndMs: numbe
   if (clip.sourceOut <= clip.sourceIn) return null
   if (tMs < clip.start || tMs >= clipEnd(clip, projectEndMs)) return null
   const seg = clipSegmentMs(clip)
-  return clip.sourceIn + ((tMs - clip.start) % seg) * clip.speed
+  const offset = ((tMs - clip.start) % seg) * clip.speed
+  if (!clip.reverse) return clip.sourceIn + offset
+  // sourceOut is an exclusive trim boundary. Stay just inside it so seeking to
+  // the first reverse frame does not put Chromium at the media's ended state.
+  return Math.max(clip.sourceIn, clip.sourceOut - Math.max(0.001, offset))
+}
+
+/** Source frame shown at the beginning of a clip, including reverse playback. */
+export function clipPlaybackStartSourceTime(clip: MediaClip): number {
+  return clip.reverse ? Math.max(clip.sourceIn, clip.sourceOut - 0.001) : clip.sourceIn
 }
 
 /** 有限线段中最晚的结束 ms（无限循环线段不决定项目时长） */
@@ -424,9 +436,13 @@ export function explodeLoops(clip: MediaClip, projectEndMs: number): Omit<MediaC
       loop: 1,
       // 末段可能被项目结束截短：调整源出点保持画面内容一致
       sourceOut:
-        pieceEnd < s + seg
+        !clip.reverse && pieceEnd < s + seg
           ? Math.round(clip.sourceIn + (pieceEnd - s) * clip.speed)
-          : clip.sourceOut
+          : clip.sourceOut,
+      sourceIn:
+        clip.reverse && pieceEnd < s + seg
+          ? Math.round(clip.sourceOut - (pieceEnd - s) * clip.speed)
+          : clip.sourceIn
     })
   }
   return out
@@ -452,9 +468,15 @@ export function splitClipAt(
       out.push(p)
       continue
     }
-    const cutSrc = Math.round(p.sourceIn + (tMs - p.start) * p.speed)
-    out.push({ ...p, sourceOut: cutSrc })
-    out.push({ ...p, start: Math.round(tMs), sourceIn: cutSrc })
+    if (p.reverse) {
+      const cutSrc = Math.round(p.sourceOut - (tMs - p.start) * p.speed)
+      out.push({ ...p, sourceIn: cutSrc })
+      out.push({ ...p, start: Math.round(tMs), sourceOut: cutSrc })
+    } else {
+      const cutSrc = Math.round(p.sourceIn + (tMs - p.start) * p.speed)
+      out.push({ ...p, sourceOut: cutSrc })
+      out.push({ ...p, start: Math.round(tMs), sourceIn: cutSrc })
+    }
   }
   return out
 }

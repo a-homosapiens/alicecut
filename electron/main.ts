@@ -54,7 +54,7 @@ const DIALOG: Record<Locale, Record<string, string>> = {
     openVideoTitle: '导入视频文件', videoFilter: '视频',
     openImageTitle: '选择背景图片', imageFilter: '图片',
     openFontTitle: '导入字体文件', fontFilter: '字体',
-    saveProjectTitle: '保存工程', projectFilter: 'AliceCut 工程',
+    saveProjectAsTitle: '工程另存为', projectFilter: 'AliceCut 工程',
     saveSrtTitle: '导出字幕', srtFilter: 'SRT 字幕',
     openPluginTitle: '导入特效插件', pluginFilter: '特效插件',
     openProjectTitle: '打开工程',
@@ -68,7 +68,7 @@ const DIALOG: Record<Locale, Record<string, string>> = {
     openVideoTitle: 'Import video', videoFilter: 'Video',
     openImageTitle: 'Choose background image', imageFilter: 'Images',
     openFontTitle: 'Import font', fontFilter: 'Fonts',
-    saveProjectTitle: 'Save project', projectFilter: 'AliceCut Project',
+    saveProjectAsTitle: 'Save project as', projectFilter: 'AliceCut Project',
     saveSrtTitle: 'Export subtitles', srtFilter: 'SRT Subtitles',
     openPluginTitle: 'Import effect plugin', pluginFilter: 'Effect Plugin',
     openProjectTitle: 'Open project',
@@ -415,14 +415,21 @@ function registerFileHandlers(): void {
     return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
   })
 
-  ipcMain.handle('file:saveProject', async (event, json: string, defaultName: string) => {
+  ipcMain.handle('file:writeProject', async (_event, json: string, path: string) => {
+    if (typeof path !== 'string' || !isAbsolute(path)) throw new Error('Project path must be absolute')
+    await writeFile(path, portableProjectJson(json, path), 'utf-8')
+    saveLastProjectDirectory(dirname(path))
+  })
+
+  ipcMain.handle('file:saveProjectAs', async (event, json: string, defaultName: string) => {
     const { canceled, filePath } = await showModalSaveDialog(event, {
-      title: dlg('saveProjectTitle'),
+      title: dlg('saveProjectAsTitle'),
       defaultPath: defaultName,
       filters: [{ name: dlg('projectFilter'), extensions: ['alicecut.json'] }]
     })
     if (canceled || !filePath) return null
     await writeFile(filePath, portableProjectJson(json, filePath), 'utf-8')
+    saveLastProjectDirectory(dirname(filePath))
     return filePath
   })
 

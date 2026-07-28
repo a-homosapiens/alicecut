@@ -36,4 +36,19 @@ describe('parseProjectData', () => {
       lines: [{ id: 0, start: 0, end: 1000, text: 'x', words: [{ text: 'x', start: 0, end: 1, chars: 'bad' }] }]
     })).toThrow(/Invalid word/)
   })
+
+  it('preserves a boolean reverse flag and rejects invalid values', () => {
+    const base = {
+      version: 6,
+      meta: { offset: 0 },
+      style: {},
+      lines: [],
+      clips: [{ kind: 'video', path: 'v.mp4', name: 'v', start: 0, sourceDuration: 1000, reverse: true }]
+    }
+    expect(parseProjectData(base).clips[0].reverse).toBe(true)
+    expect(() => parseProjectData({
+      ...base,
+      clips: [{ ...base.clips[0], reverse: 'yes' }]
+    })).toThrow(/reverse must be a boolean/)
+  })
 })

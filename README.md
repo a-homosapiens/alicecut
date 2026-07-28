@@ -42,7 +42,7 @@ Relative media paths in `job.json` resolve from the job file's directory, which 
 
 - Import multiple video and audio files into independent timeline layers.
 - View audio waveforms and align captions visually with the soundtrack.
-- Move, trim, duplicate, split, loop, and change clip speed from `0.25×` to `4×`.
+- Move, trim, duplicate, split, loop, reverse video, and set clip speed precisely from `0.01×` to `100×`.
 - Control audio volume, fades, and mixing; extract an audio track from a video.
 - Stack video layers for backgrounds and picture-in-picture compositions.
 - Pan, scale, and rotate video directly in the composition.
@@ -157,6 +157,7 @@ Example `job.json`:
       "path": "media/background.mp4",
       "start": 0,
       "loop": "infinite",
+      "reverse": true,
       "scale": 1.1
     }
   ],
