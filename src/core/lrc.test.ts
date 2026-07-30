@@ -208,6 +208,43 @@ describe('layoutLine', () => {
     expect(ys.size).toBeGreaterThan(1)
   })
 
+  it('respects an explicit newline inside one caption', () => {
+    const source = parseLrc('[00:01.00]placeholder').lines[0]
+    const multiline = rebuildLineText(source, 'Top line\nBottom line')
+    const placed = layoutLine(multiline, {
+      width: 1080,
+      height: 1920,
+      fontSize: 88,
+      ...layoutDefaults,
+      variant: 'center',
+      measure
+    })
+    const topY = placed.find((item) => item.word.text === 'Top')?.y
+    const bottomY = placed.find((item) => item.word.text === 'Bottom')?.y
+    expect(topY).toBeDefined()
+    expect(bottomY).toBeDefined()
+    expect(bottomY!).toBeGreaterThan(topY!)
+  })
+
+  it('uses an explicit newline as a new column in vertical layout', () => {
+    const source = parseLrc('[00:01.00]placeholder').lines[0]
+    const multiline = rebuildLineText(source, 'Right\nLeft')
+    const placed = layoutLine(multiline, {
+      width: 1080,
+      height: 1920,
+      fontSize: 88,
+      ...layoutDefaults,
+      orientation: 'vertical',
+      variant: 'center',
+      measure
+    })
+    const rightX = placed.find((item) => item.word.text === 'Right')?.x
+    const leftX = placed.find((item) => item.word.text === 'Left')?.x
+    expect(rightX).toBeDefined()
+    expect(leftX).toBeDefined()
+    expect(rightX!).toBeGreaterThan(leftX!)
+  })
+
   it('无法断开的超长西文词会缩小到安全区内', () => {
     const r = parseLrc('[00:01.00]SupercalifragilisticexpialidociousWithoutBreaks')
     const placed = layoutLine(r.lines[0], {

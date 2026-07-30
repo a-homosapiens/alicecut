@@ -339,10 +339,12 @@ body,
 .lyric-row .txt {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.lyric-row input {
+.lyric-row input,
+.lyric-row textarea {
   flex: 1;
   background: var(--bg);
   border: 1px solid var(--accent);
@@ -350,6 +352,12 @@ body,
   border-radius: 4px;
   padding: 2px 6px;
   font-size: 13px;
+}
+
+.lyric-row textarea {
+  min-height: 52px;
+  line-height: 1.35;
+  resize: vertical;
 }
 
 /* ---- 样式面板 ---- */
@@ -1275,6 +1283,91 @@ body,
   margin-top: 16px;
 }
 
+.caption-export-modal {
+  width: 540px;
+}
+
+.caption-export-hint,
+.caption-export-format-note {
+  line-height: 1.5;
+}
+
+.caption-export-tracks {
+  min-width: 0;
+  max-height: 330px;
+  overflow-y: auto;
+  margin: 14px 0;
+  padding: 0;
+  border: 0;
+}
+
+.caption-export-tracks legend {
+  margin-bottom: 8px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.modal .caption-export-track {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.modal .caption-export-track:hover,
+.modal .caption-export-track.selected {
+  border-color: var(--accent);
+}
+
+.modal .caption-export-track.selected {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+
+.caption-export-track input {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.caption-export-track-info {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.caption-export-track-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.caption-export-hidden {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.caption-export-error {
+  color: #fb7185;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
 /* 文字内容编辑框（弹窗与右栏共用） */
 .text-edit-input {
   width: 100%;
@@ -1284,6 +1377,8 @@ body,
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 14px;
+  line-height: 1.45;
+  resize: vertical;
 }
 
 .text-edit-input:focus {

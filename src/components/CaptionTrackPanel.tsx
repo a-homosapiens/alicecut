@@ -188,16 +188,30 @@ export function CaptionTrackPanel({ trackId }: Props): React.JSX.Element | null 
             >
               <span className="ts">{fmt(line.start)}</span>
               {editingId === line.id ? (
-                <input
+                <textarea
                   autoFocus
+                  rows={2}
                   value={draft}
+                  aria-label={t('edit.label')}
+                  title={t('edit.multilineHint')}
                   onChange={(e) => setDraft(e.target.value)}
-                  onBlur={() => commitText(line.id)}
+                  onBlur={(e) => {
+                    if (e.currentTarget.dataset.cancelled !== 'true') commitText(line.id)
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitText(line.id)
-                    if (e.key === 'Escape') setEditingId(null)
+                    e.stopPropagation()
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                      e.preventDefault()
+                      commitText(line.id)
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      e.currentTarget.dataset.cancelled = 'true'
+                      setEditingId(null)
+                    }
                   }}
                   onClick={(e) => e.stopPropagation()}
+                  onDoubleClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <span className="txt">{line.text || t('tl.interlude')}</span>

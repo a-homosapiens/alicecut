@@ -11,7 +11,7 @@ export function TextEditModal({ lineId, onClose }: { lineId: number; onClose: ()
   const t = useT()
   const line = useProject((s) => s.lines.find((l) => l.id === lineId))
   const [draft, setDraft] = useState(line?.text ?? '')
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // 目标行消失（撤销/删除）时关闭，避免编辑一个不存在的行
   useEffect(() => {
@@ -37,20 +37,25 @@ export function TextEditModal({ lineId, onClose }: { lineId: number; onClose: ()
         <h2>{t('edit.title')}</h2>
         <label>
           {t('edit.label')}
-          <input
+          <textarea
             ref={inputRef}
             className="text-edit-input"
+            rows={5}
             value={draft}
             placeholder={t('edit.placeholder')}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               // 输入框内按键不冒泡到全局快捷键（空格播放、Delete 删行等）
               e.stopPropagation()
-              if (e.key === 'Enter') commit()
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault()
+                commit()
+              }
               if (e.key === 'Escape') onClose()
             }}
           />
         </label>
+        <p className="hint">{t('edit.multilineHint')}</p>
         <div className="modal-actions">
           <button className="btn" onClick={onClose}>
             {t('edit.cancel')}

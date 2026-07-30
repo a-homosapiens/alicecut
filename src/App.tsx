@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { allCaptionTracks, useProject } from './store/project'
-import { serializeSrt } from './core/subtitles'
+import { useProject } from './store/project'
 import { loadPluginSource, installPlugin } from './plugins'
 import { validatePlugin } from './core/effects/validator'
 import { clipEnd, MAX_LAYER } from './core/media'
@@ -14,6 +13,7 @@ import { Timeline } from './components/Timeline'
 import { TrackList } from './components/TrackList'
 import { StylePanel } from './components/StylePanel'
 import { ExportDialog } from './components/ExportDialog'
+import { CaptionExportDialog } from './components/CaptionExportDialog'
 import { CommandConsole } from './components/CommandConsole'
 import { ResourceLibrary } from './components/ResourceLibrary'
 import { LanguageMenu } from './components/LanguageMenu'
@@ -39,6 +39,7 @@ export function App(): React.JSX.Element {
   const locale = useProject((s) => s.locale)
   const hiddenPanels = useWindows((s) => s.hidden)
   const [showExport, setShowExport] = useState(false)
+  const [showCaptionExport, setShowCaptionExport] = useState(false)
   const [showConsole, setShowConsole] = useState(false)
   const [convertStatus, setConvertStatus] = useState<{ name: string; frac: number } | null>(null)
   /** The active project file. Save writes here; Save As replaces it only after a successful write. */
@@ -196,42 +197,12 @@ export function App(): React.JSX.Element {
     return choice === 'discard' || await saveProject()
   }
 
-  const exportSrt = async (): Promise<void> => {
-    const st = useProject.getState()
-    const tracks = allCaptionTracks(st).filter((track) =>
-      st.lines.some((line) => line.kind !== 'text' && (line.trackId ?? 0) === track.id)
-    )
-    if (tracks.length === 0) {
+  const exportSrt = (): void => {
+    if (!useProject.getState().lines.some((line) => line.kind !== 'text' && line.text.trim().length > 0)) {
       alert(t('app.noSubtitles'))
       return
     }
-    let chosen = tracks[0]
-    if (tracks.length > 1) {
-      const answer = prompt(
-        `Choose a subtitle track to export:\n${tracks.map((track, i) => `${i + 1}. ${track.name || track.lrcName || `Track ${track.id + 1}`}${track.visible ? '' : ' (hidden)'}`).join('\n')}`,
-        '1'
-      )
-      if (answer == null) return
-      const index = Number(answer) - 1
-      if (!Number.isInteger(index) || !tracks[index]) {
-        alert('Invalid subtitle track selection.')
-        return
-      }
-      chosen = tracks[index]
-    }
-    const selectedLines = st.lines.filter((line) => line.kind !== 'text' && (line.trackId ?? 0) === chosen.id)
-    const srt = serializeSrt(selectedLines)
-    if (!srt) {
-      alert(t('app.noSubtitles'))
-      return
-    }
-    const base = (st.lrcName ?? t('app.subtitleDefault')).replace(/\.[^.]+$/, '')
-    try {
-      const path = await window.desktop.saveSrt(srt, `${base}.srt`)
-      if (path) alert(`Subtitles exported:\n${path}`)
-    } catch (err) {
-      alert(`Could not export subtitles:\n${err instanceof Error ? err.message : String(err)}`)
-    }
+    setShowCaptionExport(true)
   }
 
   const importPlugin = async (): Promise<void> => {
@@ -330,7 +301,7 @@ export function App(): React.JSX.Element {
     openProject: () => void openProject(),
     saveProject: () => void saveProject(),
     saveProjectAs: () => void saveProjectAs(),
-    exportSrt: () => void exportSrt(),
+    exportSrt,
     exportVideo: () => setShowExport(true)
   }
   // 命令每次渲染都是新对象；用 ref 兜住最新的一份，菜单监听只挂一次
@@ -435,6 +406,7 @@ export function App(): React.JSX.Element {
       <CommandConsole open={showConsole} />
 
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+      {showCaptionExport && <CaptionExportDialog onClose={() => setShowCaptionExport(false)} />}
 
       {convertStatus && (
         <div className="modal-backdrop">

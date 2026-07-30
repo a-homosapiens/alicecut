@@ -31,8 +31,9 @@ function LineContentEditor({ line }: { line: { id: number; text: string } }): Re
   return (
     <div className="style-content-edit">
       <span className="style-content-title">{t('style.contentSection')}</span>
-      <input
+      <textarea
         className="text-edit-input"
+        rows={3}
         value={draft}
         placeholder={t('style.contentPlaceholder')}
         onChange={(e) => {
@@ -220,8 +221,9 @@ export function StylePanel(): React.JSX.Element {
         invalidateLayoutCache()
       }
       applyText({ fontFamily: font.family })
-    } catch {
-      alert(t('style.fontLoadFail'))
+    } catch (error) {
+      console.error(`Failed to install font ${font.family}`, error)
+      alert(t(font.builtin ? 'style.fontDownloadFail' : 'style.fontLoadFail'))
     } finally {
       setLoadingFont(null)
     }

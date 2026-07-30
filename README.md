@@ -34,9 +34,9 @@ Relative media paths in `job.json` resolve from the job file's directory, which 
 - Preserve precise word/character timing when available and interpolate timing for standard LRC files.
 - Replace the primary captions or import another file as an independent caption track.
 - Edit multiple caption tracks for translations, pronunciation guides, alternate versions, or layered text.
-- Drag caption segments to retime them, trim either edge, edit text directly, and batch-select captions.
+- Drag caption segments to retime them, trim either edge, edit multiline text directly, and batch-select captions.
 - Add standalone text blocks for titles, watermarks, labels, and annotations.
-- Export an individual caption track as SRT.
+- Export any caption track as SRT from its current edited state; projects with multiple tracks provide a track picker.
 
 ### Layered media timeline
 

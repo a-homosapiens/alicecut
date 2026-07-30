@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
+  net,
   protocol,
   shell,
   type IpcMainInvokeEvent,
@@ -38,6 +39,7 @@ import {
 } from './menu'
 import { registerConvertHandlers } from './convert'
 import { portableProjectJson, resolvedProjectJson } from './projectPathsCore'
+import { isSupportedFontData, MAX_FONT_FILE_BYTES } from '../src/core/fontData'
 
 /** 当前界面语言（registerLocaleHandlers 维护）；文件对话框文案据此本地化 */
 let currentLocale: Locale = 'zh'
@@ -409,10 +411,16 @@ function registerFileHandlers(): void {
     if (url.protocol !== 'https:' || !FONT_DOWNLOAD_HOSTS.has(url.hostname)) {
       throw new Error('Font download host is not allowed')
     }
-    const response = await fetch(url)
+    const response = await net.fetch(url.toString())
     if (!response.ok) throw new Error(`Font download failed: HTTP ${response.status}`)
+    const declaredSize = Number(response.headers.get('content-length'))
+    if (Number.isFinite(declaredSize) && declaredSize > MAX_FONT_FILE_BYTES) {
+      throw new Error('Font download is too large')
+    }
     const data = Buffer.from(await response.arrayBuffer())
-    return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    const fontData = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+    if (!isSupportedFontData(fontData)) throw new Error('Font download did not return a supported font file')
+    return fontData
   })
 
   ipcMain.handle('file:writeProject', async (_event, json: string, path: string) => {

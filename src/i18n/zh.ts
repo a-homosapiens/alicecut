@@ -133,12 +133,13 @@ export const zh = {
   'style.restoreDefault': '恢复跟随全局默认',
   'style.contentSection': '文字内容',
   'style.contentPlaceholder': '输入这句字幕/文字…',
-  'style.contentHint': '直接改这句的文字；也可在时间轴上双击该片段编辑',
+  'style.contentHint': '直接改这句的文字；Enter 换行，也可在时间轴上双击该片段编辑',
   'edit.title': '编辑文字内容',
   'edit.label': '文字',
   'edit.placeholder': '输入这句字幕/文字…',
   'edit.save': '保存',
   'edit.cancel': '取消',
+  'edit.multilineHint': 'Enter 换行 · Ctrl/Command+Enter 保存',
   'style.effectIn': '进场特效',
   'style.effectOut': '退场特效',
   'style.effectOutDefault': '默认淡出',
@@ -155,6 +156,7 @@ export const zh = {
   'style.intensity': '强度',
   'style.importFont': '导入字体文件…',
   'style.fontDownload': '下载并安装字体',
+  'style.fontDownloadFail': '字体下载失败，请检查网络连接后重试',
   'style.fontLoadFail': '字体加载失败，请确认文件是有效的 ttf/otf 字体',
 
   // 时间轴 · 线段与工具条（Timeline 子组件）
@@ -336,6 +338,20 @@ export const zh = {
   'export.close': '关闭',
   'export.failed': '❌ 导出失败',
   'export.ffmpegExit': 'FFmpeg 退出码 {code}',
+
+  // 字幕导出对话框
+  'captionExport.title': '导出字幕',
+  'captionExport.currentStateHint': '导出当前工程中的字幕文字与时间，包括编辑、移动、裁剪、切分、新增、删除和重新分页后的结果。',
+  'captionExport.selectTrack': '选择要导出的字幕组',
+  'captionExport.track': '字幕组',
+  'captionExport.hidden': '已隐藏',
+  'captionExport.source': '来源：{name}',
+  'captionExport.formatNote': 'SRT 会保留字幕文字和起止时间；视觉样式、特效、位置以及逐词卡拉 OK 时间不属于 SRT 格式。',
+  'captionExport.chooseAndExport': '选择位置并导出',
+  'captionExport.saving': '保存中…',
+  'captionExport.done': '字幕已导出：',
+  'captionExport.failed': '字幕导出失败：{message}',
+  'captionExport.trackUnavailable': '该字幕组已不存在，请选择其它字幕组。',
 
   // 顶层提示 / 弹窗（App.tsx）
   'app.noLyrics': '未在文件中找到带时间戳的歌词行，请确认是有效的 .lrc / .srt / .vtt 文件',

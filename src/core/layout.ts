@@ -37,6 +37,8 @@ export interface LayoutOptions {
 
 interface RowItem {
   word: LrcWord
+  /** Number of explicit newlines immediately before this word. */
+  breakBefore: number
   unitIndex: number
   fontSize: number
   rotate: number
@@ -54,6 +56,17 @@ function packUnits(items: RowItem[], maxSize: number, gap: number, sizeOf: (it: 
   let group: RowItem[] = []
   let acc = 0
   for (const item of items) {
+    if (item.breakBefore > 0) {
+      const hadContent = group.length > 0
+      if (hadContent) {
+        groups.push(group)
+        group = []
+        acc = 0
+      }
+      // One newline ends the current row/column. Extra newlines preserve blank lines.
+      const blankGroups = hadContent ? item.breakBefore - 1 : item.breakBefore
+      for (let i = 0; i < blankGroups; i++) groups.push([])
+    }
     const s = sizeOf(item)
     const need = group.length === 0 ? s : acc + gap + s
     if (group.length > 0 && need > maxSize) {
@@ -78,9 +91,10 @@ function makeItems(
   const letterSpacing = opts.letterSpacing
   return line.words.map((word, unitIndex) => {
     const fontSize = sizeFor(unitIndex)
+    const breakBefore = word.leading?.match(/\n/g)?.length ?? 0
     const charWidths = word.chars.map((c) => opts.measure(c.text, fontSize))
     const width = charWidths.reduce((a, b) => a + b, 0) + letterSpacing * Math.max(0, word.chars.length - 1)
-    return { word, unitIndex, fontSize, rotate: rotateFor(unitIndex), charWidths, width, letterSpacing }
+    return { word, breakBefore, unitIndex, fontSize, rotate: rotateFor(unitIndex), charWidths, width, letterSpacing }
   })
 }
 
@@ -126,7 +140,8 @@ function layoutHorizontal(items: RowItem[], opts: LayoutOptions, rand: (k: numbe
   const rows = packUnits(fitted, maxWidth, gap, (it) => it.width)
 
   const rowHeights = rows.map(
-    (row) => Math.max(...row.map((it) => it.fontSize)) * (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
+    (row) => (row.length > 0 ? Math.max(...row.map((it) => it.fontSize)) : opts.fontSize) *
+      (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
   )
   const blockHeight = rowHeights.reduce((a, b) => a + b, 0)
   let y = opts.height / 2 - blockHeight / 2
@@ -191,7 +206,8 @@ function layoutVertical(items: RowItem[], opts: LayoutOptions, rand: (k: number)
 
   // 列的横向步进（列宽，含列间距）——对应横排里的行高
   const columnWidths = columns.map(
-    (col) => Math.max(...col.map((it) => it.fontSize)) * (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
+    (col) => (col.length > 0 ? Math.max(...col.map((it) => it.fontSize)) : opts.fontSize) *
+      (isStaggered ? 1.4 : 1.3) * opts.lineSpacing
   )
   const blockWidth = columnWidths.reduce((a, b) => a + b, 0)
   // 列组水平居中；从右向左：第一列（阅读顺序）落在整块的最右侧

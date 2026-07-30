@@ -1,3 +1,5 @@
+import { isSupportedFontData } from './core/fontData'
+
 export interface FontOption {
   family: string
   label: string
@@ -155,11 +157,27 @@ async function registerFont(font: BuiltinFont, data: ArrayBuffer): Promise<void>
   registeredFamilies.add(font.family)
 }
 
+async function readLocalFont(file: string): Promise<ArrayBuffer | null> {
+  try {
+    const response = await fetch(`./fonts/${file}`)
+    if (!response.ok) return null
+    const data = await response.arrayBuffer()
+    return isSupportedFontData(data) ? data : null
+  } catch {
+    return null
+  }
+}
+
 async function fetchFont(font: BuiltinFont): Promise<ArrayBuffer> {
-  const local = await fetch(`./fonts/${font.file}`)
-  if (local.ok) return local.arrayBuffer()
+  // Vite's development server may return index.html with HTTP 200 for a
+  // missing public asset. Only accept an actual font before skipping the
+  // GitHub download fallback.
+  const local = await readLocalFont(font.file)
+  if (local) return local
   if (font.bundled) throw new Error(`Bundled font is missing: ${font.label}`)
-  return window.desktop.downloadFont(repoFontUrl(font.file))
+  const downloaded = await window.desktop.downloadFont(repoFontUrl(font.file))
+  if (!isSupportedFontData(downloaded)) throw new Error(`Downloaded font is invalid: ${font.label}`)
+  return downloaded
 }
 
 /** 下载（或读取随应用提供的文件）、持久缓存并注册一个字体。 */
@@ -167,9 +185,17 @@ export async function installBuiltinFont(family: string): Promise<void> {
   const font = BUILTIN_FONTS.find((item) => item.family === family)
   if (!font) return
   const cached = await readCachedFont(family)
-  const data = cached ?? await fetchFont(font)
+  if (cached && isSupportedFontData(cached)) {
+    try {
+      await registerFont(font, cached)
+      return
+    } catch {
+      // Replace a corrupt or browser-incompatible cache entry from the source.
+    }
+  }
+  const data = await fetchFont(font)
   await registerFont(font, data)
-  if (!cached) await writeCachedFont(family, data)
+  await writeCachedFont(family, data)
 }
 
 /** 启动时只恢复用户已经安装过的字体，不下载新字体。 */
@@ -177,13 +203,17 @@ export async function restoreInstalledFonts(): Promise<Set<string>> {
   const installed = new Set<string>()
   await Promise.all(BUILTIN_FONTS.map(async (font) => {
     let data = await readCachedFont(font.family).catch(() => null)
+    if (data && !isSupportedFontData(data)) data = null
     if (!data && (font.bundled || LOCAL_CJK_FAMILIES.has(font.family))) {
-      const local = await fetch(`./fonts/${font.file}`).catch(() => null)
-      if (local?.ok) data = await local.arrayBuffer()
+      data = await readLocalFont(font.file)
     }
     if (!data) return
-    await registerFont(font, data)
-    installed.add(font.family)
+    try {
+      await registerFont(font, data)
+      installed.add(font.family)
+    } catch {
+      // One missing or corrupt local font must not abort restoration of others.
+    }
   }))
   return installed
 }
@@ -194,11 +224,9 @@ export async function loadBuiltinFonts(): Promise<FontOption[]> {
   for (const font of BUILTIN_FONTS) {
     try {
       let data = await readCachedFont(font.family).catch(() => null)
-      if (!data) {
-        const response = await fetch(`./fonts/${font.file}`)
-        if (!response.ok) throw new Error(String(response.status))
-        data = await response.arrayBuffer()
-      }
+      if (data && !isSupportedFontData(data)) data = null
+      data ??= await readLocalFont(font.file)
+      if (!data) throw new Error(`Font is unavailable: ${font.label}`)
       await registerFont(font, data)
       loaded.push({ family: font.family, label: font.label, builtin: true })
     } catch {

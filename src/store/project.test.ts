@@ -106,6 +106,18 @@ describe('行级文字覆盖', () => {
   })
 })
 
+describe('multiline caption text', () => {
+  beforeEach(() => useProject.getState().loadLrc(LRC, 'x.lrc'))
+
+  it('preserves a user-inserted newline when rebuilding word timing', () => {
+    const id = useProject.getState().lines[0].id
+    useProject.getState().updateLineText(id, 'First line\nSecond line')
+    const updated = useProject.getState().lines.find((line) => line.id === id)!
+    expect(updated.text).toBe('First line\nSecond line')
+    expect(updated.words.some((word) => word.leading?.includes('\n'))).toBe(true)
+  })
+})
+
 describe('字幕组（多语言字幕）', () => {
   beforeEach(() => useProject.getState().loadLrc(LRC, 'x.lrc')) // 载入会清空 tracks
 

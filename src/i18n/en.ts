@@ -131,12 +131,13 @@ export const en: Record<keyof typeof zh, string> = {
   'style.restoreDefault': 'Follow global default',
   'style.contentSection': 'Text content',
   'style.contentPlaceholder': 'Type this caption / text…',
-  'style.contentHint': 'Edit this line’s text directly; you can also double-click its timeline segment',
+  'style.contentHint': 'Edit this line directly. Enter adds a new line; you can also double-click its timeline segment',
   'edit.title': 'Edit text',
   'edit.label': 'Text',
   'edit.placeholder': 'Type this caption / text…',
   'edit.save': 'Save',
   'edit.cancel': 'Cancel',
+  'edit.multilineHint': 'Enter adds a new line · Ctrl/Command+Enter saves',
   'style.effectIn': 'In effect',
   'style.effectOut': 'Out effect',
   'style.effectOutDefault': 'Default fade',
@@ -153,6 +154,7 @@ export const en: Record<keyof typeof zh, string> = {
   'style.intensity': 'Intensity',
   'style.importFont': 'Import font…',
   'style.fontDownload': 'Download and install font',
+  'style.fontDownloadFail': 'Failed to download the font. Check your internet connection and try again.',
   'style.fontLoadFail': 'Failed to load font. Make sure it is a valid ttf/otf file.',
 
   // Timeline · clips & toolbar
@@ -336,6 +338,21 @@ export const en: Record<keyof typeof zh, string> = {
   'export.close': 'Close',
   'export.failed': '❌ Export failed',
   'export.ffmpegExit': 'FFmpeg exit code {code}',
+
+  // Caption export dialog
+  'captionExport.title': 'Export Captions',
+  'captionExport.currentStateHint':
+    'Exports the current caption text and timing, including edits, moves, trims, splits, additions, deletions, and pagination changes.',
+  'captionExport.selectTrack': 'Choose a caption track',
+  'captionExport.track': 'Caption track',
+  'captionExport.hidden': 'Hidden',
+  'captionExport.source': 'Source: {name}',
+  'captionExport.formatNote': 'SRT preserves caption text and cue timing. Visual styling, effects, positioning, and word-level karaoke timing are not part of the SRT format.',
+  'captionExport.chooseAndExport': 'Choose location and export',
+  'captionExport.saving': 'Saving…',
+  'captionExport.done': 'Captions exported:',
+  'captionExport.failed': 'Could not export captions: {message}',
+  'captionExport.trackUnavailable': 'That caption track is no longer available. Choose another track.',
 
   // Top-level toasts / dialogs (App.tsx)
   'app.noLyrics': 'No timestamped lyric lines found — make sure it is a valid .lrc / .srt / .vtt file.',

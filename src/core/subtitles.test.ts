@@ -65,9 +65,10 @@ describe('parseSrt', () => {
     expect(r.lines[1].text).not.toContain('<')
   })
 
-  it('合并多行 cue 文本', () => {
+  it('保留多行 cue 文本的显式换行', () => {
     const r = parseSrt('1\n00:00:01,000 --> 00:00:02,000\n你好\n世界')
-    expect(r.lines[0].text).toBe('你好 世界')
+    expect(r.lines[0].text).toBe('你好\n世界')
+    expect(serializeSrt(r.lines)).toContain('\n你好\n世界\n')
   })
 
   it('保留西文词间空格，并在重新分页合并时恢复分隔', () => {
@@ -98,6 +99,11 @@ describe('parseVtt', () => {
     const words = r.lines[1].words
     expect(words.map((w) => w.text)).toEqual(['逐词', '高亮', '测试'])
     expect(words.map((w) => w.start)).toEqual([5000, 5500, 6200])
+  })
+
+  it('preserves explicit line breaks in cue text', () => {
+    const r = parseVtt('WEBVTT\n\n00:01.000 --> 00:03.000\nFirst line\nSecond line')
+    expect(r.lines[0].text).toBe('First line\nSecond line')
   })
 })
 

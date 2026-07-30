@@ -86,7 +86,11 @@ export function parseSrt(text: string): ParsedLrc {
     const start = parseTimecode(startRaw)
     if (start == null) continue
     const end = parseTimecode((endRaw ?? '').trim().split(/\s+/)[0] ?? '')
-    const content = stripTags(lines.slice(arrowIdx + 1).join(' ')).replace(/\s+/g, ' ').trim()
+    const content = lines
+      .slice(arrowIdx + 1)
+      .map((line) => stripTags(line).replace(/[ \t]+/g, ' ').trim())
+      .join('\n')
+      .trim()
     if (content.length === 0) continue
     entries.push({ time: start, end: end ?? undefined, content, segments: null })
   }
@@ -107,11 +111,11 @@ export function parseVtt(text: string): ParsedLrc {
     const start = parseTimecode(startRaw)
     if (start == null) continue
     const end = parseTimecode((endRaw ?? '').trim().split(/\s+/)[0] ?? '')
-    const rawContent = lines.slice(arrowIdx + 1).join(' ')
+    const rawContent = lines.slice(arrowIdx + 1).join('\n')
     const segments = parseVttSegments(rawContent, start)
     const content = segments
       ? segments.map((s) => s.text).join('')
-      : stripTags(rawContent).replace(/\s+/g, ' ').trim()
+      : stripTags(rawContent).replace(/[ \t]+/g, ' ').trim()
     if (content.length === 0) continue
     entries.push({ time: start, end: end ?? undefined, content, segments })
   }

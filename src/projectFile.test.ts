@@ -51,4 +51,28 @@ describe('parseProjectData', () => {
       clips: [{ ...base.clips[0], reverse: 'yes' }]
     })).toThrow(/reverse must be a boolean/)
   })
+
+  it('preserves multiline caption text and its explicit layout break', () => {
+    const parsed = parseProjectData({
+      version: 6,
+      meta: { offset: 0 },
+      style: {},
+      lines: [{
+        id: 0,
+        start: 0,
+        end: 2000,
+        text: 'First line\nSecond line',
+        words: [
+          { text: 'First line', start: 0, end: 900, chars: [] },
+          { text: 'Second line', leading: '\n', start: 900, end: 1800, chars: [] }
+        ],
+        effectId: null,
+        dx: 0,
+        dy: 0
+      }],
+      clips: []
+    })
+    expect(parsed.lines[0].text).toBe('First line\nSecond line')
+    expect(parsed.lines[0].words[1].leading).toBe('\n')
+  })
 })
