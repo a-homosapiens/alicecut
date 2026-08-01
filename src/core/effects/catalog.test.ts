@@ -30,6 +30,31 @@ describe('direction-specific built-in effect catalog', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
+  it('never exposes entrance-only or parking effects in the Out picker', () => {
+    const outEffects = EFFECTS.filter((effect) => effect.picker !== 'in')
+    expect(outEffects.every((effect) => !effect.lineTransition && !effect.reveal)).toBe(true)
+    expect(outEffects.map((effect) => effect.id)).toEqual([
+      'none',
+      'pop',
+      'punch',
+      'slide',
+      'typewriter',
+      'glow',
+      'karaoke',
+      'highlightBox',
+      'bounce',
+      'streak',
+      'wobble',
+      ...EXIT_EFFECTS.map((effect) => effect.id)
+    ])
+  })
+
+  it('keeps renderer-special effects out of the Out picker', () => {
+    expect(['wipe', 'iris', 'clockWipe', 'flip', 'flip-bottom', 'rise'].every(
+      (id) => getEffect(id).picker === 'in'
+    )).toBe(true)
+  })
+
   it('provides an identity None effect in both pickers', () => {
     const none = getEffect('none')
     expect(none.picker).toBe('both')

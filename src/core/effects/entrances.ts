@@ -1,7 +1,7 @@
 import { clamp01, easeOutBack, easeOutCubic, easeOutExpo, springEase } from '../easing'
 import type { EffectPreset } from './types'
 
-/** Ten caption-first entrance motions inspired by common social-video text animation families. */
+/** Caption-first entrance motions inspired by common social-video text animation families. */
 export const ENTRANCE_EFFECTS: EffectPreset[] = [
   {
     id: 'float-up',

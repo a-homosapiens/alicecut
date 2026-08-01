@@ -60,6 +60,8 @@ export interface LrcLine {
   /** 本行 In/Out 特效时长覆盖（ms）；缺省/null = 跟随全局设置 */
   effectInDurationMs?: number | null
   effectOutDurationMs?: number | null
+  /** Last-edited duration side; used when a later trim makes In + Out overlap. */
+  effectDurationPriority?: 'in' | 'out'
   /** 本行画面位置偏移（画布像素），画布内拖拽设置 */
   dx: number
   dy: number

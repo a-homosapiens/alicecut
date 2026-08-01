@@ -35,6 +35,8 @@ export interface RenderStyle {
   effectId: string
   effectInDurationMs: number
   effectOutDurationMs: number
+  /** Which side keeps its requested duration when In + Out exceed a caption segment. */
+  effectDurationPriority?: 'in' | 'out'
   intensity: number
   /** Number of old captions kept on screen by the rise transition. */
   riseHistory: number
@@ -73,9 +75,17 @@ const EXIT_MS = 280
 /** Typewriter cursor stays lit for one final pulse after the last character. */
 const TYPEWRITER_FINAL_CURSOR_MS = 530
 
-/** 该行的退场特效（反向播放其进场）；line.effectOutId 为空则 null = 走默认淡出上浮 */
-export function effectOutFor(line: LrcLine): EffectPreset | null {
-  return line.effectOutId ? getEffect(line.effectOutId) : null
+/**
+ * Resolve an independent Out preset. Parking transitions own the boundary
+ * between caption lines, so an old/custom Out must not interrupt their stack.
+ * Standalone text blocks have no caption history and may still use an Out.
+ */
+export function effectOutFor(line: LrcLine, style: RenderStyle): EffectPreset | null {
+  const entrance = getEffect(line.effectId ?? style.effectId)
+  if (line.kind !== 'text' && entrance.lineTransition) return null
+  if (!line.effectOutId) return null
+  const out = getEffect(line.effectOutId)
+  return out.picker === 'in' ? null : out
 }
 
 export interface EffectTiming {
@@ -97,12 +107,25 @@ const durationValue = (value: unknown, fallback: number): number => {
  */
 export function resolveEffectTiming(line: LrcLine, style: RenderStyle): EffectTiming {
   const segmentMs = Math.max(0, line.end - line.start)
-  const baseIn = getEffect(line.effectId ?? style.effectId).enterDuration
-  const baseOut = effectOutFor(line)?.enterDuration ?? EXIT_MS
+  const entrance = getEffect(line.effectId ?? style.effectId)
+  const managedCaptionTransition = line.kind !== 'text' && !!entrance.lineTransition
+  const baseIn = entrance.enterDuration
+  const baseOut = effectOutFor(line, style)?.enterDuration ?? EXIT_MS
   const requestedIn = durationValue(line.effectInDurationMs ?? style.effectInDurationMs, baseIn)
-  const requestedOut = durationValue(line.effectOutDurationMs ?? style.effectOutDurationMs, baseOut)
-  const inMs = Math.min(segmentMs, requestedIn)
-  const outMs = Math.min(requestedOut, Math.max(0, segmentMs - inMs))
+  const requestedOut = managedCaptionTransition
+    ? 0
+    : durationValue(line.effectOutDurationMs ?? style.effectOutDurationMs, baseOut)
+  const priority = line.effectDurationPriority ?? style.effectDurationPriority ?? 'in'
+  const prioritized = priority === 'out'
+    ? {
+        outMs: Math.min(segmentMs, requestedOut),
+        inMs: Math.min(requestedIn, Math.max(0, segmentMs - Math.min(segmentMs, requestedOut)))
+      }
+    : {
+        inMs: Math.min(segmentMs, requestedIn),
+        outMs: Math.min(requestedOut, Math.max(0, segmentMs - Math.min(segmentMs, requestedIn)))
+      }
+  const { inMs, outMs } = prioritized
   return { inMs, outMs, outStartMs: line.end - outMs }
 }
 
@@ -603,9 +626,8 @@ function drawLineStack(
     drawn.add(current - d)
     if (placed.length === 0) continue
     const line = lines[current - d]
-    // A caption with an explicit Out effect has already left at its own
-    // segment end; do not resurrect it as parked history for the next line.
-    if (d > 0 && line.effectOutId) continue
+    // Parking transitions own the history stack; incompatible caption Out
+    // settings are stripped on load and ignored defensively by the renderer.
     const lineStyle = styles[d]
     const args = {
       lineId: line.id,
@@ -891,14 +913,14 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: Re
       : 0
 
     // Explicit Out always wins over a parking-style In transition.
-    const explicitOut = exitP > 0 ? effectOutFor(line) : null
+    const explicitOut = exitP > 0 ? effectOutFor(line, style) : null
     if (explicitOut) {
       drawLine(ctx, explicitOut, line, style, tMs, 1, 0, exitP)
       return
     }
 
     if (!effect.lineTransition) {
-      const out = exitP > 0 ? effectOutFor(line) : null
+      const out = exitP > 0 ? effectOutFor(line, style) : null
       if (effect.reveal && exitP === 0) drawLineReveal(ctx, effect, line, style, tMs)
       else if (out) drawLine(ctx, out, line, style, tMs, 1, 0, exitP)
       else drawLine(ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
@@ -953,8 +975,8 @@ function drawLyricFlow(
   // 当前行 = 最后一个已开始的行（lyric 按 start 排序）
   let current = -1
   for (let i = 0; i < lyric.length; i++) {
-    if (lyric[i].start <= tMs && tMs < lyric[i].end) current = i
-    else break
+    if (lyric[i].start > tMs) break
+    if (tMs < lyric[i].end) current = i
   }
 
   // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
@@ -962,9 +984,7 @@ function drawLyricFlow(
   if (current >= 0) {
     const currentLine = lyric[current]
     const curEffect = effectFor(currentLine, style)
-    const timing = resolveEffectTiming(currentLine, resolveLineStyle(currentLine, style))
-    const explicitOutActive = !!currentLine.effectOutId && timing.outMs > 0 && tMs >= timing.outStartMs
-    if (curEffect.lineTransition && !explicitOutActive) {
+    if (curEffect.lineTransition) {
       drawLineStack(ctx, curEffect, lyric, style, tMs, current, drawnByStack, trackOffsetY)
     }
   }
@@ -983,7 +1003,7 @@ function drawLyricFlow(
       } else {
         // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
         const exitP = easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
-        const out = effectOutFor(line)
+        const out = effectOutFor(line, ls)
         if (out) drawLine(ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
         else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
       }
@@ -1177,15 +1197,15 @@ function fpTextBlock(
     : 0
 
   if (!effect.lineTransition) {
-    const out = exitP > 0 ? effectOutFor(line) : null
+    const out = exitP > 0 ? effectOutFor(line, style) : null
     if (effect.reveal && exitP === 0) fpLineReveal(parts, ctx, effect, line, style, tMs)
     else if (out) fpLine(parts, ctx, out, line, style, tMs, 1, 0, exitP)
     else fpLine(parts, ctx, effect, line, style, tMs, 1 - exitP, -exitP * style.fontSize * 0.5)
     return
   }
 
-  if (exitP > 0 && effectOutFor(line)) {
-    fpLine(parts, ctx, effectOutFor(line)!, line, style, tMs, 1, 0, exitP)
+  if (exitP > 0 && effectOutFor(line, style)) {
+    fpLine(parts, ctx, effectOutFor(line, style)!, line, style, tMs, 1, 0, exitP)
     return
   }
 
@@ -1207,17 +1227,15 @@ function fpLyricFlow(
 
   let current = -1
   for (let i = 0; i < lyric.length; i++) {
-    if (lyric[i].start <= tMs && tMs < lyric[i].end) current = i
-    else break
+    if (lyric[i].start > tMs) break
+    if (tMs < lyric[i].end) current = i
   }
 
   const drawnByStack = new Set<number>()
   if (current >= 0) {
     const currentLine = lyric[current]
     const curEffect = effectFor(currentLine, style)
-    const timing = resolveEffectTiming(currentLine, resolveLineStyle(currentLine, style))
-    const explicitOutActive = !!currentLine.effectOutId && timing.outMs > 0 && tMs >= timing.outStartMs
-    if (curEffect.lineTransition && !explicitOutActive) {
+    if (curEffect.lineTransition) {
       // 停靠姿态（pose/enterFrom）只依赖行内容与样式，导出期间不变；
       // 随时间变化的只有当前行序号与进场缓动进度
       const eased = easeOutCubic(clamp01((tMs - lyric[current].start) / curEffect.enterDuration))
@@ -1241,7 +1259,7 @@ function fpLyricFlow(
       else fpLine(parts, ctx, effect, line, ls, tMs, 1, trackOffsetY)
     } else {
       const exitP = easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
-      const out = effectOutFor(line)
+      const out = effectOutFor(line, ls)
       if (out) fpLine(parts, ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
       else fpLine(parts, ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
     }

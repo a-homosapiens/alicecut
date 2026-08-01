@@ -171,8 +171,19 @@ export async function runConsoleCommand(raw: string, log: CommandLog): Promise<v
     try {
       const ids = useProject.getState().selectedIds
       if (ids.length === 0) throw new Error('no captions selected')
-      useProject.getState().setLineEffectOut(ids, cmd.effectOut ?? null)
-      log(`✓ effectOut: applied to ${ids.length} selected item(s)`)
+      const requested = cmd.effectOut ?? null
+      useProject.getState().setLineEffectOut(ids, requested)
+      const idSet = new Set(ids)
+      const applied = requested == null
+        ? ids.length
+        : useProject.getState().lines.filter((line) => idSet.has(line.id) && line.effectOutId === requested).length
+      if (requested != null && applied === 0) {
+        throw new Error('the chosen effect is entrance-only or the selected Flip/Rise captions manage their own transition')
+      }
+      if (requested != null && applied < ids.length) {
+        log(`⚠ effectOut: ignored for ${ids.length - applied} incompatible Flip/Rise caption(s)`)
+      }
+      log(`✓ effectOut: applied to ${applied} selected item(s)`)
     } catch (err) {
       log(`✗ effectOut: ${errMsg(err)}`)
     }

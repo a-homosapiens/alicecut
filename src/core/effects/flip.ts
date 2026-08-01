@@ -30,6 +30,7 @@ function makeFlip(id: string, name: string, align: 'center' | 'bottom'): EffectP
   return {
     id,
     name,
+    picker: 'in',
     enterDuration: 480,
     layoutVariant: 'center',
     unit: 'line',

@@ -32,6 +32,14 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
       expect(logs).toEqual([])
     })
 
+    it('rejects entrance-only effects supplied as Out effects', () => {
+      const [line] = useProject.getState().lines
+      const logs: string[] = []
+      applyLineEffectsOut({ [`${line.id}`]: 'flip' }, (message) => logs.push(message))
+      expect(useProject.getState().lines[0].effectOutId).toBeNull()
+      expect(logs.some((message) => message.includes('不是可用的退场特效'))).toBe(true)
+    })
+
     it('gives In priority when one command sets both durations', () => {
       const [line] = useProject.getState().lines // 2000 ms segment
       applyLineEffectDurations({ [`${line.id}`]: { in: 1.5, out: 1 } }, noopLog)
@@ -73,7 +81,7 @@ describe('projectCommand（headless CLI 与命令控制台共用的落地层）'
         .lines.filter((l) => l.trackId === track.id)
         .sort((a, b) => a.start - b.start)
       expect(trackLines.map((l) => l.effectId)).toEqual(['rise', 'rise', null])
-      expect(trackLines.map((l) => l.effectOutId ?? null)).toEqual([null, 'dissolve-out', 'dissolve-out'])
+      expect(trackLines.map((l) => l.effectOutId ?? null)).toEqual([null, null, 'dissolve-out'])
       expect(trackLines[2].over).toEqual({ fontSize: 60 })
     })
 

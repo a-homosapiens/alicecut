@@ -72,7 +72,7 @@ export interface JobTextSpec {
   end: number
   /** 特效 id（缺省跟随全局默认） */
   effect?: string
-  /** Exit effect id; played as the text block leaves. */
+  /** Dedicated exit effect id; played as the text block leaves. */
   effectOut?: string
   /** In/Out effect durations in seconds. If both are present, In has priority. */
   effectInDuration?: number
@@ -142,7 +142,7 @@ export interface ExportJobFile {
   style?: Record<string, unknown>
   /** 行级特效："3" 或 "0-7"（按歌词行序号）→ 特效 id */
   lineEffects?: Record<string, string>
-  /** Per-line exit effects: "3" or "0-7" → out-effect id. */
+  /** Per-line dedicated exit effects. Ignored for Flip/Rise caption transitions. */
   lineEffectsOut?: Record<string, string>
   /** Per-line In/Out durations; keys are line ids/ranges. In wins when both are supplied. */
   lineEffectDurations?: Record<string, EffectDurationSpec>

@@ -25,6 +25,43 @@ describe('caption effect duration priority', () => {
 
     expect(useProject.getState().style.effectInDurationMs).toBe(3500)
   })
+
+  it('records the last-edited global and line duration side', () => {
+    useProject.getState().setGlobalEffectDuration('out', 700)
+    expect(useProject.getState().style.effectDurationPriority).toBe('out')
+    useProject.getState().setGlobalEffectDuration('in', 600)
+    expect(useProject.getState().style.effectDurationPriority).toBe('in')
+
+    const id = useProject.getState().lines[0].id
+    useProject.getState().setLineEffectDuration([id], 'out', 500)
+    expect(useProject.getState().lines[0].effectDurationPriority).toBe('out')
+    useProject.getState().setLineEffectDuration([id], 'in', 400)
+    expect(useProject.getState().lines[0].effectDurationPriority).toBe('in')
+  })
+
+  it('clears and rejects independent Out effects for caption parking transitions', () => {
+    const id = useProject.getState().lines[0].id
+    useProject.getState().setLineEffectOut([id], 'evaporate-out')
+    useProject.getState().setLineEffect([id], 'flip')
+    expect(useProject.getState().lines[0].effectOutId).toBeNull()
+
+    useProject.getState().setLineEffectOut([id], 'drop-out')
+    expect(useProject.getState().lines[0].effectOutId).toBeNull()
+  })
+
+  it('still allows standalone text blocks with Flip/Rise to use an independent Out', () => {
+    const text = useProject.getState().addLineAt(5000, 'text', 'Title')
+    useProject.getState().setLineEffect([text.id], 'rise')
+    useProject.getState().setLineEffectOut([text.id], 'implode-out')
+    expect(useProject.getState().lines.find((line) => line.id === text.id)?.effectOutId).toBe('implode-out')
+  })
+
+  it('rejects entrance-only presets used as Out effects on normal captions', () => {
+    const id = useProject.getState().lines[0].id
+    useProject.getState().setLineEffect([id], 'pop')
+    useProject.getState().setLineEffectOut([id], 'flip')
+    expect(useProject.getState().lines[0].effectOutId).toBeNull()
+  })
 })
 
 describe('撤销 / 重做', () => {
