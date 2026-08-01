@@ -963,6 +963,34 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: Re
  * trackOffsetY 是该字幕组相对画面中心的纵向偏移（多语言字幕错开不重叠），
  * 与每行自己的 dy 叠加——用法等同于原先仅在退场时使用的 lineDy 参数。
  */
+const HOLD_UNTIL_NEXT_EFFECTS = new Set(['rise', 'flip', 'flip-bottom'])
+
+/**
+ * Current caption for one track. Rise/Flip captions visually bridge a gap
+ * after their segment ends until the next caption starts. The final caption
+ * deliberately keeps its authored end time.
+ */
+export function lyricFlowCurrentIndex(lyric: LrcLine[], style: RenderStyle, tMs: number): number {
+  let current = -1
+  for (let i = 0; i < lyric.length; i++) {
+    const line = lyric[i]
+    if (line.start > tMs) break
+    if (tMs < line.end) {
+      current = i
+      continue
+    }
+    const next = lyric[i + 1]
+    if (
+      next &&
+      tMs < next.start &&
+      HOLD_UNTIL_NEXT_EFFECTS.has(effectFor(line, style).id)
+    ) {
+      current = i
+    }
+  }
+  return current
+}
+
 function drawLyricFlow(
   ctx: CanvasRenderingContext2D,
   lyric: LrcLine[],
@@ -972,12 +1000,7 @@ function drawLyricFlow(
 ): void {
   if (lyric.length === 0) return
 
-  // 当前行 = 最后一个已开始的行（lyric 按 start 排序）
-  let current = -1
-  for (let i = 0; i < lyric.length; i++) {
-    if (lyric[i].start > tMs) break
-    if (tMs < lyric[i].end) current = i
-  }
+  const current = lyricFlowCurrentIndex(lyric, style, tMs)
 
   // 当前行用停靠式转场时，由它统一绘制自己 + 停靠的历史行
   const drawnByStack = new Set<number>()
@@ -1225,11 +1248,7 @@ function fpLyricFlow(
 ): void {
   if (lyric.length === 0) return
 
-  let current = -1
-  for (let i = 0; i < lyric.length; i++) {
-    if (lyric[i].start > tMs) break
-    if (tMs < lyric[i].end) current = i
-  }
+  const current = lyricFlowCurrentIndex(lyric, style, tMs)
 
   const drawnByStack = new Set<number>()
   if (current >= 0) {

@@ -6,10 +6,13 @@ import {
   clampSpeed,
   clampStartNoOverlap,
   clipEnd,
+  clipSegmentMs,
   clipsDuration,
   normalizeLoop,
   splitClipAt,
+  insertFreezeFrameAt,
   withClipDefaults,
+  DEFAULT_FREEZE_DURATION_MS,
   MAX_LAYER,
   type LoopSpec,
   type MediaClip,
@@ -267,6 +270,8 @@ interface ProjectState {
   setClipTransformFrom(original: { id: number; tx: number; ty: number }, dtx: number, dty: number): void
   setClipScale(id: number, scale: number): void
   setClipRotate(id: number, deg: number): void
+  /** Split a video at tMs and insert a frozen source frame (3 seconds by default). */
+  freezeFrame(id: number, tMs: number, durationMs?: number): boolean
   /** 在 tMs 处切开线段；切点在线段外则不动。返回是否切了 */
   splitClip(id: number, tMs: number): boolean
   setSelectedClip(id: number | null): void
@@ -693,16 +698,18 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   setClipLoop(id, loop) {
     const norm = normalizeLoop(loop)
-    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, loop: norm } : c)) })
+    set({ clips: get().clips.map((c) => (c.id === id && c.freezeFrameMs === undefined ? { ...c, loop: norm } : c)) })
   },
 
   setClipSpeed(id, speed) {
     const s = clampSpeed(speed)
-    set({ clips: get().clips.map((c) => (c.id === id ? { ...c, speed: s } : c)) })
+    set({ clips: get().clips.map((c) => (c.id === id && c.freezeFrameMs === undefined ? { ...c, speed: s } : c)) })
   },
 
   setClipReverse(id, reverse) {
-    set({ clips: get().clips.map((c) => (c.id === id && c.kind === 'video' ? { ...c, reverse } : c)) })
+    set({ clips: get().clips.map((c) => (
+      c.id === id && c.kind === 'video' && c.freezeFrameMs === undefined ? { ...c, reverse } : c
+    )) })
   },
 
   setClipLayer(id, layer) {
@@ -729,7 +736,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({
       clips: get().clips.map((c) => {
         if (c.id !== id) return c
-        const placedMs = c.loop === 'infinite' ? Infinity : ((c.sourceOut - c.sourceIn) / c.speed) * c.loop
+        const placedMs = c.loop === 'infinite' ? Infinity : clipSegmentMs(c) * c.loop
         const clamp = (v: number): number => Math.min(placedMs, Math.max(0, Math.round(v)))
         return {
           ...c,
@@ -763,6 +770,42 @@ export const useProject = create<ProjectState>((set, get) => ({
   setClipRotate(id, deg) {
     const r = Math.max(-180, Math.min(180, Math.round(deg)))
     set({ clips: get().clips.map((c) => (c.id === id ? { ...c, rotate: r } : c)) })
+  },
+
+  freezeFrame(id, tMs, durationMs = DEFAULT_FREEZE_DURATION_MS) {
+    const st = get()
+    const clip = st.clips.find((c) => c.id === id)
+    if (!clip || clip.kind !== 'video' || !Number.isFinite(tMs) || !Number.isFinite(durationMs) || durationMs <= 0) {
+      return false
+    }
+    const projectEndMs = Math.max(
+      lyricsDuration(st.lines),
+      clipsDuration(st.clips),
+      (st.projectDurationSec ?? 0) * 1000
+    )
+    const duration = Math.max(1, Math.round(durationMs))
+    const pieces = insertFreezeFrameAt(clip, tMs, duration, projectEndMs)
+    if (!pieces) return false
+
+    const cut = Math.round(tMs)
+    const shiftedOthers = st.clips
+      .filter((item) => item.id !== id)
+      .map((item) => (
+        item.kind === 'video' && item.layer === clip.layer && item.start >= cut
+          ? { ...item, start: item.start + duration }
+          : item
+      ))
+    const withIds = pieces.map((piece) => ({ ...piece, id: nextClipId++ }))
+    const frozen = withIds.find((piece) => piece.freezeFrameMs !== undefined)
+    // This is one semantic edit even if it follows another control change
+    // within the general history coalescing window.
+    historyLastTime = 0
+    set({
+      clips: sortClips([...shiftedOthers, ...withIds]),
+      selectedIds: [],
+      selectedClipId: frozen?.id ?? null
+    })
+    return frozen !== undefined
   },
 
   splitClip(id, tMs) {

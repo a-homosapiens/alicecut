@@ -208,8 +208,9 @@ export async function runExport(o: RunExportOptions): Promise<RunExportResult> {
           if (srcT !== null) {
             getMediaEl(clip)
             // junction 预卷窗口冻结在首帧：始终精确 seek（不走正向追帧，避免帧被"播走"）
-            const frozen = clipSourceTime(clip, tMs, durationMs) === null
-            if (frozen || clip.reverse || o.videoFrameMode === 'exact') {
+            const junctionPreRoll = clipSourceTime(clip, tMs, durationMs) === null
+            const frozenFrame = clip.freezeFrameMs !== undefined
+            if (junctionPreRoll || frozenFrame || clip.reverse || o.videoFrameMode === 'exact') {
               await seekClipExact(clip, srcT / 1000)
             } else {
               await waitForSourceTime(clip, srcT / 1000)

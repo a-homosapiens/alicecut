@@ -6,12 +6,15 @@ import {
   clipSegmentMs,
   clipSourceTime,
   clipRenderSourceTime,
+  junctionInFxAt,
+  junctionLeadMs,
   clipsDuration,
   explodeLoops,
   normalizeLoop,
   shiftClip,
   clampStartNoOverlap,
   splitClipAt,
+  insertFreezeFrameAt,
   withClipDefaults,
   sanitizeVideoFx,
   videoTransitionList,
@@ -132,6 +135,33 @@ describe('视频转场注册表 + sanitizeVideoFx', () => {
 })
 
 describe('clipTransition 视频转场', () => {
+  it('maps a three-second fade-in linearly across the full entered duration', () => {
+    const c = clip({ transIn: { type: 'fade', durationMs: 3000 } })
+    expect(clipTransition(c, 1000, 99999).alpha).toBe(0)
+    expect(clipTransition(c, 2000, 99999).alpha).toBeCloseTo(1 / 3, 6)
+    expect(clipTransition(c, 2500, 99999).alpha).toBeCloseTo(0.5, 6)
+    expect(clipTransition(c, 3999, 99999).alpha).toBeCloseTo(2999 / 3000, 6)
+    expect(clipTransition(c, 4000, 99999).alpha).toBe(1)
+  })
+
+  it('maps a three-second fade-out linearly across the full entered duration', () => {
+    const c = clip({ transOut: { type: 'fade', durationMs: 3000 } })
+    expect(clipTransition(c, 2000, 99999).alpha).toBe(1)
+    expect(clipTransition(c, 3000, 99999).alpha).toBeCloseTo(2 / 3, 6)
+    expect(clipTransition(c, 3500, 99999).alpha).toBeCloseTo(0.5, 6)
+    expect(clipTransition(c, 4000, 99999).alpha).toBeCloseTo(1 / 3, 6)
+  })
+
+  it('uses the same linear three-second fade for an adjacent clip junction', () => {
+    const previous = clip({ id: 1, start: 1000 })
+    const incoming = clip({ id: 2, start: 5000, transIn: { type: 'fade', durationMs: 3000 } })
+    const lead = junctionLeadMs(incoming, [previous, incoming])
+    expect(lead).toBe(3000)
+    expect(junctionInFxAt(incoming, 2000, lead).alpha).toBe(0)
+    expect(junctionInFxAt(incoming, 3000, lead).alpha).toBeCloseTo(1 / 3, 6)
+    expect(junctionInFxAt(incoming, 3500, lead).alpha).toBeCloseTo(0.5, 6)
+    expect(junctionInFxAt(incoming, 4999, lead).alpha).toBeCloseTo(2999 / 3000, 6)
+  })
   // start 1000, seg 4000, loop 1 → end 5000
   it('无转场恒等', () => {
     const fx = clipTransition(clip(), 3000, 99999)
@@ -257,6 +287,14 @@ describe('clipEnd / clipSegmentMs', () => {
     expect(clipSegmentMs(clip())).toBe(4000)
     expect(clipSegmentMs(clip({ speed: 0.5 }))).toBe(8000)
   })
+  it('uses an independent timeline duration for a frozen frame', () => {
+    const frozen = clip({ freezeFrameMs: 1234.5, freezeDurationMs: 3000 })
+    expect(clipSegmentMs(frozen)).toBe(3000)
+    expect(clipEnd(frozen, 0)).toBe(4000)
+    expect(clipSourceTime(frozen, 1000, 0)).toBe(1234.5)
+    expect(clipSourceTime(frozen, 3999, 0)).toBe(1234.5)
+    expect(clipSourceTime(frozen, 4000, 0)).toBeNull()
+  })
 })
 
 describe('clipSourceTime', () => {
@@ -358,6 +396,50 @@ describe('splitClipAt', () => {
   it('切点在外部返回 null', () => {
     expect(splitClipAt(clip(), 1000, 0)).toBeNull()
     expect(splitClipAt(clip(), 5000, 0)).toBeNull()
+  })
+  it('splits an existing freeze while keeping the same exact source frame', () => {
+    const r = splitClipAt(clip({ freezeFrameMs: 2222.25, freezeDurationMs: 3000 }), 2000, 0)!
+    expect(r).toHaveLength(2)
+    expect(r[0]).toMatchObject({ start: 1000, freezeFrameMs: 2222.25, freezeDurationMs: 1000 })
+    expect(r[1]).toMatchObject({ start: 2000, freezeFrameMs: 2222.25, freezeDurationMs: 2000 })
+  })
+})
+
+describe('insertFreezeFrameAt', () => {
+  it('splits a forward clip, inserts three seconds, and preserves only the outside transitions', () => {
+    const source = clip({
+      transIn: { type: 'fade', durationMs: 200 },
+      transOut: { type: 'fade', durationMs: 300 }
+    })
+    const pieces = insertFreezeFrameAt(source, 2500, 3000, 0)!
+
+    expect(pieces).toHaveLength(3)
+    expect(pieces[0]).toMatchObject({ start: 1000, sourceOut: 1500, transIn: source.transIn, transOut: null })
+    expect(pieces[1]).toMatchObject({
+      start: 2500,
+      freezeFrameMs: 1500,
+      freezeDurationMs: 3000,
+      speed: 1,
+      reverse: false,
+      loop: 1,
+      transIn: null,
+      transOut: null
+    })
+    expect(pieces[2]).toMatchObject({ start: 5500, sourceIn: 1500, transIn: null, transOut: source.transOut })
+  })
+
+  it('captures the correct exact frame from reverse playback', () => {
+    const pieces = insertFreezeFrameAt(clip({ reverse: true }), 2500, 3000, 0)!
+    expect(pieces[1].freezeFrameMs).toBe(2500)
+    expect(pieces[2]).toMatchObject({ start: 5500, sourceOut: 2500, reverse: true })
+  })
+
+  it('rejects audio, an existing freeze, and a playhead outside the clip', () => {
+    expect(insertFreezeFrameAt(clip({ kind: 'audio' }), 2500, 3000, 0)).toBeNull()
+    expect(insertFreezeFrameAt(clip({ freezeFrameMs: 10, freezeDurationMs: 3000 }), 2500, 3000, 0)).toBeNull()
+    expect(insertFreezeFrameAt(clip(), 5000, 3000, 0)).toBeNull()
+    expect(insertFreezeFrameAt(clip(), Number.NaN, 3000, 0)).toBeNull()
+    expect(insertFreezeFrameAt(clip(), 2500, Number.POSITIVE_INFINITY, 0)).toBeNull()
   })
 })
 

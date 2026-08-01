@@ -43,6 +43,7 @@ Relative media paths in `job.json` resolve from the job file's directory, which 
 - Import multiple video and audio files into independent timeline layers.
 - View audio waveforms and align captions visually with the soundtrack.
 - Move, trim, duplicate, split, loop, reverse video, and set clip speed precisely from `0.01×` to `100×`.
+- Freeze the exact frame under the playhead into a three-second video segment; AliceCut splits the clip and ripples later video on that layer automatically.
 - Control audio volume, fades, and mixing; extract an audio track from a video.
 - Stack video layers for backgrounds and picture-in-picture compositions.
 - Pan, scale, and rotate video directly in the composition.
@@ -248,6 +249,7 @@ docs/           User manual, design notes, future work, and README assets
 |---|---|
 | [User Manual](docs/MANUAL.md) | Complete editor workflow, timeline behavior, effects, shortcuts, automation schema, and troubleshooting |
 | [Design Document](docs/DESIGN.md) | Architecture, state model, rendering pipeline, effect system, export implementation, and engineering decisions |
+| [Development Diary](docs/DEVELOPMENT_DIARY.md) | Newest-first record of recent product changes, debugging findings, and verification |
 | [Future Tasks](docs/FUTURE_TASKS.md) | Planned relinking, project collection, and media-management improvements |
 | **Help → Help** | Offline quick start bundled with the desktop application |
 

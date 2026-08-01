@@ -12,7 +12,7 @@ import {
   type MediaClip,
   type VideoTransition
 } from '../core/media'
-import { seek } from '../playback'
+import { pause, seek } from '../playback'
 import { useWaveform } from '../waveform'
 import { useT, hasMsg } from '../i18n'
 import type { LrcLine, CaptionTrack } from '../core/types'
@@ -159,6 +159,7 @@ function ClipSegment({
   const endMs = clipEnd(clip, durationMs)
   const left = (clip.start / 1000) * pxPerSec
   const width = Math.max(((endMs - clip.start) / 1000) * pxPerSec, 14)
+  const frozen = clip.kind === 'video' && clip.freezeFrameMs !== undefined && clip.freezeDurationMs !== undefined
   // 循环边界刻线：每圈一道
   const period = (clipSegmentMs(clip) / 1000) * pxPerSec
   const loopMarks =
@@ -169,6 +170,7 @@ function ClipSegment({
   if (clip.loop === 'infinite') badges.push('∞')
   else if (clip.loop > 1) badges.push(`×${clip.loop}`)
   if (clip.speed !== 1) badges.push(`${clip.speed}x`)
+  if (frozen) badges.push(t('tl.freezeBadge', { n: (clip.freezeDurationMs! / 1000).toFixed(1) }))
 
   const onMouseDown = (e: React.MouseEvent): void => {
     if (e.button !== 0) return
@@ -213,7 +215,7 @@ function ClipSegment({
 
   return (
     <div
-      className={`tl-clip${selected ? ' selected' : ''}${showWave ? ' tl-clip-wave' : ''}`}
+      className={`tl-clip${selected ? ' selected' : ''}${showWave ? ' tl-clip-wave' : ''}${frozen ? ' frozen' : ''}`}
       style={{
         left,
         width,
@@ -231,7 +233,7 @@ function ClipSegment({
       {showWave && (
         <ClipWaveform clip={clip} pxPerSec={pxPerSec} durationMs={durationMs} width={width} color={`${color}cc`} />
       )}
-      <span className="tl-clip-icon">{clip.kind === 'video' ? '🎬' : '🎵'}</span>
+      <span className="tl-clip-icon">{frozen ? '❄' : clip.kind === 'video' ? '🎬' : '🎵'}</span>
       <span className="tl-seg-text">{clip.name}</span>
       {badges.length > 0 && (
         <span className="tl-clip-loop" style={{ color }}>
@@ -544,10 +546,19 @@ function ClipSpeedControl({ clip }: { clip: MediaClip }): React.JSX.Element {
 function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
   const t = useT()
   const st = useProject.getState
+  const frozen = clip.kind === 'video' && clip.freezeFrameMs !== undefined && clip.freezeDurationMs !== undefined
 
   const splitAtPlayhead = (): void => {
     const ok = st().splitClip(clip.id, st().currentTime * 1000)
     if (!ok) alert(t('tl.cantSplit'))
+  }
+
+  const freezeAtPlayhead = (): void => {
+    // Stop the clock before reading it so the captured source frame and the
+    // visible playhead cannot drift while the clip list is being replaced.
+    pause()
+    const ok = st().freezeFrame(clip.id, st().currentTime * 1000)
+    if (!ok) alert(t('tl.cantFreeze'))
   }
 
   const extractAudio = async (): Promise<void> => {
@@ -579,6 +590,11 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
       <button className="btn btn-sm" onClick={splitAtPlayhead} title={t('tl.splitTitle')}>
         ✂ {t('tl.splitWord')}
       </button>
+      {clip.kind === 'video' && !frozen && (
+        <button className="btn btn-sm" onClick={freezeAtPlayhead} title={t('tl.freezeTitle')}>
+          ❄ {t('tl.freezeFrame')}
+        </button>
+      )}
       <label>
         {t('tl.start')}
         <input
@@ -589,38 +605,44 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
           onChange={(e) => st().setClipStart(clip.id, Number(e.target.value) * 1000)}
         />
       </label>
-      <label>
-        {t('tl.loop')}
-        <input
-          type="number"
-          step={1}
-          min={1}
-          disabled={clip.loop === 'infinite'}
-          value={clip.loop === 'infinite' ? '' : clip.loop}
-          placeholder="∞"
-          onChange={(e) => st().setClipLoop(clip.id, Number(e.target.value))}
-        />
-        {t('tl.times')}
-      </label>
-      <label title={t('tl.loopInfiniteTitle')}>
-        <input
-          type="checkbox"
-          checked={clip.loop === 'infinite'}
-          onChange={(e) => st().setClipLoop(clip.id, e.target.checked ? 'infinite' : 1)}
-        />
-        ∞
-      </label>
-      <ClipSpeedControl clip={clip} />
-      {clip.kind === 'video' && (
+      {!frozen && (
         <>
-          <label title={t('tl.reverseTitle')}>
+          <label>
+            {t('tl.loop')}
+            <input
+              type="number"
+              step={1}
+              min={1}
+              disabled={clip.loop === 'infinite'}
+              value={clip.loop === 'infinite' ? '' : clip.loop}
+              placeholder="∞"
+              onChange={(e) => st().setClipLoop(clip.id, Number(e.target.value))}
+            />
+            {t('tl.times')}
+          </label>
+          <label title={t('tl.loopInfiniteTitle')}>
             <input
               type="checkbox"
-              checked={clip.reverse}
-              onChange={(e) => st().setClipReverse(clip.id, e.target.checked)}
+              checked={clip.loop === 'infinite'}
+              onChange={(e) => st().setClipLoop(clip.id, e.target.checked ? 'infinite' : 1)}
             />
-            {t('tl.reverse')}
+            ∞
           </label>
+          <ClipSpeedControl clip={clip} />
+        </>
+      )}
+      {clip.kind === 'video' && (
+        <>
+          {!frozen && (
+            <label title={t('tl.reverseTitle')}>
+              <input
+                type="checkbox"
+                checked={clip.reverse}
+                onChange={(e) => st().setClipReverse(clip.id, e.target.checked)}
+              />
+              {t('tl.reverse')}
+            </label>
+          )}
           <label className="tl-layer-ctl" title={t('tl.layerTitle')}>
             {t('tl.layer')} {clip.layer + 1}
             {/* 界面上层在上方（layer 小），▲ 上移 = 减小层序，▼ 下移 = 增大层序 */}
@@ -663,9 +685,11 @@ function ClipControls({ clip }: { clip: MediaClip }): React.JSX.Element {
               onChange={(e) => st().setClipRotate(clip.id, Number(e.target.value))}
             />
           </label>
-          <button className="btn btn-sm" onClick={() => void extractAudio()} title={t('tl.extractAudioTitle')}>
-            {t('tl.extractAudio')}
-          </button>
+          {!frozen && (
+            <button className="btn btn-sm" onClick={() => void extractAudio()} title={t('tl.extractAudioTitle')}>
+              {t('tl.extractAudio')}
+            </button>
+          )}
           <ClipVideoFx clip={clip} />
         </>
       )}

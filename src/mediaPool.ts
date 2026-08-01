@@ -172,6 +172,22 @@ export function probeMediaDuration(path: string, kind: 'video' | 'audio'): Promi
 const DRIFT_SEC = 0.3
 
 /**
+ * Reassigning HTMLMediaElement.currentTime, even to the value it already has,
+ * starts a new Chromium seek. At a video junction that can discard the
+ * incoming clip's pre-decoded first frame for one refresh and expose the
+ * project background as a flash.
+ */
+export function shouldSeekMediaFrame(
+  currentTimeSec: number,
+  targetTimeSec: number,
+  readyState: number,
+  seeking: boolean,
+  thresholdSec: number
+): boolean {
+  return readyState > 0 && !seeking && Math.abs(currentTimeSec - targetTimeSec) > thresholdSec
+}
+
+/**
  * 每帧调用：把所有媒体元素同步到项目时间。
  * 播放中 → 激活窗口内的元素播放（漂移过大时回拉）；窗口外暂停。
  * 暂停中 → 全部暂停，并把画面 seek 到当前位置（视频轨拖动播放头所见即所得）。
@@ -201,13 +217,15 @@ export function syncMediaPlayback(
       const inLead = normalSrc === null && lead > 0 && tMs >= clip.start - lead && tMs < clip.start
       const srcT = inLead ? clipPlaybackStartSourceTime(clip) : normalSrc
       const reverseVideo = clip.kind === 'video' && clip.reverse
-      if (srcT === null || !playing || inLead || reverseVideo) {
+      const frozenVideo = clip.kind === 'video' && clip.freezeFrameMs !== undefined
+      const staticVideo = reverseVideo || frozenVideo
+      const seekThreshold = staticVideo ? 0.005 : 0.05
+      if (srcT === null || !playing || inLead || staticVideo) {
         if (!el.paused) el.pause()
         // HAVE_NOTHING media cannot be sought reliably on every Chromium/codec
         // combination. Metadata will load asynchronously and the next frame
         // will perform the seek.
-        const seekThreshold = reverseVideo ? 0.005 : 0.05
-        if (srcT !== null && el.readyState > 0 && !el.seeking && Math.abs(el.currentTime - srcT / 1000) > seekThreshold) {
+        if (srcT !== null && shouldSeekMediaFrame(el.currentTime, srcT / 1000, el.readyState, el.seeking, seekThreshold)) {
           el.currentTime = srcT / 1000
         }
         continue
@@ -218,7 +236,11 @@ export function syncMediaPlayback(
           el.defaultMuted = false
           el.muted = false
         }
-        if (el.readyState > 0) el.currentTime = srcT / 1000
+        // A junction pre-roll already paused and decoded this exact frame.
+        // Preserve it instead of forcing a second seek at clip.start.
+        if (shouldSeekMediaFrame(el.currentTime, srcT / 1000, el.readyState, el.seeking, seekThreshold)) {
+          el.currentTime = srcT / 1000
+        }
         void el.play().catch((error: unknown) => {
           reportMediaErrorOnce(clip, 'sync', error)
         })

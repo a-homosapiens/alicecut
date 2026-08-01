@@ -52,6 +52,35 @@ describe('parseProjectData', () => {
     })).toThrow(/reverse must be a boolean/)
   })
 
+  it('round-trips frozen-frame timing and rejects malformed timing values', () => {
+    const base = {
+      version: 6,
+      meta: { offset: 0 },
+      style: {},
+      lines: [],
+      clips: [{
+        kind: 'video', path: 'v.mp4', name: 'freeze', start: 1000, sourceDuration: 5000,
+        freezeFrameMs: 1234.5, freezeDurationMs: 3000
+      }]
+    }
+    expect(parseProjectData(base).clips[0]).toMatchObject({
+      freezeFrameMs: 1234.5,
+      freezeDurationMs: 3000
+    })
+    expect(() => parseProjectData({
+      ...base,
+      clips: [{ ...base.clips[0], freezeDurationMs: 'three seconds' }]
+    })).toThrow(/freezeDurationMs must be a finite number/)
+    expect(() => parseProjectData({
+      ...base,
+      clips: [{ ...base.clips[0], freezeDurationMs: undefined }]
+    })).toThrow(/requires both freezeFrameMs and freezeDurationMs/)
+    expect(() => parseProjectData({
+      ...base,
+      clips: [{ ...base.clips[0], freezeDurationMs: -1 }]
+    })).toThrow(/invalid frozen-frame timing/)
+  })
+
   it('preserves multiline caption text and its explicit layout break', () => {
     const parsed = parseProjectData({
       version: 6,

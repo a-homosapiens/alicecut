@@ -53,6 +53,10 @@ export interface MediaClip {
   speed: number
   /** Play the trimmed source interval backwards. Currently exposed for video clips. */
   reverse: boolean
+  /** Exact source frame held for the full clip duration; video clips only. */
+  freezeFrameMs?: number
+  /** Timeline duration of a frozen-frame clip. */
+  freezeDurationMs?: number
   /** 重复次数（≥1）；'infinite' = 一直循环到项目结束 */
   loop: LoopSpec
   /** 轨道层序（同类内 0 在最下；视频高层画面盖在低层上） */
@@ -80,6 +84,7 @@ export const MAX_LAYER = 4
 
 export const MIN_SPEED = 0.01
 export const MAX_SPEED = 100
+export const DEFAULT_FREEZE_DURATION_MS = 3000
 
 /** 规范化 loop：非法值回退为 1，数字向下取整且至少 1 */
 export function normalizeLoop(loop: unknown): LoopSpec {
@@ -101,10 +106,22 @@ export function withClipDefaults(
   const sourceDuration = Math.max(0, Number.isFinite(c.sourceDuration) ? c.sourceDuration : 0)
   const sourceIn = Math.min(Math.max(0, sourceDuration - 1), Math.max(0, c.sourceIn ?? 0))
   const sourceOut = Math.min(sourceDuration, Math.max(Math.min(sourceDuration, sourceIn + 1), c.sourceOut ?? sourceDuration))
-  const speed = clampSpeed(c.speed ?? 1)
-  const loop = normalizeLoop(c.loop ?? 1)
+  const requestedFreezeFrame = Number(c.freezeFrameMs)
+  const requestedFreezeDuration = Number(c.freezeDurationMs)
+  const frozen =
+    c.kind === 'video' &&
+    Number.isFinite(requestedFreezeFrame) &&
+    requestedFreezeFrame >= 0 &&
+    Number.isFinite(requestedFreezeDuration) &&
+    requestedFreezeDuration > 0
+  const freezeFrameMs = frozen
+    ? Math.min(Math.max(0, sourceDuration - 0.001), requestedFreezeFrame)
+    : undefined
+  const freezeDurationMs = frozen ? Math.max(1, Math.round(requestedFreezeDuration)) : undefined
+  const speed = frozen ? 1 : clampSpeed(c.speed ?? 1)
+  const loop = frozen ? 1 : normalizeLoop(c.loop ?? 1)
   // 淡入/淡出钳到线段在时间轴上的总占用时长内（无限循环不设上限）
-  const placedMs = loop === 'infinite' ? Infinity : ((sourceOut - sourceIn) / speed) * loop
+  const placedMs = freezeDurationMs ?? (loop === 'infinite' ? Infinity : ((sourceOut - sourceIn) / speed) * loop)
   return {
     kind: c.kind,
     path: c.path,
@@ -116,7 +133,9 @@ export function withClipDefaults(
     sourceIn,
     sourceOut,
     speed,
-    reverse: c.kind === 'video' && c.reverse === true,
+    reverse: !frozen && c.kind === 'video' && c.reverse === true,
+    freezeFrameMs,
+    freezeDurationMs,
     loop,
     layer: Math.min(MAX_LAYER, Math.max(0, Math.round(c.layer ?? 0))),
     tx: c.tx ?? 0,
@@ -255,6 +274,17 @@ export function videoTransitionList(): { id: string; name: string }[] {
   return [...videoTransitionRegistry.values()].map(({ id, name }) => ({ id, name }))
 }
 
+/**
+ * A fade duration is an opacity duration: halfway through, opacity must be
+ * exactly 50%. Motion transitions retain easing so their movement settles
+ * naturally without making a three-second fade look nearly complete after
+ * only one second.
+ */
+function videoTransitionProgress(type: string, rawProgress: number): number {
+  const progress = clamp01(rawProgress)
+  return type === 'fade' ? progress : easeOutCubic(progress)
+}
+
 // 注册 8 个内置转场（沿用 fxIn/fxOut 实现）
 for (const t of VIDEO_TRANSITIONS) {
   registerVideoTransition({ id: t, name: BUILTIN_NAMES[t], in: (p) => fxIn(t, p), out: (p) => fxOut(t, p) })
@@ -272,10 +302,10 @@ export function clipTransition(clip: MediaClip, tMs: number, projectEndMs: numbe
   const end = clipEnd(clip, projectEndMs)
   if (tMs < clip.start || tMs >= end) return IDENTITY_CLIP_FX
   if (ti && ti.durationMs > 0 && tMs < clip.start + ti.durationMs) {
-    return getVideoTransition(ti.type)?.in(easeOutCubic(clamp01((tMs - clip.start) / ti.durationMs))) ?? IDENTITY_CLIP_FX
+    return getVideoTransition(ti.type)?.in(videoTransitionProgress(ti.type, (tMs - clip.start) / ti.durationMs)) ?? IDENTITY_CLIP_FX
   }
   if (to && to.durationMs > 0 && tMs > end - to.durationMs) {
-    return getVideoTransition(to.type)?.out(easeOutCubic(clamp01((end - tMs) / to.durationMs))) ?? IDENTITY_CLIP_FX
+    return getVideoTransition(to.type)?.out(videoTransitionProgress(to.type, (end - tMs) / to.durationMs)) ?? IDENTITY_CLIP_FX
   }
   return IDENTITY_CLIP_FX
 }
@@ -326,7 +356,7 @@ export function junctionInFxAt(clip: MediaClip, tMs: number, leadMs: number): Vi
   if (leadMs <= 0 || tMs < clip.start - leadMs || tMs >= clip.start) return IDENTITY_CLIP_FX
   const ti = clip.transIn
   if (!ti) return IDENTITY_CLIP_FX
-  const p = easeOutCubic(clamp01((tMs - (clip.start - leadMs)) / leadMs))
+  const p = videoTransitionProgress(ti.type, (tMs - (clip.start - leadMs)) / leadMs)
   return getVideoTransition(ti.type)?.in(p) ?? IDENTITY_CLIP_FX
 }
 
@@ -349,6 +379,9 @@ export function sanitizeVideoFx(p: Partial<VideoClipFx> | null | undefined): Vid
 
 /** 一圈在时间轴上占的毫秒数（修剪区间 ÷ 速度） */
 export function clipSegmentMs(clip: MediaClip): number {
+  if (clip.freezeFrameMs !== undefined && clip.freezeDurationMs !== undefined) {
+    return Math.max(1, clip.freezeDurationMs)
+  }
   return Math.max(1, (clip.sourceOut - clip.sourceIn) / clip.speed)
 }
 
@@ -363,8 +396,10 @@ export function clipEnd(clip: MediaClip, projectEndMs: number): number {
  * 不在线段时间范围内返回 null。
  */
 export function clipSourceTime(clip: MediaClip, tMs: number, projectEndMs: number): number | null {
-  if (clip.sourceOut <= clip.sourceIn) return null
+  if (!Number.isFinite(tMs)) return null
   if (tMs < clip.start || tMs >= clipEnd(clip, projectEndMs)) return null
+  if (clip.freezeFrameMs !== undefined && clip.freezeDurationMs !== undefined) return clip.freezeFrameMs
+  if (clip.sourceOut <= clip.sourceIn) return null
   const seg = clipSegmentMs(clip)
   const offset = ((tMs - clip.start) % seg) * clip.speed
   if (!clip.reverse) return clip.sourceIn + offset
@@ -375,6 +410,7 @@ export function clipSourceTime(clip: MediaClip, tMs: number, projectEndMs: numbe
 
 /** Source frame shown at the beginning of a clip, including reverse playback. */
 export function clipPlaybackStartSourceTime(clip: MediaClip): number {
+  if (clip.freezeFrameMs !== undefined && clip.freezeDurationMs !== undefined) return clip.freezeFrameMs
   return clip.reverse ? Math.max(clip.sourceIn, clip.sourceOut - 0.001) : clip.sourceIn
 }
 
@@ -457,8 +493,22 @@ export function splitClipAt(
   tMs: number,
   projectEndMs: number
 ): Omit<MediaClip, 'id'>[] | null {
+  if (!Number.isFinite(tMs)) return null
   const end = clipEnd(clip, projectEndMs)
   if (tMs <= clip.start || tMs >= end) return null
+  if (clip.freezeFrameMs !== undefined && clip.freezeDurationMs !== undefined) {
+    const { id: _id, ...base } = clip
+    const cut = Math.round(tMs)
+    return [
+      { ...base, freezeDurationMs: Math.max(1, cut - clip.start), transOut: null },
+      {
+        ...base,
+        start: cut,
+        freezeDurationMs: Math.max(1, end - cut),
+        transIn: null
+      }
+    ]
+  }
   const pieces = explodeLoops(clip, projectEndMs)
   const out: Omit<MediaClip, 'id'>[] = []
   for (const p of pieces) {
@@ -479,4 +529,53 @@ export function splitClipAt(
     }
   }
   return out
+}
+
+/**
+ * Split a normal video at tMs and insert a frozen-frame segment. Pieces at and
+ * after the cut are moved right by durationMs; the store can then ripple any
+ * later clips on the same video layer by the same amount.
+ */
+export function insertFreezeFrameAt(
+  clip: MediaClip,
+  tMs: number,
+  durationMs = DEFAULT_FREEZE_DURATION_MS,
+  projectEndMs = 0
+): Omit<MediaClip, 'id'>[] | null {
+  if (
+    clip.kind !== 'video' ||
+    clip.freezeFrameMs !== undefined ||
+    !Number.isFinite(tMs) ||
+    !Number.isFinite(durationMs) ||
+    !(durationMs > 0)
+  ) return null
+  const cut = Math.round(tMs)
+  const sourceFrame = clipSourceTime(clip, cut, projectEndMs)
+  const split = splitClipAt(clip, cut, projectEndMs)
+  if (sourceFrame === null || !split) return null
+
+  const duration = Math.max(1, Math.round(durationMs))
+  const shifted = split.map((piece, index) => ({
+    ...piece,
+    start: piece.start >= cut ? piece.start + duration : piece.start,
+    transIn: index === 0 ? clip.transIn : null,
+    transOut: index === split.length - 1 ? clip.transOut : null
+  }))
+  const { id: _id, ...base } = clip
+  const freeze: Omit<MediaClip, 'id'> = {
+    ...base,
+    start: cut,
+    sourceIn: Math.min(Math.max(0, clip.sourceDuration - 1), Math.max(0, Math.floor(sourceFrame))),
+    sourceOut: Math.min(clip.sourceDuration, Math.max(1, Math.floor(sourceFrame) + 1)),
+    speed: 1,
+    reverse: false,
+    freezeFrameMs: sourceFrame,
+    freezeDurationMs: duration,
+    loop: 1,
+    fadeInMs: 0,
+    fadeOutMs: 0,
+    transIn: null,
+    transOut: null
+  }
+  return [...shifted.filter((piece) => piece.start < cut), freeze, ...shifted.filter((piece) => piece.start > cut)]
 }

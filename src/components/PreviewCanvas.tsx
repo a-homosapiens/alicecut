@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useProject, toRenderStyle, getProjectDuration, allCaptionTracks } from '../store/project'
-import { renderFrame, getLineBlockRect, applyGlobalTextTransform, resolveLineStyle, type BlockRect } from '../core/render'
+import {
+  renderFrame,
+  getLineBlockRect,
+  applyGlobalTextTransform,
+  resolveLineStyle,
+  lyricFlowCurrentIndex,
+  type BlockRect
+} from '../core/render'
 import { drawBackgroundImage, drawVideoBackdrop, getClipDrawRect, type ClipRect } from '../mediaPool'
 import { getTime, pause, tick } from '../playback'
 import { useT } from '../i18n'
@@ -75,6 +82,19 @@ function visibleTextBoxes(ctx: CanvasRenderingContext2D, view: View, tMs: number
   const tracks = allCaptionTracks(st)
   const offsetById = new Map(tracks.map((track) => [track.id, track.offsetY]))
   const visibleTrackIds = new Set(tracks.filter((track) => track.visible).map((track) => track.id))
+  const captionGroups = new Map<number, LrcLine[]>()
+  for (const line of st.lines) {
+    if (line.kind === 'text') continue
+    const trackId = line.trackId ?? 0
+    const group = captionGroups.get(trackId)
+    if (group) group.push(line)
+    else captionGroups.set(trackId, [line])
+  }
+  const heldCaptionIds = new Set<number>()
+  for (const group of captionGroups.values()) {
+    const current = lyricFlowCurrentIndex(group, style, tMs)
+    if (current >= 0 && tMs >= group[current].end) heldCaptionIds.add(group[current].id)
+  }
   const ordered = [
     ...st.lines.filter((line) => line.kind !== 'text'),
     ...st.lines
@@ -83,7 +103,7 @@ function visibleTextBoxes(ctx: CanvasRenderingContext2D, view: View, tMs: number
   ]
   const boxes: TextHitBox[] = []
   for (const line of ordered) {
-    if (tMs < line.start || tMs >= line.end) continue
+    if ((tMs < line.start || tMs >= line.end) && !heldCaptionIds.has(line.id)) continue
     if (line.kind !== 'text' && !visibleTrackIds.has(line.trackId ?? 0)) continue
     const r = getLineBlockRect(ctx, line, style, offsetById.get(line.trackId ?? 0) ?? 0)
     if (!r) continue

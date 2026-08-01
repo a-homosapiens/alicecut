@@ -3,6 +3,66 @@ import { useProject } from './project'
 
 const LRC = '[00:01.00]hello\n[00:03.00]world'
 
+describe('freeze-frame insertion', () => {
+  beforeEach(() => {
+    useProject.getState().hydrate({
+      meta: { offset: 0 },
+      lines: [],
+      style: useProject.getState().style,
+      lrcName: null,
+      clips: []
+    })
+  })
+
+  it('splits the selected video, inserts three seconds, and ripples only later video on its layer', () => {
+    const source = useProject.getState().addClip({
+      kind: 'video', path: 'source.mp4', name: 'source', start: 0, sourceDuration: 6000
+    })
+    const later = useProject.getState().addClip({
+      kind: 'video', path: 'later.mp4', name: 'later', start: 6000, sourceDuration: 2000
+    })
+    const overlay = useProject.getState().addClip({
+      kind: 'video', path: 'overlay.mp4', name: 'overlay', start: 6000, sourceDuration: 1000, layer: 1
+    })
+    const audio = useProject.getState().addClip({
+      kind: 'audio', path: 'audio.mp3', name: 'audio', start: 6000, sourceDuration: 1000
+    })
+    const beforeFreeze = useProject.getState().clips
+
+    expect(useProject.getState().freezeFrame(source.id, 2000)).toBe(true)
+
+    const clips = useProject.getState().clips
+    const layerZero = clips.filter((clip) => clip.kind === 'video' && clip.layer === 0)
+    expect(layerZero.map((clip) => clip.start)).toEqual([0, 2000, 5000, 9000])
+    expect(layerZero[0]).toMatchObject({ sourceIn: 0, sourceOut: 2000 })
+    expect(layerZero[1]).toMatchObject({
+      freezeFrameMs: 2000,
+      freezeDurationMs: 3000,
+      sourceIn: 2000,
+      sourceOut: 2001
+    })
+    expect(layerZero[2]).toMatchObject({ sourceIn: 2000, sourceOut: 6000 })
+    expect(layerZero[3]).toMatchObject({ id: later.id, start: 9000 })
+    expect(clips.find((clip) => clip.id === overlay.id)?.start).toBe(6000)
+    expect(clips.find((clip) => clip.id === audio.id)?.start).toBe(6000)
+    expect(useProject.getState().selectedClipId).toBe(layerZero[1].id)
+
+    useProject.getState().undo()
+    expect(useProject.getState().clips).toEqual(beforeFreeze)
+  })
+
+  it('is rejected at a clip boundary without mutating the timeline', () => {
+    const source = useProject.getState().addClip({
+      kind: 'video', path: 'source.mp4', name: 'source', start: 1000, sourceDuration: 3000
+    })
+    const before = useProject.getState().clips
+    expect(useProject.getState().freezeFrame(source.id, 1000)).toBe(false)
+    expect(useProject.getState().clips).toBe(before)
+    expect(useProject.getState().freezeFrame(source.id, Number.NaN)).toBe(false)
+    expect(useProject.getState().freezeFrame(source.id, 2000, Number.POSITIVE_INFINITY)).toBe(false)
+  })
+})
+
 describe('caption effect duration priority', () => {
   beforeEach(() => useProject.getState().loadLrc(LRC, 'x.lrc'))
 

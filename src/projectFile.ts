@@ -111,13 +111,28 @@ export function parseProjectData(value: unknown): ProjectFileData {
     if ((clip.kind !== 'audio' && clip.kind !== 'video') || typeof clip.path !== 'string' || !clip.path) {
       throw new Error(`Invalid media at clips[${index}]`)
     }
-    for (const key of ['sourceIn', 'sourceOut', 'speed', 'layer', 'tx', 'ty', 'scale', 'rotate', 'fadeInMs', 'fadeOutMs', 'volume'] as const) {
+    for (const key of [
+      'sourceIn', 'sourceOut', 'speed', 'freezeFrameMs', 'freezeDurationMs', 'layer',
+      'tx', 'ty', 'scale', 'rotate', 'fadeInMs', 'fadeOutMs', 'volume'
+    ] as const) {
       if (clip[key] !== undefined && (typeof clip[key] !== 'number' || !Number.isFinite(clip[key]))) {
         throw new Error(`clips[${index}].${key} must be a finite number`)
       }
     }
     if (clip.reverse !== undefined && typeof clip.reverse !== 'boolean') {
       throw new Error(`clips[${index}].reverse must be a boolean`)
+    }
+    const hasFreezeFrame = clip.freezeFrameMs !== undefined
+    const hasFreezeDuration = clip.freezeDurationMs !== undefined
+    if (hasFreezeFrame !== hasFreezeDuration) {
+      throw new Error(`clips[${index}] frozen video requires both freezeFrameMs and freezeDurationMs`)
+    }
+    if (hasFreezeFrame && (
+      clip.kind !== 'video' ||
+      (clip.freezeFrameMs as number) < 0 ||
+      (clip.freezeDurationMs as number) <= 0
+    )) {
+      throw new Error(`clips[${index}] has invalid frozen-frame timing`)
     }
     return {
       ...clip,

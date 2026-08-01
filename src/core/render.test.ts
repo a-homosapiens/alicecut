@@ -230,6 +230,57 @@ const oneWordLine = (text: string, end: number): LrcLine => ({
   dy: 0
 })
 
+describe('parking caption visibility between segments', () => {
+  const timedLine = (id: number, text: string, start: number, end: number, effectId: string): LrcLine => ({
+    id,
+    start,
+    end,
+    text,
+    words: [mkWord(text, start, end)],
+    effectId,
+    dx: 0,
+    dy: 0
+  })
+
+  for (const effectId of ['rise', 'flip', 'flip-bottom']) {
+    it(`${effectId} holds a non-final caption through the gap but not the final caption`, () => {
+      const lines = [
+        timedLine(10, 'HOLD', 0, 1000, effectId),
+        timedLine(11, 'LAST', 3000, 4000, effectId)
+      ]
+
+      const gapFrame = render(2000, baseStyle, lines)
+      expect(gapFrame.fillTextCount).toBe([...lines[0].text].length)
+
+      const gapFingerprint = renderFingerprint(
+        new MockCtx() as unknown as CanvasRenderingContext2D,
+        lines,
+        meta,
+        baseStyle,
+        2000
+      )
+      expect(gapFingerprint).toContain(`S${effectId};0;1;`)
+
+      expect(render(4500, baseStyle, lines).fillTextCount).toBe(0)
+      expect(renderFingerprint(
+        new MockCtx() as unknown as CanvasRenderingContext2D,
+        lines,
+        meta,
+        baseStyle,
+        4500
+      )).not.toContain(`S${effectId}`)
+    })
+  }
+
+  it('does not extend an ordinary caption through a gap', () => {
+    const lines = [
+      timedLine(20, 'NORMAL', 0, 1000, 'pop'),
+      timedLine(21, 'NEXT', 3000, 4000, 'pop')
+    ]
+    expect(render(2000, baseStyle, lines).fillTextCount).toBe(0)
+  })
+})
+
 describe('highlightBox 跳动高亮块', () => {
   it('当前词背后画出高亮块', () => {
     expect(boxCenterX(900, baseStyle)).not.toBeNull()
