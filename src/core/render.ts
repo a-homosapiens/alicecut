@@ -604,7 +604,9 @@ function drawLineStack(
 ): void {
   const trans = effect.lineTransition!
   const historyDepth = lineHistoryDepth(effect, style)
-  const eased = easeOutCubic(clamp01((tMs - lines[current].start) / effect.enterDuration))
+  // The duration control is a literal wall-clock window. Parking transitions
+  // interpolate linearly so half the configured duration means half the move.
+  const progress = clamp01((tMs - lines[current].start) / effect.enterDuration)
 
   // 实测各深度行的包围盒，停靠位置据此紧靠排布
   const layouts: PlacedChar[][] = []
@@ -642,9 +644,13 @@ function drawLineStack(
     // caption fades away instead of disappearing on a hard frame boundary.
     const target = d > historyDepth ? { ...posedTarget, alpha: 0 } : posedTarget
     // 进场前一刻所有行都还在浅一级的停靠位（块序整体后移一位）
-    const source =
+    let source =
       d === 0 ? trans.enterFrom(args) : trans.pose(d - 1, { ...args, blocks: blocks.slice(1) })
-    const fx = lerpLineFx(source, target, eased)
+    // There is no outgoing caption during the first transition in a track.
+    // Keep that first caption opaque while it moves into place; otherwise the
+    // first frame is completely absent for Rise/Flip/Flip Bottom.
+    if (current === 0 && d === 0) source = { ...source, alpha: 1 }
+    const fx = lerpLineFx(source, target, progress)
     if (fx.alpha <= 0.003 || fx.scale <= 0.003) continue
     withLineRotate(ctx, line, lineStyle, effect.layoutVariant, trackOffsetY, () =>
       drawBlock(ctx, placed, line, lineStyle, trackOffsetY === 0 ? fx : { ...fx, dy: fx.dy + trackOffsetY })
@@ -690,11 +696,15 @@ function charFxAt(
       rand
     })
   }
-  // The configured In duration describes the whole entrance window. Preserve
-  // the source word/character ordering, but remap its stagger into the first
-  // 65% so the final unit also settles before the In window ends.
-  const sourceProgress = clamp01((uStart - line.start) / lineDuration)
-  const staggerSpan = effect.appearAtLineStart || effect.unit === 'line' ? 0 : effect.enterDuration * 0.65
+  // The configured In duration describes the whole entrance window. Stagger
+  // by actual unit order (not source timestamps): the first unit starts at the
+  // line boundary and the final unit settles exactly at the duration boundary.
+  // A one-unit caption has nothing to stagger and therefore uses the complete
+  // duration instead of silently completing in only 35% of it.
+  const sequenceCount = effect.unit === 'char' ? charCount : effect.unit === 'word' ? unitCount : 1
+  const sequenceIndex = effect.unit === 'char' ? p.globalCharIndex : effect.unit === 'word' ? p.unitIndex : 0
+  const sourceProgress = sequenceCount <= 1 ? 0 : clamp01(sequenceIndex / (sequenceCount - 1))
+  const staggerSpan = effect.appearAtLineStart || sequenceCount <= 1 ? 0 : effect.enterDuration * 0.65
   const gateStart = line.start + sourceProgress * staggerSpan
   const unitDuration = Math.max(0.001, effect.enterDuration - staggerSpan)
   if (enterTOverride == null && tMs < gateStart) return null
@@ -880,7 +890,7 @@ function drawLineReveal(
   const y = b.y + line.dy + lineDy - pad
   const w = b.w + pad * 2
   const h = b.h + pad * 2
-  const e = easeOutCubic(p)
+  const e = p
 
   ctx.save()
   ctx.beginPath()
@@ -909,7 +919,7 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: Re
   withLineRotate(ctx, line, style, effect.layoutVariant, 0, () => {
     const timing = resolveEffectTiming(line, style)
     const exitP = timing.outMs > 0 && tMs >= timing.outStartMs
-      ? easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+      ? clamp01((tMs - timing.outStartMs) / timing.outMs)
       : 0
 
     // Explicit Out always wins over a parking-style In transition.
@@ -940,8 +950,8 @@ function drawTextBlock(ctx: CanvasRenderingContext2D, line: LrcLine, styleIn: Re
       blocks: [{ w: b.w, h: b.h }]
     }
     const trans = effect.lineTransition
-    const eased = easeOutCubic(clamp01((tMs - line.start) / effect.enterDuration))
-    const fx = lerpLineFx(trans.enterFrom(args), trans.pose(0, args), eased)
+    const progress = clamp01((tMs - line.start) / effect.enterDuration)
+    const fx = lerpLineFx(trans.enterFrom(args), trans.pose(0, args), progress)
     fx.alpha *= 1 - exitP
     fx.dy -= exitP * style.fontSize * 0.5
     if (fx.alpha <= 0.003 || fx.scale <= 0.003) return
@@ -1025,7 +1035,7 @@ function drawLyricFlow(
         else drawLine(ctx, effect, line, ls, tMs, 1, trackOffsetY)
       } else {
         // 退场：指定了退场特效则反向播放它，否则默认淡出 + 上浮
-        const exitP = easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+        const exitP = clamp01((tMs - timing.outStartMs) / timing.outMs)
         const out = effectOutFor(line, ls)
         if (out) drawLine(ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
         else drawLine(ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)
@@ -1216,7 +1226,7 @@ function fpTextBlock(
   const effect = effectFor(line, style)
   const timing = resolveEffectTiming(line, style)
   const exitP = timing.outMs > 0 && tMs >= timing.outStartMs
-    ? easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+    ? clamp01((tMs - timing.outStartMs) / timing.outMs)
     : 0
 
   if (!effect.lineTransition) {
@@ -1233,8 +1243,8 @@ function fpTextBlock(
   }
 
   // 停靠式整块演绎：姿态只由进场进度与退场进度决定（布局/样式在导出期间不变）
-  const eased = easeOutCubic(clamp01((tMs - line.start) / effect.enterDuration))
-  parts.push(`T${line.id};${effect.id};${eased};${exitP}`)
+  const progress = clamp01((tMs - line.start) / effect.enterDuration)
+  parts.push(`T${line.id};${effect.id};${progress};${exitP}`)
 }
 
 /** drawLyricFlow 的指纹：当前行序号 + 停靠转场进度 + 各可见行的逐字姿态 */
@@ -1256,10 +1266,10 @@ function fpLyricFlow(
     const curEffect = effectFor(currentLine, style)
     if (curEffect.lineTransition) {
       // 停靠姿态（pose/enterFrom）只依赖行内容与样式，导出期间不变；
-      // 随时间变化的只有当前行序号与进场缓动进度
-      const eased = easeOutCubic(clamp01((tMs - lyric[current].start) / curEffect.enterDuration))
+      // 随时间变化的只有当前行序号与线性进场进度
+      const progress = clamp01((tMs - lyric[current].start) / curEffect.enterDuration)
       const historyDepth = lineHistoryDepth(curEffect, style)
-      parts.push(`S${curEffect.id};${current};${eased};${historyDepth}`)
+      parts.push(`S${curEffect.id};${current};${progress};${historyDepth}`)
       for (let d = Math.min(historyDepth + 1, current); d >= 0; d--) {
         drawnByStack.add(current - d)
       }
@@ -1277,7 +1287,7 @@ function fpLyricFlow(
       if (effect.reveal) fpLineReveal(parts, ctx, effect, line, ls, tMs, trackOffsetY)
       else fpLine(parts, ctx, effect, line, ls, tMs, 1, trackOffsetY)
     } else {
-      const exitP = easeOutCubic(clamp01((tMs - timing.outStartMs) / timing.outMs))
+      const exitP = clamp01((tMs - timing.outStartMs) / timing.outMs)
       const out = effectOutFor(line, ls)
       if (out) fpLine(parts, ctx, out, line, ls, tMs, 1, trackOffsetY, exitP)
       else fpLine(parts, ctx, effect, line, ls, tMs, 1 - exitP, trackOffsetY - exitP * ls.fontSize * 0.5)

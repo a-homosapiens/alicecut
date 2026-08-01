@@ -1,4 +1,4 @@
-import { clamp01, easeOutCubic } from '../easing'
+import { clamp01 } from '../easing'
 import type { EffectPreset } from './types'
 
 /**
@@ -20,7 +20,7 @@ export const highlightBox: EffectPreset = {
       dy: 0,
       scale: 1,
       rotate: 0,
-      alpha: easeOutCubic(clamp01(enterT)),
+      alpha: clamp01(enterT),
       blur: 0,
       glow: 0
     }

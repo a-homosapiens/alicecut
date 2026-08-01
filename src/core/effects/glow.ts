@@ -1,4 +1,3 @@
-import { easeOutCubic } from '../easing'
 import type { EffectPreset } from './types'
 
 /** 发光渐显：柔和淡入 + 辉光呼吸脉冲 */
@@ -9,7 +8,7 @@ export const glow: EffectPreset = {
   layoutVariant: 'center',
   unit: 'char',
   apply({ enterT, timeInLine, intensity }) {
-    const p = easeOutCubic(enterT)
+    const p = enterT
     const pulse = 0.5 + 0.5 * Math.sin((timeInLine / 1000) * Math.PI * 2 * 1.2)
     return {
       dx: 0,

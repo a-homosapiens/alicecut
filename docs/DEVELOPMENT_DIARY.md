@@ -2,6 +2,25 @@
 
 This is a chronological engineering diary for noteworthy product changes, debugging findings, and validation work. Add new entries at the top and keep implementation details concise enough to remain useful during later regressions.
 
+## 2026-08-01 — Caption-effect duration and first-caption audit
+
+### First Rise/Flip caption
+
+- Fixed `rise`, `flip`, and `flip-bottom` starting a track with a fully transparent first caption.
+- The first caption now remains opaque while moving from the effect's entry pose into the center. Later captions still fade/move in while the previous caption moves into its parked pose.
+
+### Literal duration pacing
+
+- Removed renderer-level cubic easing from caption Out windows. Presets now receive linear wall-clock progress, avoiding the former double-easing of every explicit Out effect and making the default fade use the complete configured duration.
+- Made Rise/Flip line transitions and Wipe/Iris/Clock Wipe reveals linear, so their halfway frame is geometrically halfway through the configured duration.
+- Fixed character/word staggering. A one-unit caption had been completing in 35% of the selected In duration; it now uses the full window. Multi-unit effects now stagger by actual unit order and the final unit settles exactly at the duration boundary instead of depending on source caption timestamps.
+- Audited all 47 built-in effects. Straightforward fades, slides, zooms, blurs, scatters, stretches, glitches, and related motions now use linear progress. Spring/back/sequence behavior remains only where it defines the effect (for example Pop, Punch, Bounce, Elastic, Typewriter, Neon, and Dissolve).
+
+### Regression coverage
+
+- Added catalog-wide pacing classification so a newly added built-in effect cannot bypass the timing audit.
+- Added exact-start visibility tests for all three parking effects, half-duration geometry tests for all reveal/parking transitions, literal midpoint opacity tests for linear presets and Out effects, and boundary tests for one-unit and staggered character/word entrances.
+
 ## 2026-08-01 — Freeze frames, transition timing, caption continuity, and UI density
 
 ### Freeze-frame editing

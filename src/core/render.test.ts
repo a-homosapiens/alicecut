@@ -20,6 +20,9 @@ class MockCtx {
   miterLimit = 0
   lineWidth = 0
   roundRects: { x: number; y: number; w: number; h: number }[] = []
+  rects: { x: number; y: number; w: number; h: number }[] = []
+  arcs: { x: number; y: number; radius: number; start: number; end: number }[] = []
+  fillTextAlphas: number[] = []
   fillTextCount = 0
   strokeTextCount = 0
   fillRectCount = 0
@@ -34,8 +37,12 @@ class MockCtx {
     this.transformCount++
   }
   beginPath(): void {}
-  rect(): void {}
-  arc(): void {}
+  rect(x: number, y: number, w: number, h: number): void {
+    this.rects.push({ x, y, w, h })
+  }
+  arc(x: number, y: number, radius: number, start: number, end: number): void {
+    this.arcs.push({ x, y, radius, start, end })
+  }
   moveTo(): void {}
   closePath(): void {}
   clip(): void {
@@ -49,6 +56,7 @@ class MockCtx {
   strokeRect(): void {}
   fillText(): void {
     this.fillTextCount++
+    this.fillTextAlphas.push(this.globalAlpha)
   }
   strokeText(): void {
     this.strokeTextCount++
@@ -243,6 +251,11 @@ describe('parking caption visibility between segments', () => {
   })
 
   for (const effectId of ['rise', 'flip', 'flip-bottom']) {
+    it(`${effectId} renders the first caption from its exact start frame`, () => {
+      const lines = [timedLine(10, 'FIRST', 500, 2500, effectId)]
+      expect(render(500, baseStyle, lines).fillTextCount).toBe([...lines[0].text].length)
+    })
+
     it(`${effectId} holds a non-final caption through the gap but not the final caption`, () => {
       const lines = [
         timedLine(10, 'HOLD', 0, 1000, effectId),
@@ -279,6 +292,22 @@ describe('parking caption visibility between segments', () => {
     ]
     expect(render(2000, baseStyle, lines).fillTextCount).toBe(0)
   })
+
+  for (const effectId of ['rise', 'flip', 'flip-bottom']) {
+    it(`${effectId} uses linear progress across the configured duration`, () => {
+      const lines = [
+        timedLine(30, 'OLD', 0, 2000, effectId),
+        { ...timedLine(31, 'NEW', 2000, 5000, effectId), effectInDurationMs: 1000 }
+      ]
+      expect(renderFingerprint(
+        new MockCtx() as unknown as CanvasRenderingContext2D,
+        lines,
+        meta,
+        baseStyle,
+        2500
+      )).toContain(`S${effectId};1;0.5;`)
+    })
+  }
 })
 
 describe('highlightBox 跳动高亮块', () => {
@@ -346,6 +375,75 @@ describe('遮罩式入场转场（reveal）', () => {
 
   it('普通特效不裁剪', () => {
     expect(render(200, { ...baseStyle, effectId: 'pop' }, lines).clipCount).toBe(0)
+  })
+
+  it('paces Wipe linearly across the complete configured duration', () => {
+    const style = { ...baseStyle, effectId: 'wipe', effectInDurationMs: 1000 }
+    const quarter = render(250, style, lines).rects[0]
+    const half = render(500, style, lines).rects[0]
+    expect(half.w).toBeCloseTo(quarter.w * 2, 8)
+  })
+
+  it('paces Iris linearly across the complete configured duration', () => {
+    const style = { ...baseStyle, effectId: 'iris', effectInDurationMs: 1000 }
+    const quarter = render(250, style, lines).arcs[0]
+    const half = render(500, style, lines).arcs[0]
+    expect(half.radius).toBeCloseTo(quarter.radius * 2, 8)
+  })
+
+  it('paces Clock Wipe linearly across the complete configured duration', () => {
+    const style = { ...baseStyle, effectId: 'clockWipe', effectInDurationMs: 1000 }
+    const quarter = render(250, style, lines).arcs[0]
+    const half = render(500, style, lines).arcs[0]
+    expect(half.end - half.start).toBeCloseTo((quarter.end - quarter.start) * 2, 8)
+  })
+})
+
+describe('linear In and Out duration mapping', () => {
+  it('gives a one-unit entrance the complete configured In window', () => {
+    const single = [{
+      ...oneWordLine('A', 3000),
+      effectId: 'slide',
+      effectInDurationMs: 1000,
+      effectOutDurationMs: 0
+    }]
+    expect(render(500, baseStyle, single).fillTextAlphas).toContain(0.5)
+  })
+
+  for (const [effectId, label] of [['slide', 'character'], ['float-up', 'word']] as const) {
+    it(`settles the final ${label} exactly at the configured In boundary`, () => {
+      const paced = [{
+        ...line,
+        effectId,
+        effectInDurationMs: 1000,
+        effectOutDurationMs: 0
+      }]
+      expect(render(999, baseStyle, paced).fillTextAlphas.some((alpha) => alpha < 1)).toBe(true)
+      expect(render(1000, baseStyle, paced).fillTextAlphas.every((alpha) => alpha === 1)).toBe(true)
+    })
+  }
+
+  it('does not apply a second renderer-level easing curve to Out effects', () => {
+    const single = [{
+      ...oneWordLine('A', 3000),
+      effectId: 'none',
+      effectOutId: 'fade-up-out',
+      effectInDurationMs: 0,
+      effectOutDurationMs: 1000,
+      effectDurationPriority: 'out' as const
+    }]
+    expect(render(2500, baseStyle, single).fillTextAlphas).toContain(0.5)
+  })
+
+  it('paces the default Out fade linearly when no Out preset is selected', () => {
+    const single = [{
+      ...oneWordLine('A', 3000),
+      effectId: 'none',
+      effectInDurationMs: 0,
+      effectOutDurationMs: 1000,
+      effectDurationPriority: 'out' as const
+    }]
+    expect(render(2500, baseStyle, single).fillTextAlphas).toContain(0.5)
   })
 })
 

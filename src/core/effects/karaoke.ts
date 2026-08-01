@@ -29,7 +29,7 @@ export const karaoke: EffectPreset = {
       dy: -10 * intensity * e,
       scale: 1 + 0.16 * intensity * e,
       rotate: 0,
-      alpha: easeOutCubic(clamp01(enterT)),
+      alpha: clamp01(enterT),
       blur: 0,
       glow: 0,
       highlight: h

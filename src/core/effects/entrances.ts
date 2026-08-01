@@ -1,4 +1,4 @@
-import { clamp01, easeOutBack, easeOutCubic, easeOutExpo, springEase } from '../easing'
+import { clamp01, easeOutBack, springEase } from '../easing'
 import type { EffectPreset } from './types'
 
 /** Caption-first entrance motions inspired by common social-video text animation families. */
@@ -11,8 +11,8 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     layoutVariant: 'center',
     unit: 'word',
     apply({ enterT, intensity }) {
-      const e = easeOutCubic(enterT)
-      return { dx: 0, dy: (1 - e) * 72 * intensity, scale: 0.92 + 0.08 * e, rotate: 0, alpha: clamp01(enterT * 1.8), blur: (1 - e) * 8 * intensity, glow: 0 }
+      const e = clamp01(enterT)
+      return { dx: 0, dy: (1 - e) * 72 * intensity, scale: 0.92 + 0.08 * e, rotate: 0, alpha: e, blur: (1 - e) * 8 * intensity, glow: 0 }
     }
   },
   {
@@ -23,9 +23,9 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     layoutVariant: 'center',
     unit: 'char',
     apply({ enterT, charIndexInUnit, unitIndex, intensity }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       const side = (charIndexInUnit + unitIndex) % 2 === 0 ? -1 : 1
-      return { dx: side * (1 - e) * 18 * intensity, dy: -(1 - e) * (90 + charIndexInUnit * 8) * intensity, scale: 0.78 + 0.22 * e, rotate: side * (1 - e) * 0.16, alpha: clamp01(enterT * 2), blur: (1 - e) * 5, glow: 0 }
+      return { dx: side * (1 - e) * 18 * intensity, dy: -(1 - e) * (90 + charIndexInUnit * 8) * intensity, scale: 0.78 + 0.22 * e, rotate: side * (1 - e) * 0.16, alpha: e, blur: (1 - e) * 5, glow: 0 }
     }
   },
   {
@@ -37,8 +37,8 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     unit: 'line',
     appearAtLineStart: true,
     apply({ enterT, intensity }) {
-      const e = easeOutExpo(enterT)
-      return { dx: 0, dy: 0, scale: 0.48 + 0.52 * e, rotate: 0, alpha: easeOutCubic(enterT), blur: (1 - e) * 20 * intensity, glow: (1 - e) * 8 * intensity }
+      const e = clamp01(enterT)
+      return { dx: 0, dy: 0, scale: 0.48 + 0.52 * e, rotate: 0, alpha: e, blur: (1 - e) * 20 * intensity, glow: (1 - e) * 8 * intensity }
     }
   },
   {
@@ -62,9 +62,9 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     layoutVariant: 'center',
     unit: 'char',
     apply({ enterT, charIndexInUnit, unitIndex, intensity }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       const side = (charIndexInUnit + unitIndex) % 2 === 0 ? -1 : 1
-      return { dx: side * (1 - e) * 210 * intensity, dy: 0, scale: 0.86 + 0.14 * e, rotate: side * (1 - e) * 0.08, alpha: clamp01(enterT * 1.7), blur: (1 - e) * 6, glow: 0 }
+      return { dx: side * (1 - e) * 210 * intensity, dy: 0, scale: 0.86 + 0.14 * e, rotate: side * (1 - e) * 0.08, alpha: e, blur: (1 - e) * 6, glow: 0 }
     }
   },
   {
@@ -76,9 +76,9 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     unit: 'word',
     trail: { count: 4, stepMs: 18, decay: 0.42 },
     apply({ enterT, unitIndex, intensity }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       const side = unitIndex % 2 === 0 ? 1 : -1
-      return { dx: side * (1 - e) * 330 * intensity, dy: side * (1 - e) * 18, scale: 0.9 + 0.1 * e, rotate: side * (1 - e) * 0.12, alpha: clamp01(enterT * 2.5), blur: (1 - e) * 3, glow: 0, skewX: side * (1 - e) * 0.22 }
+      return { dx: side * (1 - e) * 330 * intensity, dy: side * (1 - e) * 18, scale: 0.9 + 0.1 * e, rotate: side * (1 - e) * 0.12, alpha: e, blur: (1 - e) * 3, glow: 0, skewX: side * (1 - e) * 0.22 }
     }
   },
   {
@@ -89,12 +89,12 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     layoutVariant: 'center',
     unit: 'char',
     apply({ enterT, unitIndex, charIndexInUnit, intensity, rand }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       const key = unitIndex * 97 + charIndexInUnit * 13
       const rx = rand(key + 1) * 2 - 1
       const ry = rand(key + 2) * 2 - 1
       const rr = rand(key + 3) * 2 - 1
-      return { dx: rx * (1 - e) * 220 * intensity, dy: ry * (1 - e) * 150 * intensity, scale: 0.42 + 0.58 * e, rotate: rr * (1 - e) * 1.15 * intensity, alpha: clamp01(enterT * 1.8), blur: (1 - e) * 4, glow: 0 }
+      return { dx: rx * (1 - e) * 220 * intensity, dy: ry * (1 - e) * 150 * intensity, scale: 0.42 + 0.58 * e, rotate: rr * (1 - e) * 1.15 * intensity, alpha: e, blur: (1 - e) * 4, glow: 0 }
     }
   },
   {
@@ -119,7 +119,7 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     unit: 'line',
     appearAtLineStart: true,
     apply({ enterT, intensity }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       const stable = enterT >= 0.72
       const flash = Math.sin(enterT * 79) + Math.sin(enterT * 41) > 0.15 ? 1 : 0.12
       const power = stable ? 1 : flash
@@ -149,7 +149,7 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     unit: 'line',
     appearAtLineStart: true,
     apply({ enterT, intensity }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       return { dx: 0, dy: 0, scale: 1 + (1 - e) * 0.06, rotate: 0, alpha: e, blur: (1 - e) * 24 * intensity, glow: (1 - e) * 3 }
     }
   },
@@ -186,10 +186,10 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     layoutVariant: 'center',
     unit: 'char',
     apply({ enterT, unitIndex, charIndexInUnit, intensity, rand }) {
-      const e = easeOutCubic(enterT)
+      const e = clamp01(enterT)
       const key = unitIndex * 43 + charIndexInUnit * 17
       const jitter = (rand(key) * 2 - 1) * (1 - e)
-      return { dx: jitter * 28 * intensity, dy: (rand(key + 1) * 2 - 1) * (1 - e) * 12 * intensity, scale: 0.96 + 0.04 * e, rotate: jitter * 0.08, alpha: clamp01(enterT * 2.4), blur: (1 - e) * 2, glow: 0 }
+      return { dx: jitter * 28 * intensity, dy: (rand(key + 1) * 2 - 1) * (1 - e) * 12 * intensity, scale: 0.96 + 0.04 * e, rotate: jitter * 0.08, alpha: e, blur: (1 - e) * 2, glow: 0 }
     }
   },
   {
@@ -200,8 +200,8 @@ export const ENTRANCE_EFFECTS: EffectPreset[] = [
     layoutVariant: 'center',
     unit: 'word',
     apply({ enterT, intensity }) {
-      const e = easeOutCubic(enterT)
-      return { dx: 0, dy: 0, scale: 0.72 + 0.28 * e, rotate: 0, alpha: clamp01(enterT * 2), blur: (1 - e) * 2, glow: 0, skewX: (1 - e) * 0.28 * intensity }
+      const e = clamp01(enterT)
+      return { dx: 0, dy: 0, scale: 0.72 + 0.28 * e, rotate: 0, alpha: e, blur: (1 - e) * 2, glow: 0, skewX: (1 - e) * 0.28 * intensity }
     }
   }
 ]

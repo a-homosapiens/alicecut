@@ -20,7 +20,7 @@ export const wobble: EffectPreset = {
       dy: valueNoise(seed + 101, x) * 6 * k,
       scale: 1,
       rotate: valueNoise(seed + 202, x) * 0.06 * k,
-      alpha: clamp01(enterT * 2),
+      alpha: clamp01(enterT),
       blur: 0,
       glow: 0,
       skewX: valueNoise(seed + 303, x) * 0.12 * k

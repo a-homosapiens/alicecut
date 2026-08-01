@@ -18,6 +18,41 @@ const args = {
 }
 
 describe('direction-specific built-in effect catalog', () => {
+  const linearPacedIds = [
+    'slide', 'glow', 'karaoke', 'highlightBox', 'streak', 'wobble',
+    'float-up', 'cascade-down', 'zoom-focus', 'split-in', 'whip-in',
+    'scatter-in', 'blur-in', 'glitch-in', 'stretch-in',
+    'fade-up-out', 'drop-out', 'zoom-away-out', 'implode-out', 'scatter-out',
+    'whip-left-out', 'tumble-out', 'evaporate-out', 'blur-out', 'shrink-out',
+    'glitch-out', 'stretch-out'
+  ]
+  const expressivePacedIds = [
+    'pop', 'punch', 'bounce', 'tumble-in', 'fold-in', 'wave-in',
+    'elastic-in', 'rotate-in', 'rotate-out'
+  ]
+  const authoredSequenceIds = ['typewriter', 'neon-on', 'dissolve-out', 'sink-out']
+  const rendererTransitionIds = ['wipe', 'iris', 'clockWipe', 'flip', 'flip-bottom', 'rise']
+
+  it('classifies every built-in effect in the pacing audit', () => {
+    const classified = ['none', ...linearPacedIds, ...expressivePacedIds, ...authoredSequenceIds, ...rendererTransitionIds]
+    expect(new Set(classified).size).toBe(classified.length)
+    expect([...classified].sort()).toEqual(EFFECTS.map((effect) => effect.id).sort())
+  })
+
+  it('keeps every straightforward preset at literal 50% opacity at half duration', () => {
+    for (const id of linearPacedIds) {
+      const effect = getEffect(id)
+      const output = effect.apply({
+        ...args,
+        unitIndex: 0,
+        unitCount: 1,
+        charIndexInUnit: 0,
+        enterT: 0.5
+      })
+      expect(output.alpha, id).toBeCloseTo(0.5, 8)
+    }
+  })
+
   it('registers the direction-specific entrance and exit presets', () => {
     expect(ENTRANCE_EFFECTS).toHaveLength(15)
     expect(EXIT_EFFECTS).toHaveLength(15)
