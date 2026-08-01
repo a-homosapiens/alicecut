@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useProject, RESOLUTIONS, type AspectId } from '../store/project'
-import { EFFECTS } from '../core/effects'
+import { EFFECTS, getEffect } from '../core/effects'
 import {
   BUILTIN_FONT_OPTIONS,
   SYSTEM_FONTS,
@@ -143,9 +143,8 @@ export function StylePanel(): React.JSX.Element {
   const inEffectChips = effectChips.filter((effect) => effect.picker !== 'out')
   const outEffectChips = effectChips.filter((effect) => effect.picker !== 'in')
 
-  const selectedEffects = new Set(
-    lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectId ?? style.effectId)
-  )
+  const selectedLines = lines.filter((line) => selectedIds.includes(line.id))
+  const selectedEffects = new Set(selectedLines.map((line) => line.effectId ?? style.effectId))
   const activeEffectId =
     selectedIds.length === 0
       ? style.effectId
@@ -162,6 +161,14 @@ export function StylePanel(): React.JSX.Element {
   const selectedOut = new Set(lines.filter((l) => selectedIds.includes(l.id)).map((l) => l.effectOutId ?? ''))
   const activeOutId = selectedOut.size === 1 ? [...selectedOut][0] : null
   const firstSelectedLine = lines.find((line) => selectedIds.includes(line.id))
+  const managedCaptionTransition = selectedIds.length === 0
+    ? !!getEffect(style.effectId).lineTransition
+    : selectedLines.some(
+        (line) => line.kind !== 'text' && !!getEffect(line.effectId ?? style.effectId).lineTransition
+      )
+  const inDurationDisabled = activeEffectId === 'none'
+  const outDurationDisabled = managedCaptionTransition || activeOutId === 'none'
+  const outPickerDisabled = selectedIds.length === 0 || managedCaptionTransition
   const inDurationMs = firstSelectedLine?.effectInDurationMs ?? style.effectInDurationMs
   const outDurationMs = firstSelectedLine?.effectOutDurationMs ?? style.effectOutDurationMs
   const setEffectDuration = (which: 'in' | 'out', seconds: number): void => {
@@ -684,6 +691,7 @@ export function StylePanel(): React.JSX.Element {
             type="number"
             min={0}
             step={0.05}
+            disabled={inDurationDisabled}
             value={(inDurationMs / 1000).toFixed(2)}
             onChange={(event) => setEffectDuration('in', Number(event.target.value))}
           />
@@ -694,6 +702,7 @@ export function StylePanel(): React.JSX.Element {
             {t('style.durationFollowGlobal')}
           </button>
         )}
+        {inDurationDisabled && <p className="hint">{t('style.effectDurationNoneHint')}</p>}
         {activeEffectId === 'rise' && (
           <label className="effect-setting">
             <span>
@@ -714,10 +723,11 @@ export function StylePanel(): React.JSX.Element {
         <div className="effect-group-divider" />
         <h3 className="effect-group-title">{t('style.effectOut')}</h3>
         <p className="hint effect-group-hint">{t('style.effectOutTitle')}</p>
-        <div className={`effect-list${selectedIds.length === 0 ? ' disabled' : ''}`}>
+        {managedCaptionTransition && <p className="hint effect-group-hint">{t('style.effectOutManaged')}</p>}
+        <div className={`effect-list${outPickerDisabled ? ' disabled' : ''}`}>
           <button
             className={`effect-chip${activeOutId === '' ? ' active' : ''}`}
-            disabled={selectedIds.length === 0}
+            disabled={outPickerDisabled}
             onClick={() => useProject.getState().setLineEffectOut(selectedIds, null)}
           >
             {t('style.effectOutDefault')}
@@ -726,7 +736,7 @@ export function StylePanel(): React.JSX.Element {
             <button
               key={fx.id}
               className={`effect-chip${activeOutId === fx.id ? ' active' : ''}${fx.plugin ? ' plugin' : ''}`}
-              disabled={selectedIds.length === 0}
+              disabled={outPickerDisabled}
               onClick={() => useProject.getState().setLineEffectOut(selectedIds, fx.id)}
               title={fx.plugin ? t('style.pluginEffectTitle') : undefined}
             >
@@ -742,6 +752,7 @@ export function StylePanel(): React.JSX.Element {
             type="number"
             min={0}
             step={0.05}
+            disabled={outDurationDisabled}
             value={(outDurationMs / 1000).toFixed(2)}
             onChange={(event) => setEffectDuration('out', Number(event.target.value))}
           />
@@ -752,6 +763,7 @@ export function StylePanel(): React.JSX.Element {
             {t('style.durationFollowGlobal')}
           </button>
         )}
+        {activeOutId === 'none' && <p className="hint">{t('style.effectDurationNoneHint')}</p>}
 
         <div className="effect-group-divider" />
         <label className="row">

@@ -16,6 +16,7 @@ import {
   type VideoTransition
 } from '../core/media'
 import { invalidateLayoutCache, type RenderStyle } from '../core/render'
+import { getEffect } from '../core/effects'
 import type { Locale } from '../i18n'
 
 /** 启动语言：先按系统语言猜，随后由主进程（持久化值）校正，避免首屏闪烁 */
@@ -64,6 +65,8 @@ export interface StyleState {
   /** 全局字幕 In / Out 特效时长（每行会按 segment 时长自动压缩避免重叠） */
   effectInDurationMs: number
   effectOutDurationMs: number
+  /** Last-edited side wins when the two requested windows exceed a short caption. */
+  effectDurationPriority: 'in' | 'out'
   intensity: number
   /** Rise effect: number of previous captions that remain parked above the current caption. */
   riseHistory: number
@@ -123,6 +126,9 @@ export function normalizeStyle(base: StyleState, patch: unknown): StyleState {
   if (source.textAlign === 'left' || source.textAlign === 'center' || source.textAlign === 'right') out.textAlign = source.textAlign
   if (source.textOrientation === 'horizontal' || source.textOrientation === 'vertical') out.textOrientation = source.textOrientation
   if (source.bgType === 'solid' || source.bgType === 'gradient' || source.bgType === 'image') out.bgType = source.bgType
+  if (source.effectDurationPriority === 'in' || source.effectDurationPriority === 'out') {
+    out.effectDurationPriority = source.effectDurationPriority
+  }
   if (typeof source.showMeta === 'boolean') out.showMeta = source.showMeta
   if (typeof source.italic === 'boolean') out.italic = source.italic
   return out
@@ -386,6 +392,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     effectId: 'pop',
     effectInDurationMs: 480,
     effectOutDurationMs: 320,
+    effectDurationPriority: 'in',
     intensity: 1,
     riseHistory: 3,
     showMeta: true,
@@ -589,17 +596,35 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   hydrate(data) {
     invalidateLayoutCache()
+    const hydratedStyle = normalizeStyle(get().style, data.style)
     // 兼容旧版工程文件：补齐行级字段默认值
     const lines = sortLines(
-      data.lines.map((l) => ({
-        ...l,
-        effectId: l.effectId ?? null,
-        effectInDurationMs: l.effectInDurationMs ?? null,
-        effectOutDurationMs: l.effectOutDurationMs ?? null,
-        dx: l.dx ?? 0,
-        dy: l.dy ?? 0,
-        layer: l.layer ?? 0
-      }))
+      data.lines.map((line) => {
+        const effectId = line.effectId ?? null
+        const entrance = getEffect(effectId ?? hydratedStyle.effectId)
+        const savedOut = line.effectOutId ? getEffect(line.effectOutId) : null
+        return {
+          ...line,
+          effectId,
+          // Repair legacy combinations that made Flip/Rise lose their parked
+          // caption as soon as an independent Out window began.
+          effectOutId:
+            line.kind !== 'text' && entrance.lineTransition
+              ? null
+              : savedOut?.picker === 'in'
+                ? null
+                : (line.effectOutId ?? null),
+          effectInDurationMs: line.effectInDurationMs ?? null,
+          effectOutDurationMs: line.effectOutDurationMs ?? null,
+          effectDurationPriority:
+            line.effectDurationPriority === 'in' || line.effectDurationPriority === 'out'
+              ? line.effectDurationPriority
+              : undefined,
+          dx: line.dx ?? 0,
+          dy: line.dy ?? 0,
+          layer: line.layer ?? 0
+        }
+      })
     )
     // 兼容无 tracks 字段的旧工程文件（视为只有主字幕组）；补齐字幕组字段默认值
     const tracks = (data.tracks ?? []).map((tr) => ({
@@ -617,7 +642,7 @@ export const useProject = create<ProjectState>((set, get) => ({
     set({
       meta: data.meta,
       lines,
-      style: normalizeStyle(get().style, data.style),
+      style: hydratedStyle,
       lrcName: data.lrcName,
       tracks,
       images,
@@ -800,7 +825,20 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   patchStyle(patch) {
     invalidateLayoutCache()
-    set({ style: normalizeStyle(get().style, patch) })
+    const state = get()
+    const style = normalizeStyle(state.style, patch)
+    const changedGlobalEffect = patch.effectId !== undefined && style.effectId !== state.style.effectId
+    const clearsInheritedOut = changedGlobalEffect && !!getEffect(style.effectId).lineTransition
+    set({
+      style,
+      ...(clearsInheritedOut
+        ? {
+            lines: state.lines.map((line) =>
+              line.kind !== 'text' && line.effectId == null ? { ...line, effectOutId: null } : line
+            )
+          }
+        : {})
+    })
   },
 
   setGlobalEffectDuration(which, durationMs) {
@@ -815,13 +853,15 @@ export const useProject = create<ProjectState>((set, get) => ({
       set({ style: {
         ...state.style,
         effectInDurationMs: value,
-        effectOutDurationMs: Math.min(state.style.effectOutDurationMs, Math.max(0, segmentMs - value))
+        effectOutDurationMs: Math.min(state.style.effectOutDurationMs, Math.max(0, segmentMs - value)),
+        effectDurationPriority: 'in'
       } })
     } else {
       set({ style: {
         ...state.style,
         effectOutDurationMs: value,
-        effectInDurationMs: Math.min(state.style.effectInDurationMs, Math.max(0, segmentMs - value))
+        effectInDurationMs: Math.min(state.style.effectInDurationMs, Math.max(0, segmentMs - value)),
+        effectDurationPriority: 'out'
       } })
     }
   },
@@ -858,12 +898,32 @@ export const useProject = create<ProjectState>((set, get) => ({
 
   setLineEffect(ids, effectId) {
     const idSet = new Set(ids)
-    set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectId } : l)) })
+    const state = get()
+    set({ lines: state.lines.map((line) => {
+      if (!idSet.has(line.id)) return line
+      const effect = getEffect(effectId ?? state.style.effectId)
+      return {
+        ...line,
+        effectId,
+        // Caption parking transitions own the boundary and cannot be combined
+        // with an independent Out. Standalone text blocks may still use one.
+        ...(line.kind !== 'text' && effect.lineTransition ? { effectOutId: null } : {})
+      }
+    }) })
   },
 
   setLineEffectOut(ids, effectOutId) {
     const idSet = new Set(ids)
-    set({ lines: get().lines.map((l) => (idSet.has(l.id) ? { ...l, effectOutId } : l)) })
+    const state = get()
+    const requestedOut = effectOutId ? getEffect(effectOutId) : null
+    const normalizedOutId = requestedOut?.picker === 'in' ? null : effectOutId
+    set({ lines: state.lines.map((line) => {
+      if (!idSet.has(line.id)) return line
+      const entrance = getEffect(line.effectId ?? state.style.effectId)
+      return line.kind !== 'text' && entrance.lineTransition
+        ? { ...line, effectOutId: null }
+        : { ...line, effectOutId: normalizedOutId }
+    }) })
   },
 
   setLineEffectDuration(ids, which, durationMs) {
@@ -871,7 +931,15 @@ export const useProject = create<ProjectState>((set, get) => ({
     const state = get()
     if (durationMs == null) {
       const key = which === 'in' ? 'effectInDurationMs' : 'effectOutDurationMs'
-      set({ lines: state.lines.map((line) => (idSet.has(line.id) ? { ...line, [key]: null } : line)) })
+      const otherKey = which === 'in' ? 'effectOutDurationMs' : 'effectInDurationMs'
+      const otherPriority = which === 'in' ? 'out' : 'in'
+      set({ lines: state.lines.map((line) => (idSet.has(line.id)
+        ? {
+            ...line,
+            [key]: null,
+            effectDurationPriority: line[otherKey] != null ? otherPriority : undefined
+          }
+        : line)) })
       return
     }
     const requested = Math.max(0, Math.round(durationMs))
@@ -884,14 +952,16 @@ export const useProject = create<ProjectState>((set, get) => ({
         return {
           ...line,
           effectInDurationMs: value,
-          effectOutDurationMs: Math.min(currentOut, Math.max(0, segmentMs - value))
+          effectOutDurationMs: Math.min(currentOut, Math.max(0, segmentMs - value)),
+          effectDurationPriority: 'in'
         }
       }
       const currentIn = line.effectInDurationMs ?? state.style.effectInDurationMs
       return {
         ...line,
         effectInDurationMs: Math.min(currentIn, Math.max(0, segmentMs - value)),
-        effectOutDurationMs: value
+        effectOutDurationMs: value,
+        effectDurationPriority: 'out'
       }
     }) })
   },
@@ -1074,6 +1144,7 @@ export function toRenderStyle(style: StyleState): RenderStyle {
     effectId: style.effectId,
     effectInDurationMs: style.effectInDurationMs,
     effectOutDurationMs: style.effectOutDurationMs,
+    effectDurationPriority: style.effectDurationPriority,
     intensity: style.intensity,
     riseHistory: style.riseHistory,
     showMeta: style.showMeta,

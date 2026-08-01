@@ -7,6 +7,7 @@ const SHOWN: CharFx = { dx: 0, dy: 0, scale: 1, rotate: 0, alpha: 1, blur: 0, gl
 export const wipe: EffectPreset = {
   id: 'wipe',
   name: '横向擦入',
+  picker: 'in',
   enterDuration: 520,
   layoutVariant: 'center',
   unit: 'char',
@@ -19,6 +20,7 @@ export const wipe: EffectPreset = {
 export const iris: EffectPreset = {
   id: 'iris',
   name: '圆形展开',
+  picker: 'in',
   enterDuration: 520,
   layoutVariant: 'center',
   unit: 'char',
@@ -31,6 +33,7 @@ export const iris: EffectPreset = {
 export const clockWipe: EffectPreset = {
   id: 'clockWipe',
   name: '钟摆扫入',
+  picker: 'in',
   enterDuration: 560,
   layoutVariant: 'center',
   unit: 'char',

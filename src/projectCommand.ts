@@ -1,7 +1,7 @@
 import type { CaptionTrack, LineTextOverride } from './core/types'
 import type { EffectDurationSpec, HeadlessClip, HeadlessTrackSpec, JobTextSpec } from '../electron/headless'
 import { useProject, type StyleState } from './store/project'
-import { EFFECTS } from './core/effects'
+import { EFFECTS, getEffect } from './core/effects'
 import { probeMediaDuration } from './mediaPool'
 import { parseCaptions } from './core/subtitles'
 
@@ -15,6 +15,18 @@ export type CommandLog = (msg: string) => void
 export type CaptionImportMode = 'replace' | 'add'
 
 const KNOWN_EFFECT_IDS = new Set(EFFECTS.map((e) => e.id))
+const KNOWN_OUT_EFFECT_IDS = new Set(EFFECTS.filter((effect) => effect.picker !== 'in').map((effect) => effect.id))
+
+function managedCaptionOutCount(ids: number[]): number {
+  const state = useProject.getState()
+  const idSet = new Set(ids)
+  return state.lines.filter(
+    (line) =>
+      idSet.has(line.id) &&
+      line.kind !== 'text' &&
+      !!getEffect(line.effectId ?? state.style.effectId).lineTransition
+  ).length
+}
 
 /**
  * Import from the global Lyrics command without resetting the project.
@@ -85,12 +97,18 @@ export function applyLineEffectsOut(lineEffectsOut: Record<string, string>, log:
       log(`警告：lineEffectsOut 键 "${key}" 不是 "3" 或 "0-7" 格式，已忽略`)
       continue
     }
-    if (!KNOWN_EFFECT_IDS.has(fxId)) log(`警告：未知退场特效 "${fxId}"，将回退为默认特效`)
+    if (!KNOWN_OUT_EFFECT_IDS.has(fxId)) {
+      log(`警告："${fxId}" 不是可用的退场特效，已回退为默认淡出`)
+    }
     const ids = useProject
       .getState()
       .lines.filter((line) => line.id >= range[0] && line.id <= range[1])
       .map((line) => line.id)
-    useProject.getState().setLineEffectOut(ids, fxId)
+    const managedCount = managedCaptionOutCount(ids)
+    if (managedCount > 0) {
+      log(`警告：${managedCount} 条翻转/上移字幕自行管理切换，已忽略独立退场特效`)
+    }
+    useProject.getState().setLineEffectOut(ids, KNOWN_OUT_EFFECT_IDS.has(fxId) ? fxId : null)
   }
 }
 
@@ -160,8 +178,14 @@ export function applyTrack(spec: HeadlessTrackSpec, log: CommandLog): CaptionTra
       log(`警告：字幕组「${trackLabel}」的 lineEffectsOut 键 "${key}" 无效或超出范围，已忽略`)
       continue
     }
-    if (!KNOWN_EFFECT_IDS.has(fxId)) log(`警告：未知退场特效 "${fxId}"，将回退为默认特效`)
-    useProject.getState().setLineEffectOut(ids, fxId)
+    if (!KNOWN_OUT_EFFECT_IDS.has(fxId)) {
+      log(`警告："${fxId}" 不是可用的退场特效，已回退为默认淡出`)
+    }
+    const managedCount = managedCaptionOutCount(ids)
+    if (managedCount > 0) {
+      log(`警告：字幕组「${trackLabel}」中 ${managedCount} 条翻转/上移字幕自行管理切换，已忽略独立退场特效`)
+    }
+    useProject.getState().setLineEffectOut(ids, KNOWN_OUT_EFFECT_IDS.has(fxId) ? fxId : null)
   }
 
   for (const [key, durations] of Object.entries(spec.lineEffectDurations ?? {})) {
@@ -232,8 +256,13 @@ export function applyTexts(texts: JobTextSpec[], log: CommandLog): void {
       useProject.getState().setLineEffect([line.id], t.effect)
     }
     if (t.effectOut) {
-      if (!KNOWN_EFFECT_IDS.has(t.effectOut)) log(`警告：texts 退场特效 "${t.effectOut}" 未知，回退默认特效`)
-      useProject.getState().setLineEffectOut([line.id], t.effectOut)
+      if (!KNOWN_OUT_EFFECT_IDS.has(t.effectOut)) {
+        log(`警告：texts 退场特效 "${t.effectOut}" 不可用，回退默认淡出`)
+      }
+      useProject.getState().setLineEffectOut(
+        [line.id],
+        KNOWN_OUT_EFFECT_IDS.has(t.effectOut) ? t.effectOut : null
+      )
     }
     // Simultaneous command semantics: apply Out first, then In (In wins).
     if (typeof t.effectOutDuration === 'number') {

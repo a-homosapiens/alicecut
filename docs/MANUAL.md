@@ -231,6 +231,11 @@ npm run dev            # 启动桌面应用
 | 折叠展开 | `fold-in` | 词 | 词组从压扁折叠状态展开 |
 | 霓虹点亮 | `neon-on` | 句 | 模糊闪烁后像霓虹灯一样点亮 |
 | 波浪入场 | `wave-in` | 字 | 字符沿波浪轨迹依次归位 |
+| 模糊显现 | `blur-in` | 句 | 从放大、模糊的状态渐变为清晰文字 |
+| 弹性入场 | `elastic-in` | 词 | 词组弹性缩放并回弹到正常大小 |
+| 旋转入场 | `rotate-in` | 句 | 整句轻微旋转、下移后归位 |
+| 故障入场 | `glitch-in` | 字 | 字符抖动错位后稳定归位 |
+| 拉伸入场 | `stretch-in` | 词 | 词组从倾斜、压缩状态拉伸归位 |
 
 新增的 15 个退场效果只显示在「退场」选择器中：
 
@@ -246,6 +251,18 @@ npm run dev            # 启动桌面应用
 | 随机溶解 | `dissolve-out` | 字 | 字符按随机顺序逐个溶解 |
 | 蒸发消散 | `evaporate-out` | 字 | 字符向上漂移、模糊并消散 |
 | 逐词下沉 | `sink-out` | 词 | 词组依次向下沉出画面 |
+| 模糊离场 | `blur-out` | 句 | 整句渐隐并扩散为模糊文字 |
+| 缩小离场 | `shrink-out` | 词 | 词组分别缩小并淡出 |
+| 旋转离场 | `rotate-out` | 句 | 整句旋转、上移并淡出 |
+| 故障离场 | `glitch-out` | 字 | 字符抖动错位后消失 |
+| 拉伸离场 | `stretch-out` | 词 | 词组倾斜拉伸并淡出 |
+
+**时长与组合规则**：
+
+- 「进场时长」控制整段进场动画，适用于全部进场效果（包括打字机、翻转和上移）；「退场时长」同样适用于全部专用退场效果。选择「无」时没有动画，因此对应时长不可编辑。
+- 当一句字幕短到无法同时容纳完整的进场和退场时，两段动画不会重叠：GUI 中最后修改的一侧保留用户输入的时长，另一侧自动缩短。无头命令在同一对象里同时给出 In/Out 时，In 优先。
+- `flip`、`flip-bottom` 和 `rise` 是字幕之间的完整停靠式转场，会自行处理上一句的离场与停靠。字幕使用这些效果时，独立退场效果和退场时长会被禁用；旧工程或无头命令里的冲突退场设置会被安全忽略。独立文字块没有字幕历史，仍可把这些进场效果与退场效果组合。
+- 打字机的时长表示从第一个字符到最后一个字符出现的总时间；最后一个字符出现后，光标只再亮一次，然后永久消失。
 
 ### 7.3 全局默认 vs 行级特效
 
@@ -434,9 +451,9 @@ npx electron . --export job.json --save-project job.json  # 同时导出视频�
 | `hwAccel` | | `"auto"`（探测硬件编码器，找不到自动回退软件）/ `"software"`（默认，直接软件编码不探测） |
 | `gpu` | | `true` 保持无头 Chromium GPU 开启并允许 H.264 WebCodecs 快速路径；缺省 `false` 以兼容 CI/xvfb。要启用最快路径，同时写 `"gpu": true` 与 `"hwAccel": "auto"` |
 | `videoFrameMode` | | `"fast"`（默认，背景视频正向连续播放追帧，快很多）/ `"exact"`（逐帧精确 seek，慢但同一次导出重跑字节级一致）；只在有背景视频时有意义，见 §11 |
-| `style` | | 任意样式字段的子集，未给的用默认值。特效：`effectId`、`effectInDurationMs`、`effectOutDurationMs`（全局 In/Out 毫秒数，同时给出时 In 优先）。文字：`fontFamily`/`fontSize`/`fontWeight`/`italic`/`textColor`/`textAlpha`、`letterSpacing`/`wordSpacing`/`lineSpacing`、`textAlign`（`left`/`center`/`right`）、`textOrientation`（`horizontal`/`vertical`）、`strokeColor`/`strokeWidth`/`strokeAlpha`、`textBgColor`/`textBgAlpha`、`halo`/`glowColor`、`shadowColor`/`shadowAlpha`/`shadowBlur`/`shadowOffset`。背景：`bgType`（"solid"/"gradient"/"image"）、`bgImage`（图片路径，相对 job 目录解析）。全局文字变换：`globalDx`/`globalDy`（像素）、`globalRotate`（度） |
+| `style` | | 任意样式字段的子集，未给的用默认值。特效：`effectId`、`effectInDurationMs`、`effectOutDurationMs`（全局 In/Out 毫秒数，同一命令同时给出时 In 优先）。文字：`fontFamily`/`fontSize`/`fontWeight`/`italic`/`textColor`/`textAlpha`、`letterSpacing`/`wordSpacing`/`lineSpacing`、`textAlign`（`left`/`center`/`right`）、`textOrientation`（`horizontal`/`vertical`）、`strokeColor`/`strokeWidth`/`strokeAlpha`、`textBgColor`/`textBgAlpha`、`halo`/`glowColor`、`shadowColor`/`shadowAlpha`/`shadowBlur`/`shadowOffset`。背景：`bgType`（"solid"/"gradient"/"image"）、`bgImage`（图片路径，相对 job 目录解析）。全局文字变换：`globalDx`/`globalDy`（像素）、`globalRotate`（度） |
 | `lineEffects` | | 键为行序号（`"3"`）或区间（`"0-7"`），值为特效 id（见 §7.2 表） |
-| `lineEffectsOut` | | 写法同 `lineEffects`，但设置逐行退场效果；例如 `{ "0-7": "evaporate-out" }` |
+| `lineEffectsOut` | | 写法同 `lineEffects`，但只接受 GUI「退场」选择器中的效果 id；例如 `{ "0-7": "evaporate-out" }`。对使用 `flip`/`flip-bottom`/`rise` 的字幕行会忽略并输出警告 |
 | `lineEffectDurations` | | 逐行 In/Out 时长（秒），例如 `{ "0-7": { "in": 0.6, "out": 0.4 } }`。两者同时给出时 In 优先，Out 自动缩短；始终限定在字幕 segment 内且不重叠 |
 | `lineStyles` | | 键为行序号或区间，值为文字样式覆盖；字段同 `style` 的文字样式字段，适合 CLI 批量设置某几句字幕的间距、对齐、方向、描边、辉光、底色、阴影 |
 | `tracks` | | 额外字幕组（多语言字幕），见下方「多字幕组」小节 |

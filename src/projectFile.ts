@@ -55,6 +55,9 @@ export function parseProjectData(value: unknown): ProjectFileData {
       throw new Error(`Invalid caption at lines[${index}]`)
     }
     if (line.kind !== undefined && line.kind !== 'text') throw new Error(`Invalid kind at lines[${index}]`)
+    if (line.effectDurationPriority !== undefined && line.effectDurationPriority !== 'in' && line.effectDurationPriority !== 'out') {
+      throw new Error(`Invalid effect duration priority at lines[${index}]`)
+    }
     const words = line.words.map((rawWord, wordIndex) => {
       const word = record(rawWord, `lines[${index}].words[${wordIndex}]`)
       if (typeof word.text !== 'string' || !Array.isArray(word.chars) || (word.leading !== undefined && typeof word.leading !== 'string')) throw new Error(`Invalid word at lines[${index}].words[${wordIndex}]`)

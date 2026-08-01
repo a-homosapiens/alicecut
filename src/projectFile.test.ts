@@ -75,4 +75,21 @@ describe('parseProjectData', () => {
     expect(parsed.lines[0].text).toBe('First line\nSecond line')
     expect(parsed.lines[0].words[1].leading).toBe('\n')
   })
+
+  it('rejects an invalid per-line effect duration priority', () => {
+    expect(() => parseProjectData({
+      version: 6,
+      meta: { offset: 0 },
+      style: {},
+      lines: [{
+        id: 0,
+        start: 0,
+        end: 1000,
+        text: 'Caption',
+        words: [],
+        effectDurationPriority: 'middle'
+      }],
+      clips: []
+    })).toThrow(/effect duration priority/)
+  })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { LrcLine, LrcMeta, LrcWord } from './types'
 import { renderFrame, renderFingerprint, getLineBlockRect, resolveEffectTiming, type RenderStyle } from './render'
+import { EFFECTS } from './effects'
 
 /** 记录 roundRect 调用的最小 Canvas 2D mock（高亮块就是唯一的圆角矩形来源） */
 class MockCtx {
@@ -115,6 +116,7 @@ const baseStyle: RenderStyle = {
   effectId: 'highlightBox',
   effectInDurationMs: 480,
   effectOutDurationMs: 320,
+  effectDurationPriority: 'in',
   intensity: 1,
   riseHistory: 3,
   showMeta: false,
@@ -148,6 +150,38 @@ describe('caption effect timing', () => {
     const noEffect = { ...line, effectId: 'none', effectOutId: 'none', effectInDurationMs: 1000, effectOutDurationMs: 1000 }
     expect(render(1, baseStyle, [noEffect]).fillTextCount).toBe([...line.text].length)
     expect(render(line.end - 1, baseStyle, [noEffect]).fillTextCount).toBe([...line.text].length)
+  })
+
+  it('honors whichever global duration side the user edited last on short captions', () => {
+    const short = { ...line, end: 1000 }
+    expect(resolveEffectTiming(short, {
+      ...baseStyle,
+      effectInDurationMs: 800,
+      effectOutDurationMs: 700,
+      effectDurationPriority: 'in'
+    })).toEqual({ inMs: 800, outMs: 200, outStartMs: 800 })
+    expect(resolveEffectTiming(short, {
+      ...baseStyle,
+      effectInDurationMs: 800,
+      effectOutDurationMs: 700,
+      effectDurationPriority: 'out'
+    })).toEqual({ inMs: 300, outMs: 700, outStartMs: 300 })
+  })
+
+  it('gives parking transitions their full In window and ignores independent caption Out timing', () => {
+    const parking = {
+      ...line,
+      end: 1000,
+      effectId: 'flip',
+      effectOutId: 'evaporate-out',
+      effectInDurationMs: 900,
+      effectOutDurationMs: 900,
+      effectDurationPriority: 'out' as const
+    }
+    expect(resolveEffectTiming(parking, baseStyle)).toEqual({ inMs: 900, outMs: 0, outStartMs: 1000 })
+
+    const standalone = { ...parking, kind: 'text' as const }
+    expect(resolveEffectTiming(standalone, baseStyle)).toEqual({ inMs: 100, outMs: 900, outStartMs: 100 })
   })
 })
 
@@ -312,6 +346,77 @@ describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
     return renderFingerprint(ctx as unknown as CanvasRenderingContext2D, lines, meta, style, tMs)
   }
 
+  describe('duration coverage for the complete built-in effect catalog', () => {
+    const entranceEffects = EFFECTS.filter((effect) => effect.picker !== 'out' && effect.id !== 'none')
+    const exitEffects = EFFECTS.filter((effect) => effect.picker !== 'in' && effect.id !== 'none')
+
+    for (const effect of entranceEffects) {
+      it(`${effect.id} responds to the configured In duration`, () => {
+        const fast = [{
+          ...line,
+          effectId: effect.id,
+          effectInDurationMs: 200,
+          effectOutDurationMs: 0,
+          effectDurationPriority: 'in' as const
+        }]
+        const slow = [{
+          ...line,
+          effectId: effect.id,
+          effectInDurationMs: 1000,
+          effectOutDurationMs: 0,
+          effectDurationPriority: 'in' as const
+        }]
+        expect(fp(100, baseStyle, fast), effect.id).not.toBe(fp(100, baseStyle, slow))
+      })
+    }
+
+    for (const effect of exitEffects) {
+      it(`${effect.id} responds to the configured Out duration`, () => {
+        const fast = [{
+          ...line,
+          effectId: 'pop',
+          effectOutId: effect.id,
+          effectInDurationMs: 0,
+          effectOutDurationMs: 200,
+          effectDurationPriority: 'out' as const
+        }]
+        const slow = [{
+          ...line,
+          effectId: 'pop',
+          effectOutId: effect.id,
+          effectInDurationMs: 0,
+          effectOutDurationMs: 1000,
+          effectDurationPriority: 'out' as const
+        }]
+        const sampleTimes = [100, 250, 500, 750, 900].map((beforeEnd) => line.end - beforeEnd)
+        expect(sampleTimes.map((time) => fp(time, baseStyle, fast)), effect.id).not.toEqual(
+          sampleTimes.map((time) => fp(time, baseStyle, slow))
+        )
+      })
+    }
+  })
+
+  it('keeps Flip/Rise history even when legacy data contains an explicit Out effect', () => {
+    const first = {
+      ...oneWordLine('OLD', 2000),
+      effectId: 'flip',
+      effectOutId: 'evaporate-out',
+      effectOutDurationMs: 1000
+    }
+    const second = {
+      ...oneWordLine('NEW', 4000),
+      id: 1,
+      start: 2000,
+      words: [mkWord('NEW', 2000, 4000)],
+      effectId: 'flip',
+      effectOutId: 'evaporate-out',
+      effectOutDurationMs: 1000
+    }
+    const lines = [first, second]
+    expect(fp(3500, baseStyle, lines)).toContain('Sflip')
+    expect(render(3500, baseStyle, lines).fillTextCount).toBeGreaterThan([...second.text].length)
+  })
+
   it('静止段落指纹相同：pop 全部进场完成后（退场前）', () => {
     const style = { ...baseStyle, effectId: 'pop' }
     // 入场在前 480ms 内完成；Out 窗口从 3180ms 开始。
@@ -335,10 +440,11 @@ describe('renderFingerprint 帧指纹（导出跳过重复帧）', () => {
     expect(fp(3500, style, withLongOut)).toBe(fp(4000, style, withLongOut))
   })
 
-  it('plays an explicit Out even when the In effect is a parking transition', () => {
+  it('ignores a legacy explicit Out when the In effect is a caption parking transition', () => {
     const style = { ...baseStyle, effectId: 'rise' }
     const lines = [{ ...line, effectId: 'rise', effectOutId: 'evaporate-out', effectOutDurationMs: 500 }]
-    expect(fp(3250, style, lines)).toContain('evaporate-out')
+    expect(fp(3250, style, lines)).toContain('Srise')
+    expect(fp(3250, style, lines)).not.toContain('evaporate-out')
   })
 
   it('持续动画特效（wobble 噪声漂移）指纹每帧不同', () => {

@@ -13,6 +13,7 @@ function parkedScale(intensity: number): number {
 export const rise: EffectPreset = {
   id: 'rise',
   name: '上移切换',
+  picker: 'in',
   enterDuration: 480,
   layoutVariant: 'center',
   unit: 'line',
