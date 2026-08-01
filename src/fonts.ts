@@ -87,13 +87,6 @@ const BUILTIN_FONTS: BuiltinFont[] = [
   }
 ]
 
-/** 本地安装后预载全部中文/CJK 字体；西文字体仍按选择时加载。 */
-const LOCAL_CJK_FAMILIES = new Set(
-  BUILTIN_FONTS
-    .filter((font) => !['Inter', 'Anton', 'Fredoka', 'Playfair Display'].includes(font.family))
-    .map((font) => font.family)
-)
-
 export const BUILTIN_FONT_OPTIONS: FontOption[] = BUILTIN_FONTS.map((font) => ({
   family: font.family,
   label: font.label,
@@ -204,7 +197,11 @@ export async function restoreInstalledFonts(): Promise<Set<string>> {
   await Promise.all(BUILTIN_FONTS.map(async (font) => {
     let data = await readCachedFont(font.family).catch(() => null)
     if (data && !isSupportedFontData(data)) data = null
-    if (!data && (font.bundled || LOCAL_CJK_FAMILIES.has(font.family))) {
+    // Only fonts intentionally shipped with the application are restored from
+    // local assets at startup. The rest of the catalog is loaded on demand;
+    // eagerly registering every local CJK font can exhaust Electron's memory
+    // before the editor renderer is created.
+    if (!data && font.bundled) {
       data = await readLocalFont(font.file)
     }
     if (!data) return

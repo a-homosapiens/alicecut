@@ -46,6 +46,48 @@ function LineContentEditor({ line }: { line: { id: number; text: string } }): Re
   )
 }
 
+function EffectDurationInput({
+  value,
+  disabled,
+  onCommit
+}: {
+  value: number
+  disabled: boolean
+  onCommit: (seconds: number) => void
+}): React.JSX.Element {
+  const formatted = (value / 1000).toFixed(2)
+  const [draft, setDraft] = useState(formatted)
+  const [editing, setEditing] = useState(false)
+
+  useEffect(() => {
+    if (!editing) setDraft(formatted)
+  }, [editing, formatted])
+
+  const commit = (): void => {
+    const raw = draft.trim()
+    const seconds = Number(raw)
+    if (raw.length > 0 && Number.isFinite(seconds)) onCommit(Math.max(0, seconds))
+    setEditing(false)
+  }
+
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      min={0}
+      step={0.05}
+      disabled={disabled}
+      value={draft}
+      onFocus={() => setEditing(true)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.currentTarget.blur()
+      }}
+    />
+  )
+}
+
 /** 字体可视化选择：点击展开，每个字体用它自身渲染出字体名预览 */
 function FontPicker({
   fonts,
@@ -171,6 +213,7 @@ export function StylePanel(): React.JSX.Element {
   const outPickerDisabled = selectedIds.length === 0 || managedCaptionTransition
   const inDurationMs = firstSelectedLine?.effectInDurationMs ?? style.effectInDurationMs
   const outDurationMs = firstSelectedLine?.effectOutDurationMs ?? style.effectOutDurationMs
+  const durationOwnerKey = selectedIds.length > 0 ? selectedIds.join(',') : 'global'
   const setEffectDuration = (which: 'in' | 'out', seconds: number): void => {
     const durationMs = Math.max(0, Math.round(seconds * 1000))
     if (selectedIds.length > 0) useProject.getState().setLineEffectDuration(selectedIds, which, durationMs)
@@ -687,13 +730,11 @@ export function StylePanel(): React.JSX.Element {
         )}
         <label className="effect-setting">
           <span>{t('style.effectDuration')}</span>
-          <input
-            type="number"
-            min={0}
-            step={0.05}
+          <EffectDurationInput
+            key={`${durationOwnerKey}:in`}
             disabled={inDurationDisabled}
-            value={(inDurationMs / 1000).toFixed(2)}
-            onChange={(event) => setEffectDuration('in', Number(event.target.value))}
+            value={inDurationMs}
+            onCommit={(seconds) => setEffectDuration('in', seconds)}
           />
           <span className="hint">{t('style.effectDurationHint')}</span>
         </label>
@@ -748,13 +789,11 @@ export function StylePanel(): React.JSX.Element {
         {selectedIds.length === 0 && <p className="hint">{t('style.effectOutSelectHint')}</p>}
         <label className="effect-setting">
           <span>{t('style.effectDuration')}</span>
-          <input
-            type="number"
-            min={0}
-            step={0.05}
+          <EffectDurationInput
+            key={`${durationOwnerKey}:out`}
             disabled={outDurationDisabled}
-            value={(outDurationMs / 1000).toFixed(2)}
-            onChange={(event) => setEffectDuration('out', Number(event.target.value))}
+            value={outDurationMs}
+            onCommit={(seconds) => setEffectDuration('out', seconds)}
           />
           <span className="hint">{t('style.effectDurationHint')}</span>
         </label>
